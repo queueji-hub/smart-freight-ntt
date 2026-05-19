@@ -1,0 +1,118 @@
+// AI Freight OS — Prisma Schema (SQLite, MVP)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============== USERS ==============
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  name      String
+  role      String     @default("OPS") // ADMIN, OPS, SALES, FINANCE
+  createdAt DateTime   @default(now())
+
+  shipments Shipment[]
+  aiLogs    AiLog[]
+}
+
+// ============== CUSTOMERS ==============
+model Customer {
+  id           String     @id @default(cuid())
+  companyName  String
+  contactName  String?
+  email        String?
+  phone        String?
+  createdAt    DateTime   @default(now())
+
+  shipments    Shipment[]
+
+  @@index([companyName])
+}
+
+// ============== SHIPMENTS ==============
+model Shipment {
+  id              String    @id @default(cuid())
+  jobNo           String    @unique          // e.g. SE25050001
+  jobType         String                     // SE, SI, AE, AI, TE, TI
+  status          String    @default("DRAFT") // DRAFT, BOOKED, IN_TRANSIT, ARRIVED, DELIVERED, CANCELLED
+
+  // Parties
+  customerId     String?
+  customer       Customer? @relation(fields: [customerId], references: [id])
+  shipperConsignee String?
+
+  // Routing
+  carrier         String?
+  pol             String?
+  pod             String?
+
+  // Cargo
+  containerNo     String?
+  containerSize   String?   // 20GP, 40GP, 40HC
+  commodity       String?
+  weight          String?
+  quantityDesc    String?
+  incoterm        String?
+
+  // Dates
+  etd             DateTime?
+  eta             DateTime?
+
+  // Meta
+  remark          String?
+  source          String    @default("MANUAL") // MANUAL, AI_EMAIL, IMPORT
+  ownerId        String?
+  owner          User?      @relation(fields: [ownerId], references: [id])
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  milestones      Milestone[]
+  aiLogs          AiLog[]
+
+  @@index([status])
+  @@index([jobType])
+  @@index([etd])
+}
+
+// ============== MILESTONES ==============
+model Milestone {
+  id          String    @id @default(cuid())
+  shipmentId  String
+  shipment    Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  code        String    // BKD, PUC, STF, ETD, ITT, ETA, DSC, CCL, DLV
+  name        String
+  occurredAt  DateTime?
+  note        String?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([shipmentId])
+}
+
+// ============== AI LOGS ==============
+model AiLog {
+  id           String    @id @default(cuid())
+  agent        String    // EMAIL_PARSER, QUOTE_GEN, DOC_OCR
+  inputText    String
+  outputJson   String    // Stringified JSON
+  model        String?   // gpt-4o-mini etc.
+  confidence   String?   // high, medium, low
+  status       String    @default("SUCCESS") // SUCCESS, FAILED, PENDING_REVIEW
+  errorMessage String?
+  
+  shipmentId   String?
+  shipment     Shipment? @relation(fields: [shipmentId], references: [id])
+  userId       String?
+  user         User?     @relation(fields: [userId], references: [id])
+  
+  createdAt    DateTime  @default(now())
+
+  @@index([agent])
+  @@index([createdAt])
+}

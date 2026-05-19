@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Database (don't commit local data)
+data/*.db
+data/*.db-journal
+
+# Output PDFs (regenerated on demand)
+output/*.pdf
+
+# Streamlit secrets (NEVER commit API keys)
+.streamlit/secrets.toml
+
+# Node.js (compact + mvp folders)
+node_modules/
+.next/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
