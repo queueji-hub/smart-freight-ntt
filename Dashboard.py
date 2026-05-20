@@ -1,21 +1,5 @@
 """Smart Freight NTT — Main Console (CRM + Shipment + Finance)."""
 import streamlit as st
-
-st.markdown(
-    """
-    <style>
-    /* 1. ซ่อนปุ่ม Manage app และ Toolbar */
-    div[data-testid="stManageAppButton"] { display: none !important; }
-    #MainMenu, header { visibility: hidden !important; display: none !important; }
-    
-    /* 2. บังคับให้เมนูหน้าแรก (Dashboard) แสดงใน Sidebar ตลอดเวลาตามที่ AI แนะนำ */
-    [data-testid="stSidebarNav"] ul li:first-child {
-        display: block !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 import pandas as pd
 from datetime import date
 
@@ -26,6 +10,22 @@ from managers.shipment_manager import (
     update_shipment, delete_shipment,
 )
 from utils.nav import setup_sidebar
+
+st.markdown(
+    """
+    <style>
+    /* 1. ซ่อนปุ่ม Manage app และ Toolbar */
+    div[data-testid="stManageAppButton"] { display: none !important; }
+    #MainMenu, header { visibility: hidden !important; display: none !important; }
+    
+    /* 2. บังคับให้เมนูหน้าแรกแสดงตลอดเวลา */
+    [data-testid="stSidebarNav"] ul li:first-child {
+        display: block !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 st.set_page_config(
     page_title="Smart Freight NTT",
