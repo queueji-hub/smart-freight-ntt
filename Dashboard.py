@@ -11,47 +11,24 @@ from managers.shipment_manager import (
 )
 from utils.nav import setup_sidebar
 
+# 1. ต้องเป็นคำสั่งแรกสุดของ Streamlit เสมอ
 st.set_page_config(
     page_title="Smart Freight NTT",
     page_icon="🚢",
     layout="wide",
 )
 
-st.markdown(
-    """
-    <style>
-    /* 1. ซ่อนปุ่ม Manage app และ Toolbar */
-    div[data-testid="stManageAppButton"] { display: none !important; }
-    #MainMenu, header { visibility: hidden !important; display: none !important; }
-    
-    /* 2. บังคับให้เมนูหน้าแรกแสดงตลอดเวลา */
-    [data-testid="stSidebarNav"] ul li:first-child {
-        display: block !important;
-    }
-    </style>
-    """,unsafe_allow_html=True
-)
-
-setup_sidebar()
-
-@st.cache_resource
-def _init_db():
-    init_database()
-    return True
-
-_init_db()
-
-# ===== Linear/Stripe-style CSS =====
+# 2. รวมศูนย์ CSS ทั้งหมดไว้ที่นี่ที่เดียว (ซ่อนปุ่ม + ตกแต่งสไตล์ Linear)
 st.markdown("""
 <style>
-.block-container { padding-top: 1rem; padding-bottom: 1rem; max-width: 100% !important; }
+/* --- กลุ่มคำสั่งซ่อนปุ่มระบบและแถบเครื่องมือตามต้องการ --- */
+div[data-testid="stManageAppButton"] { display: none !important; }
+#MainMenu, header { visibility: hidden !important; display: none !important; }
 
-/* Force Dashboard to always show in sidebar */
+/* --- จัดการเมนู Sidebar หน้าแรก --- */
 [data-testid="stSidebarNav"] ul li:first-child {
     display: block !important;
 }
-
-/* Rename first item to Dashboard */
 [data-testid="stSidebarNav"] ul li:first-child a span:first-child {
     font-size: 0;
 }
@@ -59,6 +36,9 @@ st.markdown("""
     content: "📊 Dashboard";
     font-size: 14px;
 }
+
+/* --- โครงสร้างหน้าจอและสไตล์องค์ประกอบต่างๆ --- */
+.block-container { padding-top: 1rem; padding-bottom: 1rem; max-width: 100% !important; }
 
 .kpi-strip {
     display: flex; gap: 24px; padding: 12px 16px;
@@ -88,13 +68,20 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+setup_sidebar()
+
+@st.cache_resource
+def _init_db():
+    init_database()
+    return True
+
+_init_db()
 
 # ===== Calculate KPIs =====
 all_rows = list_shipments()
 total_jobs = len(all_rows)
 in_progress = [r for r in all_rows if r.get("status") == "In-Progress"]
 finished = [r for r in all_rows if r.get("status") == "Finished"]
-
 
 def estimate_fee(row):
     """Estimate fee in THB based on container size."""
@@ -105,14 +92,11 @@ def estimate_fee(row):
         return 45000
     return 50000
 
-
 active_revenue = sum(estimate_fee(r) for r in in_progress)
 delivered_revenue = sum(estimate_fee(r) for r in finished)
 
-
 def fmt_baht(n):
     return f"฿{n:,.0f}"
-
 
 # ===== KPI Strip =====
 st.markdown(f"""
@@ -134,9 +118,7 @@ st.markdown("### ⚡ Smart Freight Console")
 st.caption("CRM · Shipment · Finance — รวมในหน้าเดียว")
 
 col_form, col_table = st.columns([1, 2], gap="medium")
-
 status_options = ["In-Progress", "Finished", "Cancelled", "SOC", "On-Hold"]
-
 
 # ===== Form (LEFT) =====
 with col_form:
@@ -163,10 +145,8 @@ with col_form:
             if d.get("job_type") in JOB_TYPES else 0,
         key="cc_job_type",
     )
-    customer = st.text_input("Customer", value=d.get("customer_name") or "",
-                              key="cc_customer")
-    booking_no = st.text_input("Booking No.", value=d.get("booking_no") or "",
-                                key="cc_booking")
+    customer = st.text_input("Customer", value=d.get("customer_name") or "", key="cc_customer")
+    booking_no = st.text_input("Booking No.", value=d.get("booking_no") or "", key="cc_booking")
     
     cc1, cc2 = st.columns(2)
     with cc1:
@@ -176,8 +156,7 @@ with col_form:
     
     cc3, cc4 = st.columns(2)
     with cc3:
-        carrier = st.text_input("Carrier", value=d.get("carrier") or "",
-                                 key="cc_carrier")
+        carrier = st.text_input("Carrier", value=d.get("carrier") or "", key="cc_carrier")
     with cc4:
         size_options = ["", "1x20'GP", "1x40'GP", "1x40'HC", "1x40'HQ"]
         current_size = d.get("container_size") or ""
@@ -194,8 +173,7 @@ with col_form:
         key="cc_status",
     )
     
-    container_no = st.text_input("Container No.", value=d.get("container_no") or "",
-                                   key="cc_container_no")
+    container_no = st.text_input("Container No.", value=d.get("container_no") or "", key="cc_container_no")
     
     etd_val = d.get("etd")
     if isinstance(etd_val, str) and etd_val:
@@ -205,14 +183,12 @@ with col_form:
             etd_val = None
     etd = st.date_input("ETD", value=etd_val, key="cc_etd")
     
-    remark = st.text_area("Internal Notes", value=d.get("remark") or "",
-                           height=80, key="cc_remark")
+    remark = st.text_area("Internal Notes", value=d.get("remark") or "", height=80, key="cc_remark")
     
     btn_cols = st.columns([1, 1])
     with btn_cols[0]:
         save_label = "💾 Save Changes" if edit_id else "+ Create Job"
-        if st.button(save_label, type="primary", use_container_width=True,
-                     key="cc_save"):
+        if st.button(save_label, type="primary", use_container_width=True, key="cc_save"):
             if not customer:
                 st.error("Customer required")
             else:
@@ -245,13 +221,11 @@ with col_form:
                 st.session_state.pop("compact_edit_id", None)
                 st.rerun()
 
-
 # ===== Table (RIGHT) =====
 with col_table:
     title_col, hint_col = st.columns([3, 2])
     with title_col:
-        st.markdown('<div class="section-title">Active Shipments</div>',
-                    unsafe_allow_html=True)
+        st.markdown('<div class="section-title">Active Shipments</div>', unsafe_allow_html=True)
     with hint_col:
         st.caption("Click ✏️ to edit · Sidebar = Quotation, Shipments")
     
@@ -262,9 +236,8 @@ with col_table:
             key="cc_filter", label_visibility="collapsed",
         )
     with fcol2:
-        search = st.text_input("Search",
-            placeholder="Job No / Customer / Container...",
-            key="cc_search", label_visibility="collapsed")
+        search = st.text_input("Search", placeholder="Job No / Customer / Container...",
+                               key="cc_search", label_visibility="collapsed")
     
     filtered = all_rows
     if filter_status != "All":
@@ -292,27 +265,12 @@ with col_table:
             }.get(status, "s-draft")
             
             row_cols = st.columns([1.5, 2.5, 1.5, 1.2, 1, 1.5, 0.6])
-            row_cols[0].markdown(
-                f"<code style='font-size:0.8rem;color:#5E6AD2'>{r.get('job_no','')}</code>",
-                unsafe_allow_html=True)
-            row_cols[1].markdown(
-                f"<span style='font-size:0.85rem'>{(r.get('customer_name') or '—')[:30]}</span>",
-                unsafe_allow_html=True)
-            row_cols[2].markdown(
-                f"<span style='font-size:0.75rem;color:#9CA0A8'>"
-                f"{r.get('pol','?') or '?'} → {r.get('pod','?') or '?'}</span>",
-                unsafe_allow_html=True)
-            row_cols[3].markdown(
-                f"<span class='status-pill {status_class}'>{status}</span>",
-                unsafe_allow_html=True)
-            row_cols[4].markdown(
-                f"<span style='font-size:0.75rem;color:#62656B;font-family:monospace'>"
-                f"{r.get('container_size','') or ''}</span>",
-                unsafe_allow_html=True)
-            row_cols[5].markdown(
-                f"<span style='font-size:0.75rem;color:#62656B'>"
-                f"{(r.get('remark') or '—')[:35]}</span>",
-                unsafe_allow_html=True)
+            row_cols[0].markdown(f"<code style='font-size:0.8rem;color:#5E6AD2'>{r.get('job_no','')}</code>", unsafe_allow_html=True)
+            row_cols[1].markdown(f"<span style='font-size:0.85rem'>{(r.get('customer_name') or '—')[:30]}</span>", unsafe_allow_html=True)
+            row_cols[2].markdown(f"<span style='font-size:0.75rem;color:#9CA0A8'>{r.get('pol','?') or '?'} → {r.get('pod','?') or '?'}</span>", unsafe_allow_html=True)
+            row_cols[3].markdown(f"<span class='status-pill {status_class}'>{status}</span>", unsafe_allow_html=True)
+            row_cols[4].markdown(f"<span style='font-size:0.75rem;color:#62656B;font-family:monospace'>{r.get('container_size','') or ''}</span>", unsafe_allow_html=True)
+            row_cols[5].markdown(f"<span style='font-size:0.75rem;color:#62656B'>{(r.get('remark') or '—')[:35]}</span>", unsafe_allow_html=True)
             with row_cols[6]:
                 if st.button("✏️", key=f"edit_{r['id']}", help="Edit"):
                     st.session_state["compact_edit_id"] = r["job_no"]
