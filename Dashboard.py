@@ -31,7 +31,12 @@ st.markdown("""
 <style>
 .block-container { padding-top: 1rem; padding-bottom: 1rem; max-width: 100% !important; }
 
-/* Rename "app" to "Home" in sidebar nav */
+/* Force Dashboard to always show in sidebar */
+[data-testid="stSidebarNav"] ul li:first-child {
+    display: block !important;
+}
+
+/* Rename first item to Dashboard */
 [data-testid="stSidebarNav"] ul li:first-child a span:first-child {
     font-size: 0;
 }
