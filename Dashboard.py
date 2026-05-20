@@ -1,5 +1,23 @@
 """Smart Freight NTT — Main Console (CRM + Shipment + Finance)."""
 import streamlit as st
+
+# วางโค้ดนี้เพื่อซ่อนปุ่ม Manage app และแถบที่เหลือทั้งหมด
+st.markdown(
+    """
+    <style>
+    /* ซ่อนปุ่ม Manage app */
+    div[data-testid="stManageAppButton"] {
+        display: none !important;
+    }
+    /* ซ่อนแถบ Toolbar ขวาบนทั้งหมด (กันเหนียว) */
+    #MainMenu, header {
+        visibility: hidden !important;
+        display: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 import pandas as pd
 from datetime import date
 
