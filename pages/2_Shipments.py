@@ -9,10 +9,12 @@ from managers.shipment_manager import (
     create_shipment, update_shipment, delete_shipment,
     get_shipment, list_shipments,
 )
+from utils.nav import setup_sidebar
 
 init_database()
 
 st.set_page_config(page_title="Shipments", page_icon="📦", layout="wide")
+setup_sidebar()
 st.title("📦 Shipment Job Control")
 st.caption("ใบคุมงาน - บันทึกและติดตามสถานะ shipment ทุกประเภทงาน")
 

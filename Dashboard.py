@@ -9,12 +9,15 @@ from managers.shipment_manager import (
     list_shipments, get_shipment, create_shipment,
     update_shipment, delete_shipment,
 )
+from utils.nav import setup_sidebar
 
 st.set_page_config(
     page_title="Smart Freight NTT",
     page_icon="🚢",
     layout="wide",
 )
+
+setup_sidebar()
 
 @st.cache_resource
 def _init_db():
