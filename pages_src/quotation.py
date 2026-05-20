@@ -17,7 +17,6 @@ from utils.nav import setup_sidebar
 
 init_database()
 
-st.set_page_config(page_title="Quotation", page_icon="📄", layout="wide")
 setup_sidebar()
 st.title("📄 Quotation Management")
 
