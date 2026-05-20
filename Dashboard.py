@@ -11,33 +11,50 @@ from managers.shipment_manager import (
 )
 from utils.nav import setup_sidebar
 
-# 1. ต้องเป็นคำสั่งแรกสุดของ Streamlit เสมอ
+# =========================================================================
+# 1. [สำคัญที่สุด] ล็อกสิทธิ์คำสั่งแรก ห้ามย้ายไปอยู่ใต้ st.markdown เด็ดขาด!
+# =========================================================================
 st.set_page_config(
     page_title="Smart Freight NTT",
     page_icon="🚢",
     layout="wide",
 )
 
-# 2. รวมศูนย์ CSS ทั้งหมดไว้ที่นี่ที่เดียว (ซ่อนปุ่ม + ตกแต่งสไตล์ Linear)
+# =========================================================================
+# 2. รวมศูนย์ CSS สำหรับหน้าจอคอนโซลแบบ Linear-style และการจัดการซ่อนองค์ประกอบ
+#    (เพิ่ม Selector พิเศษเพื่อบังคับซ่อนปุ่มระบบทั้งหมดบน Streamlit Community Cloud)
+# =========================================================================
 st.markdown("""
 <style>
-/* --- กลุ่มคำสั่งซ่อนปุ่มระบบและแถบเครื่องมือตามต้องการ --- */
+/* --- ซ่อนองค์ประกอบระบบทั้งหมด ทั้งใน Localhost และบน Streamlit Cloud --- */
 div[data-testid="stManageAppButton"] { display: none !important; }
 #MainMenu, header { visibility: hidden !important; display: none !important; }
+.viewerBadge { display: none !important; }
+footer { visibility: hidden !important; }
 
-/* --- จัดการเมนู Sidebar หน้าแรก --- */
+/* ปุ่มและแถบด้านบนสุด (Share, Edit, GitHub, Menu) สำหรับ Cloud Deployment */
+[data-testid="stDecoration"] { display: none !important; }
+[data-testid="stStatusWidget"] { display: none !important; }
+.stAppHeader { display: none !important; }
+.st-emotion-cache-h5g98m { display: none !important; }
+
+/* บังคับปิดปุ่มและแถบคำสั่งพิเศษที่มุมล่างขวาของหน้าจอทั้งหมด */
+footer + div { display: none !important; }
+div[class*="st-emotion-cache"] > button[id*="manage-app"] { display: none !important; }
+
+/* --- จัดการระบบเมนู Sidebar หน้าแรกให้คงอยู่และเป็นชื่อ Dashboard --- */
 [data-testid="stSidebarNav"] ul li:first-child {
     display: block !important;
 }
 [data-testid="stSidebarNav"] ul li:first-child a span:first-child {
-    font-size: 0;
+    font-size: 0 !important;
 }
 [data-testid="stSidebarNav"] ul li:first-child a span:first-child::after {
-    content: "📊 Dashboard";
-    font-size: 14px;
+    content: "📊 Dashboard" !important;
+    font-size: 14px !important;
 }
 
-/* --- โครงสร้างหน้าจอและสไตล์องค์ประกอบต่างๆ --- */
+/* --- ตกแต่งโครงสร้าง Layout และ UI ของหน้าหลัก --- */
 .block-container { padding-top: 1rem; padding-bottom: 1rem; max-width: 100% !important; }
 
 .kpi-strip {
