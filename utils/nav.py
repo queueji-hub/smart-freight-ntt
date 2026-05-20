@@ -7,11 +7,57 @@ def setup_sidebar():
     Call at the top of every page."""
     st.markdown("""
     <style>
-    /* Rename 'app' to 'Dashboard' (note: works only on first page where the
-       file Dashboard.py is the entry; here we rely on Streamlit using filename
-       so this is a no-op safety) */
-    
-    /* ====== MOBILE RESPONSIVE ====== */
+    /* =========================================
+       1. CORE SYSTEM UI FIXES (ซ่อนปุ่มขยะของระบบ)
+       ========================================= */
+    div[data-testid="stManageAppButton"] { display: none !important; }
+    #MainMenu, header { visibility: hidden !important; display: none !important; }
+
+    /* =========================================
+       2. SIDEBAR MENU FIXES (แก้เมนูหายและเปลี่ยนชื่อ)
+       ========================================= */
+    /* บังคับให้เมนูทุกตัวแสดงผลเสมอ ไม่ว่าจะอยู่หน้าไหน */
+    [data-testid="stSidebarNav"] ul li {
+        display: list-item !important;
+        visibility: visible !important;
+        height: auto !important;
+        opacity: 1 !important;
+    }
+    [data-testid="stSidebarNav"] ul li a,
+    [data-testid="stSidebarNav"] ul li a[aria-current="page"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+
+    /* เปลี่ยนชื่อเมนูแรกสุดให้เป็น '📊 Dashboard' เสมอ ทุกหน้า */
+    [data-testid="stSidebarNav"] ul li:first-child {
+        display: block !important;
+    }
+    [data-testid="stSidebarNav"] ul li:first-child a span:first-child {
+        font-size: 0 !important;
+    }
+    [data-testid="stSidebarNav"] ul li:first-child a span:first-child::after {
+        content: "📊 Dashboard" !important;
+        font-size: 14px !important;
+        visibility: visible !important;
+    }
+
+    /* (ทางเลือก) บังคับ Sidebar ให้โชว์ตลอดเวลา ห้ามพับเก็บ */
+    [data-testid="collapsedControl"] { display: none !important; }
+    section[data-testid="stSidebar"] {
+        width: 16rem !important;
+        min-width: 16rem !important;
+        transform: none !important;
+        visibility: visible !important;
+        position: relative !important;
+    }
+    .stApp { margin-left: 0px !important; }
+
+
+    /* =========================================
+       3. MOBILE RESPONSIVE
+       ========================================= */
     @media (max-width: 768px) {
         /* Reduce main container padding on mobile */
         .block-container {
