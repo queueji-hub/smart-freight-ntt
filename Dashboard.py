@@ -23,7 +23,7 @@ st.markdown(
         display: block !important;
     }
     </style>
-    """,
+    """
     unsafe_allow_html=True
 )
 
