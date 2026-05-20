@@ -1,18 +1,16 @@
 """Smart Freight NTT — Main Console (CRM + Shipment + Finance)."""
 import streamlit as st
 
-# วางโค้ดนี้เพื่อซ่อนปุ่ม Manage app และแถบที่เหลือทั้งหมด
 st.markdown(
     """
     <style>
-    /* ซ่อนปุ่ม Manage app */
-    div[data-testid="stManageAppButton"] {
-        display: none !important;
-    }
-    /* ซ่อนแถบ Toolbar ขวาบนทั้งหมด (กันเหนียว) */
-    #MainMenu, header {
-        visibility: hidden !important;
-        display: none !important;
+    /* 1. ซ่อนปุ่ม Manage app และ Toolbar */
+    div[data-testid="stManageAppButton"] { display: none !important; }
+    #MainMenu, header { visibility: hidden !important; display: none !important; }
+    
+    /* 2. บังคับให้เมนูหน้าแรก (Dashboard) แสดงใน Sidebar ตลอดเวลาตามที่ AI แนะนำ */
+    [data-testid="stSidebarNav"] ul li:first-child {
+        display: block !important;
     }
     </style>
     """,
