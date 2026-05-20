@@ -11,6 +11,12 @@ from managers.shipment_manager import (
 )
 from utils.nav import setup_sidebar
 
+st.set_page_config(
+    page_title="Smart Freight NTT",
+    page_icon="🚢",
+    layout="wide",
+)
+
 st.markdown(
     """
     <style>
@@ -23,14 +29,7 @@ st.markdown(
         display: block !important;
     }
     </style>
-    """
-    unsafe_allow_html=True
-)
-
-st.set_page_config(
-    page_title="Smart Freight NTT",
-    page_icon="🚢",
-    layout="wide",
+    """,unsafe_allow_html=True
 )
 
 setup_sidebar()
