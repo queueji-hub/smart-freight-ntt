@@ -1,18 +1,9 @@
-"""Quotation Management page (Streamlit native multi-page)."""
+"""Quotation Management view."""
 import streamlit as st
 from datetime import date, timedelta
 import pandas as pd
 
-st.set_page_config(page_title="Quotation - Smart Freight NTT",
-                   page_icon="📄", layout="wide",
-                   initial_sidebar_state="expanded")
-
-# Page guard - clear all session state when switching pages
-from utils.page_guard import enforce_page
-enforce_page("quotation")
-
 from config import JOB_TYPES, DEFAULT_TERMS
-from database.connection import init_database
 from managers.quotation_manager import (
     create_quotation, get_quotation_by_no, list_quotations,
     update_quotation, duplicate_quotation,
@@ -20,7 +11,6 @@ from managers.quotation_manager import (
 from managers.customer_manager import (
     search_customers, get_customer_by_name,
 )
-from utils.nav import setup_sidebar
 
 # PDF generator (optional)
 _PDF_AVAILABLE = True
@@ -30,19 +20,6 @@ try:
 except Exception as _e:
     _PDF_AVAILABLE = False
     _PDF_ERROR = str(_e)
-
-try:
-    init_database()
-except Exception as e:
-    st.warning(f"Database init: {e}")
-
-setup_sidebar()
-st.title("📄 Quotation Management")
-
-if not _PDF_AVAILABLE:
-    st.warning(f"📄 PDF generation disabled: {_PDF_ERROR}")
-
-tab_create, tab_all = st.tabs(["➕ Create New", "📋 All Quotations"])
 
 
 def _customer_autocomplete(prefix, default_value=""):
@@ -239,138 +216,143 @@ def _clear_form_state(prefix):
         del st.session_state[k]
 
 
-# =================== CREATE TAB ===================
-with tab_create:
-    st.subheader("Create New Quotation")
-    form_data, items_df = _quotation_form("create")
+def render():
+    """Render Quotation Management page."""
+    st.title("📄 Quotation Management")
+    if not _PDF_AVAILABLE:
+        st.warning(f"📄 PDF generation disabled: {_PDF_ERROR}")
 
-    if st.button("🚀 Generate Quotation", type="primary", key="btn_create"):
-        errors = []
-        if not form_data["customer_name"]:
-            errors.append("Customer is required")
-        if form_data["validity_date"] < form_data["quotation_date"]:
-            errors.append("Validity Date must be ≥ Quotation Date")
-        valid_items = _extract_valid_items(items_df)
-        if not valid_items:
-            errors.append("At least one item is required")
+    tab_create, tab_all = st.tabs(["➕ Create New", "📋 All Quotations"])
 
-        if errors:
-            for e in errors:
-                st.error(e)
+    with tab_create:
+        st.subheader("Create New Quotation")
+        form_data, items_df = _quotation_form("create")
+
+        if st.button("🚀 Generate Quotation", type="primary", key="btn_create"):
+            errors = []
+            if not form_data["customer_name"]:
+                errors.append("Customer is required")
+            if form_data["validity_date"] < form_data["quotation_date"]:
+                errors.append("Validity Date must be ≥ Quotation Date")
+            valid_items = _extract_valid_items(items_df)
+            if not valid_items:
+                errors.append("At least one item is required")
+
+            if errors:
+                for e in errors:
+                    st.error(e)
+            else:
+                try:
+                    qno = create_quotation(form_data, valid_items)
+                    st.success(f"✅ Quotation **{qno}** created!")
+                    if _PDF_AVAILABLE:
+                        saved = get_quotation_by_no(qno)
+                        pdf_path = generate_quotation_pdf(saved, saved["items"])
+                        with open(pdf_path, "rb") as f:
+                            st.download_button(f"📥 Download {qno}.pdf", f.read(),
+                                f"{qno}.pdf", "application/pdf", type="primary")
+                except Exception as ex:
+                    st.error(f"Failed: {ex}")
+
+    with tab_all:
+        st.subheader("📋 All Quotations")
+
+        search_col1, search_col2 = st.columns([2, 3])
+        with search_col1:
+            search_qno = st.text_input("🔍 ค้นหา Quotation No.",
+                placeholder="เช่น SI26050004", key="search_qno")
+        with search_col2:
+            filter_type = st.selectbox("Filter by Job Type",
+                ["All"] + list(JOB_TYPES.keys()), key="all_filter")
+
+        rows = list_quotations(
+            job_type=None if filter_type == "All" else filter_type)
+        if search_qno and search_qno.strip():
+            q = search_qno.strip().lower()
+            rows = [r for r in rows if q in r["quotation_no"].lower()]
+
+        if not rows:
+            st.info("No quotations found.")
         else:
-            try:
-                qno = create_quotation(form_data, valid_items)
-                st.success(f"✅ Quotation **{qno}** created!")
-                if _PDF_AVAILABLE:
-                    saved = get_quotation_by_no(qno)
+            df = pd.DataFrame(rows)
+            display_cols = ["quotation_no", "job_type", "customer_name", "carrier",
+                            "pol", "pod", "quotation_date", "validity_date"]
+            display_cols = [c for c in display_cols if c in df.columns]
+            st.dataframe(df[display_cols], use_container_width=True,
+                         hide_index=True, height=300)
+            st.markdown("---")
+
+            sel_col, act_col1, act_col2, act_col3 = st.columns([3, 1, 1, 1])
+            with sel_col:
+                sel_qno = st.selectbox("เลือก Quotation",
+                    df["quotation_no"].tolist(), key="all_sel")
+            with act_col1:
+                st.write(""); st.write("")
+                view_btn = st.button("📥 PDF", use_container_width=True,
+                                      disabled=not _PDF_AVAILABLE)
+            with act_col2:
+                st.write(""); st.write("")
+                edit_btn = st.button("✏️ Edit", use_container_width=True)
+            with act_col3:
+                st.write(""); st.write("")
+                copy_btn = st.button("📑 Copy", use_container_width=True)
+
+            if view_btn and _PDF_AVAILABLE:
+                saved = get_quotation_by_no(sel_qno)
+                if saved:
                     pdf_path = generate_quotation_pdf(saved, saved["items"])
                     with open(pdf_path, "rb") as f:
-                        st.download_button(f"📥 Download {qno}.pdf", f.read(),
-                            f"{qno}.pdf", "application/pdf", type="primary")
-            except Exception as ex:
-                st.error(f"Failed: {ex}")
+                        st.download_button(f"📥 Download {sel_qno}.pdf", f.read(),
+                            f"{sel_qno}.pdf", "application/pdf", type="primary")
 
-
-# =================== ALL QUOTATIONS TAB ===================
-with tab_all:
-    st.subheader("📋 All Quotations")
-
-    search_col1, search_col2 = st.columns([2, 3])
-    with search_col1:
-        search_qno = st.text_input("🔍 ค้นหา Quotation No.",
-            placeholder="เช่น SI26050004", key="search_qno")
-    with search_col2:
-        filter_type = st.selectbox("Filter by Job Type",
-            ["All"] + list(JOB_TYPES.keys()), key="all_filter")
-
-    rows = list_quotations(
-        job_type=None if filter_type == "All" else filter_type)
-    if search_qno and search_qno.strip():
-        q = search_qno.strip().lower()
-        rows = [r for r in rows if q in r["quotation_no"].lower()]
-
-    if not rows:
-        st.info("No quotations found.")
-    else:
-        df = pd.DataFrame(rows)
-        display_cols = ["quotation_no", "job_type", "customer_name", "carrier",
-                        "pol", "pod", "quotation_date", "validity_date"]
-        display_cols = [c for c in display_cols if c in df.columns]
-        st.dataframe(df[display_cols], use_container_width=True,
-                     hide_index=True, height=300)
-        st.markdown("---")
-
-        sel_col, act_col1, act_col2, act_col3 = st.columns([3, 1, 1, 1])
-        with sel_col:
-            sel_qno = st.selectbox("เลือก Quotation",
-                df["quotation_no"].tolist(), key="all_sel")
-        with act_col1:
-            st.write(""); st.write("")
-            view_btn = st.button("📥 PDF", use_container_width=True,
-                                  disabled=not _PDF_AVAILABLE)
-        with act_col2:
-            st.write(""); st.write("")
-            edit_btn = st.button("✏️ Edit", use_container_width=True)
-        with act_col3:
-            st.write(""); st.write("")
-            copy_btn = st.button("📑 Copy", use_container_width=True)
-
-        if view_btn and _PDF_AVAILABLE:
-            saved = get_quotation_by_no(sel_qno)
-            if saved:
-                pdf_path = generate_quotation_pdf(saved, saved["items"])
-                with open(pdf_path, "rb") as f:
-                    st.download_button(f"📥 Download {sel_qno}.pdf", f.read(),
-                        f"{sel_qno}.pdf", "application/pdf", type="primary")
-
-        if edit_btn:
-            _clear_form_state("edit")
-            st.session_state["edit_loaded"] = sel_qno
-
-        if copy_btn:
-            new_no = duplicate_quotation(sel_qno)
-            if new_no:
-                st.success(f"✅ Duplicated → New Quotation: **{new_no}**")
+            if edit_btn:
                 _clear_form_state("edit")
-                st.session_state["edit_loaded"] = new_no
-                st.rerun()
-            else:
-                st.error("Duplication failed")
+                st.session_state["edit_loaded"] = sel_qno
 
-        if st.session_state.get("edit_loaded"):
-            loaded = get_quotation_by_no(st.session_state["edit_loaded"])
-            if loaded:
-                st.markdown("---")
-                st.markdown(f"### ✏️ Editing: `{loaded['quotation_no']}`")
-                if st.button("❌ Close Editor", key="btn_close_edit"):
+            if copy_btn:
+                new_no = duplicate_quotation(sel_qno)
+                if new_no:
+                    st.success(f"✅ Duplicated → New Quotation: **{new_no}**")
                     _clear_form_state("edit")
-                    del st.session_state["edit_loaded"]
+                    st.session_state["edit_loaded"] = new_no
                     st.rerun()
-                new_qno = st.text_input("Quotation No. (แก้ไขเลขที่ได้)",
-                    value=loaded["quotation_no"], key="edit_new_qno")
-                form_data, items_df = _quotation_form("edit", defaults=loaded)
-                if st.button("💾 Save Changes", type="primary", key="btn_save_edit"):
-                    valid_items = _extract_valid_items(items_df)
-                    if not valid_items:
-                        st.error("At least one item is required")
-                    elif not new_qno.strip():
-                        st.error("Quotation No. cannot be empty")
-                    else:
-                        new_no_val = (new_qno.strip()
-                                      if new_qno.strip() != loaded["quotation_no"]
-                                      else None)
-                        ok = update_quotation(loaded["quotation_no"],
-                            form_data, valid_items, new_quotation_no=new_no_val)
-                        if ok:
-                            final_no = new_qno.strip()
-                            st.session_state["edit_loaded"] = final_no
-                            st.success(f"✅ Updated {final_no}")
-                            if _PDF_AVAILABLE:
-                                saved = get_quotation_by_no(final_no)
-                                pdf_path = generate_quotation_pdf(saved, saved["items"])
-                                with open(pdf_path, "rb") as f:
-                                    st.download_button(f"📥 Download updated PDF",
-                                        f.read(), f"{final_no}.pdf",
-                                        "application/pdf", type="primary")
+                else:
+                    st.error("Duplication failed")
+
+            if st.session_state.get("edit_loaded"):
+                loaded = get_quotation_by_no(st.session_state["edit_loaded"])
+                if loaded:
+                    st.markdown("---")
+                    st.markdown(f"### ✏️ Editing: `{loaded['quotation_no']}`")
+                    if st.button("❌ Close Editor", key="btn_close_edit"):
+                        _clear_form_state("edit")
+                        del st.session_state["edit_loaded"]
+                        st.rerun()
+                    new_qno = st.text_input("Quotation No. (แก้ไขเลขที่ได้)",
+                        value=loaded["quotation_no"], key="edit_new_qno")
+                    form_data, items_df = _quotation_form("edit", defaults=loaded)
+                    if st.button("💾 Save Changes", type="primary", key="btn_save_edit"):
+                        valid_items = _extract_valid_items(items_df)
+                        if not valid_items:
+                            st.error("At least one item is required")
+                        elif not new_qno.strip():
+                            st.error("Quotation No. cannot be empty")
                         else:
-                            st.error("Update failed")
+                            new_no_val = (new_qno.strip()
+                                          if new_qno.strip() != loaded["quotation_no"]
+                                          else None)
+                            ok = update_quotation(loaded["quotation_no"],
+                                form_data, valid_items, new_quotation_no=new_no_val)
+                            if ok:
+                                final_no = new_qno.strip()
+                                st.session_state["edit_loaded"] = final_no
+                                st.success(f"✅ Updated {final_no}")
+                                if _PDF_AVAILABLE:
+                                    saved = get_quotation_by_no(final_no)
+                                    pdf_path = generate_quotation_pdf(saved, saved["items"])
+                                    with open(pdf_path, "rb") as f:
+                                        st.download_button(f"📥 Download updated PDF",
+                                            f.read(), f"{final_no}.pdf",
+                                            "application/pdf", type="primary")
+                            else:
+                                st.error("Update failed")

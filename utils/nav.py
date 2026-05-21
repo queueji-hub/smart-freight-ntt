@@ -1,10 +1,13 @@
-"""Shared navigation helper — sidebar always visible + mobile responsive."""
+"""Shared navigation helper — sidebar always visible + mobile responsive.
+
+Note: This app uses single-file architecture with custom sidebar buttons,
+so we hide Streamlit's auto-generated nav (stSidebarNav).
+"""
 import streamlit as st
 
 
 def setup_sidebar():
-    """Inject CSS so the sidebar is always visible with a working toggle button.
-    Call at the top of every page."""
+    """Inject CSS for sidebar visibility and mobile responsiveness."""
     st.markdown("""
     <style>
     /* =========================================
@@ -31,36 +34,19 @@ def setup_sidebar():
         visibility: visible !important;
         opacity: 1 !important;
         z-index: 9999999 !important;
-        position: fixed !important;
-        top: 0.5rem !important;
-        left: 0.5rem !important;
     }
 
     /* =========================================
-       2. SIDEBAR — visible by default
+       2. HIDE Streamlit's auto-generated nav (we use custom buttons)
        ========================================= */
+    [data-testid="stSidebarNav"] {
+        display: none !important;
+    }
+
     section[data-testid="stSidebar"] {
         display: block !important;
         visibility: visible !important;
         min-width: 14rem !important;
-    }
-    [data-testid="stSidebarNav"] {
-        display: block !important;
-        visibility: visible !important;
-    }
-    [data-testid="stSidebarNav"] ul {
-        display: block !important;
-    }
-    [data-testid="stSidebarNav"] ul li {
-        display: list-item !important;
-        visibility: visible !important;
-        height: auto !important;
-        opacity: 1 !important;
-    }
-    [data-testid="stSidebarNav"] ul li a {
-        display: flex !important;
-        visibility: visible !important;
-        opacity: 1 !important;
     }
 
     /* =========================================
