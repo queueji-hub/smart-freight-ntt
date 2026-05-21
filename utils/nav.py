@@ -8,13 +8,32 @@ def setup_sidebar():
     st.markdown("""
     <style>
     /* =========================================
-       1. CORE SYSTEM UI FIXES
+       1. KEEP SIDEBAR TOGGLE BUTTON VISIBLE
        ========================================= */
+    /* Hide the deploy/share button only, keep header for sidebar toggle */
     div[data-testid="stManageAppButton"] { display: none !important; }
-    #MainMenu, header { visibility: hidden !important; display: none !important; }
+    #MainMenu { visibility: hidden !important; }
+
+    /* Make header transparent but keep it functional for sidebar toggle */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        height: auto !important;
+        z-index: 999 !important;
+    }
+
+    /* Ensure the sidebar collapse/expand button is always visible */
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="collapsedControl"],
+    button[kind="header"],
+    [data-testid="stSidebarCollapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        z-index: 9999 !important;
+    }
 
     /* =========================================
-       2. SIDEBAR — ensure all nav items visible
+       2. SIDEBAR — ensure all nav items visible when open
        ========================================= */
     [data-testid="stSidebarNav"] {
         display: block !important;
