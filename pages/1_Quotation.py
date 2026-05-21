@@ -7,10 +7,9 @@ st.set_page_config(page_title="Quotation - Smart Freight NTT",
                    page_icon="📄", layout="wide",
                    initial_sidebar_state="expanded")
 
-# Clear stale state from other pages
-for k in list(st.session_state.keys()):
-    if k.startswith(("cc_", "compact_", "filter_", "f_")):
-        del st.session_state[k]
+# Page guard - clear all session state when switching pages
+from utils.page_guard import enforce_page
+enforce_page("quotation")
 
 from config import JOB_TYPES, DEFAULT_TERMS
 from database.connection import init_database

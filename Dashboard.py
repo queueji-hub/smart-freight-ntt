@@ -14,11 +14,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Clear stale state from other pages
-for k in list(st.session_state.keys()):
-    if k.startswith(("ship_", "create_", "edit_", "all_", "search_qno",
-                     "filter_type", "filter_status", "filter_carrier")):
-        del st.session_state[k]
+# Page guard - clear all session state when switching pages
+from utils.page_guard import enforce_page
+enforce_page("dashboard")
 
 from config import JOB_TYPES
 from database.connection import init_database
