@@ -1,40 +1,49 @@
-"""Shared navigation helper — mobile responsive CSS only."""
+"""Shared navigation helper — sidebar always visible + mobile responsive."""
 import streamlit as st
 
 
 def setup_sidebar():
-    """Inject CSS for mobile responsiveness and clean UI.
+    """Inject CSS so the sidebar is always visible with a working toggle button.
     Call at the top of every page."""
     st.markdown("""
     <style>
     /* =========================================
-       1. KEEP SIDEBAR TOGGLE BUTTON VISIBLE
+       1. KEEP HEADER (with toggle button) VISIBLE
        ========================================= */
-    /* Hide the deploy/share button only, keep header for sidebar toggle */
     div[data-testid="stManageAppButton"] { display: none !important; }
     #MainMenu { visibility: hidden !important; }
 
-    /* Make header transparent but keep it functional for sidebar toggle */
     header[data-testid="stHeader"] {
-        background: transparent !important;
-        height: auto !important;
-        z-index: 999 !important;
+        background: rgba(14,16,21,0.6) !important;
+        backdrop-filter: blur(8px);
+        height: 2.5rem !important;
+        z-index: 999999 !important;
+        display: block !important;
+        visibility: visible !important;
     }
 
-    /* Ensure the sidebar collapse/expand button is always visible */
+    /* Sidebar toggle button — always visible, top-left */
     [data-testid="stSidebarCollapseButton"],
-    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapsedControl"],
     button[kind="header"],
-    [data-testid="stSidebarCollapsedControl"] {
+    [data-testid="collapsedControl"] {
         display: flex !important;
         visibility: visible !important;
         opacity: 1 !important;
-        z-index: 9999 !important;
+        z-index: 9999999 !important;
+        position: fixed !important;
+        top: 0.5rem !important;
+        left: 0.5rem !important;
     }
 
     /* =========================================
-       2. SIDEBAR — ensure all nav items visible when open
+       2. SIDEBAR — visible by default
        ========================================= */
+    section[data-testid="stSidebar"] {
+        display: block !important;
+        visibility: visible !important;
+        min-width: 14rem !important;
+    }
     [data-testid="stSidebarNav"] {
         display: block !important;
         visibility: visible !important;
@@ -61,7 +70,7 @@ def setup_sidebar():
         .block-container {
             padding-left: 0.75rem !important;
             padding-right: 0.75rem !important;
-            padding-top: 0.5rem !important;
+            padding-top: 2.5rem !important;
         }
         [data-testid="stHorizontalBlock"] {
             flex-direction: column !important;

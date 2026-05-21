@@ -11,6 +11,7 @@ st.set_page_config(
     page_title="Smart Freight NTT",
     page_icon="🚢",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 # Clear stale state from other pages

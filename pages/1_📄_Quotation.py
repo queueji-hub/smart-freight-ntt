@@ -4,7 +4,8 @@ from datetime import date, timedelta
 import pandas as pd
 
 st.set_page_config(page_title="Quotation - Smart Freight NTT",
-                   page_icon="📄", layout="wide")
+                   page_icon="📄", layout="wide",
+                   initial_sidebar_state="expanded")
 
 # Clear stale state from other pages
 for k in list(st.session_state.keys()):
