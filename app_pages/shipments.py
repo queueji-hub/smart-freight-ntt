@@ -17,6 +17,21 @@ from utils.nav import setup_sidebar
 init_database()
 setup_sidebar()
 
+def reset_state_if_page_changed(current_page_name):
+    # ตรวจสอบว่าถ้าหน้าปัจจุบันเปลี่ยนไปจากหน้าก่อนหน้า ให้ล้าง session_state
+    if "last_page" not in st.session_state:
+        st.session_state.last_page = current_page_name
+    
+    if st.session_state.last_page != current_page_name:
+        # รายการ key ที่คุณต้องการล้างเมื่อเปลี่ยนหน้า
+        keys_to_clear = ["cc_filter", "cc_search"] 
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+        
+        st.session_state.last_page = current_page_name
+        st.rerun() # สั่งให้รันใหม่เพื่อเคลียร์หน้าจอ
+        
 st.title("📦 Shipment Job Control")
 st.caption("ใบคุมงาน - บันทึกและติดตามสถานะ shipment ทุกประเภทงาน")
 
