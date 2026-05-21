@@ -1,9 +1,10 @@
-"""Smart Freight NTT - Single-page entry with query-param navigation.
+"""Smart Freight NTT - Single-page entry with hard page isolation.
 
-Single-file approach guarantees that switching pages renders ONLY
-the selected page's content. No leakage between pages possible.
+Each page render is wrapped in st.empty() container that gets cleared
+before rendering, guaranteeing no DOM leakage between pages.
 """
 import streamlit as st
+import sys
 
 st.set_page_config(
     page_title="Smart Freight NTT",
@@ -26,7 +27,7 @@ def _init_db():
 _init_db()
 
 
-# ===== Determine current page from query param OR session state =====
+# ===== Pages config =====
 PAGES = ["dashboard", "quotation", "shipments"]
 PAGE_LABELS = {
     "dashboard": "📊 Dashboard",
@@ -34,10 +35,9 @@ PAGE_LABELS = {
     "shipments": "📦 Shipments",
 }
 
-# Read from query params (handles both old and new Streamlit APIs)
+
 def _get_query_page():
     try:
-        # New API (Streamlit >= 1.30)
         qp = st.query_params
         val = qp.get("page", None)
         if isinstance(val, list):
@@ -45,7 +45,6 @@ def _get_query_page():
         return val
     except Exception:
         try:
-            # Legacy API
             qp = st.experimental_get_query_params()
             val = qp.get("page", [None])
             return val[0] if val else None
@@ -63,7 +62,7 @@ def _set_query_page(page_id):
             pass
 
 
-# Priority: session_state (button click) > query param > default
+# Determine current page
 url_page = _get_query_page()
 session_page = st.session_state.get("_active_page", None)
 
@@ -74,13 +73,12 @@ elif url_page in PAGES:
 else:
     current_page = "dashboard"
 
-# Sync state and URL
 st.session_state["_active_page"] = current_page
 if url_page != current_page:
     _set_query_page(current_page)
 
 
-# ===== Sidebar navigation (custom buttons) =====
+# ===== Sidebar (custom buttons) =====
 setup_sidebar()
 
 with st.sidebar:
@@ -94,7 +92,7 @@ with st.sidebar:
             use_container_width=True,
             type="primary" if is_active else "secondary",
         ):
-            # Clear ALL session state except active page tracker
+            # Clear session state
             keys_to_keep = {"_active_page"}
             for k in list(st.session_state.keys()):
                 if k not in keys_to_keep:
@@ -102,21 +100,30 @@ with st.sidebar:
                         del st.session_state[k]
                     except KeyError:
                         pass
+            # Drop view modules from sys.modules to force fresh import
+            for mod_name in list(sys.modules.keys()):
+                if mod_name.startswith("views."):
+                    try:
+                        del sys.modules[mod_name]
+                    except KeyError:
+                        pass
             st.session_state["_active_page"] = page_id
             _set_query_page(page_id)
             st.rerun()
 
 
-# ===== Render ONLY the selected page =====
-# This is a hard switch — no other page's code is executed
-if current_page == "dashboard":
-    from views import dashboard_view
-    dashboard_view.render()
-elif current_page == "quotation":
-    from views import quotation_view
-    quotation_view.render()
-elif current_page == "shipments":
-    from views import shipments_view
-    shipments_view.render()
-else:
-    st.error(f"Unknown page: {current_page}")
+# ===== Render selected page inside an isolated container =====
+page_container = st.empty()
+
+with page_container.container():
+    if current_page == "dashboard":
+        from views import dashboard_view
+        dashboard_view.render()
+    elif current_page == "quotation":
+        from views import quotation_view
+        quotation_view.render()
+    elif current_page == "shipments":
+        from views import shipments_view
+        shipments_view.render()
+    else:
+        st.error(f"Unknown page: {current_page}")
