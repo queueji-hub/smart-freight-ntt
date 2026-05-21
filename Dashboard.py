@@ -1,10 +1,9 @@
-"""Smart Freight NTT - Single-page entry with hard page isolation.
+"""Smart Freight NTT - Single-page entry with HARD page reload navigation.
 
-Each page render is wrapped in st.empty() container that gets cleared
-before rendering, guaranteeing no DOM leakage between pages.
+Uses HTML anchor links that trigger full browser reload to guarantee
+no DOM leakage between pages on Streamlit Cloud.
 """
 import streamlit as st
-import sys
 
 st.set_page_config(
     page_title="Smart Freight NTT",
@@ -52,86 +51,50 @@ def _get_query_page():
             return None
 
 
-def _set_query_page(page_id):
-    try:
-        st.query_params["page"] = page_id
-    except Exception:
-        try:
-            st.experimental_set_query_params(page=page_id)
-        except Exception:
-            pass
-
-
-# Determine current page
+# Determine current page from URL query param ONLY
 url_page = _get_query_page()
-session_page = st.session_state.get("_active_page", None)
-
-if session_page in PAGES:
-    current_page = session_page
-elif url_page in PAGES:
-    current_page = url_page
-else:
-    current_page = "dashboard"
-
-st.session_state["_active_page"] = current_page
-if url_page != current_page:
-    _set_query_page(current_page)
+current_page = url_page if url_page in PAGES else "dashboard"
 
 
-# ===== Sidebar (custom buttons) =====
+# ===== Sidebar with HTML <a href> links (full page reload on click) =====
 setup_sidebar()
 
 with st.sidebar:
     st.markdown("### 🚢 Smart Freight NTT")
     st.markdown("---")
+    
+    # Build HTML links - each click triggers full browser reload
+    nav_html = '<style>'
+    nav_html += '.nav-link { display:block; padding:0.5rem 1rem; margin:0.25rem 0; '
+    nav_html += 'border-radius:0.5rem; text-decoration:none; color:#FAFAFA; '
+    nav_html += 'background:#262730; border:1px solid #464853; text-align:left; '
+    nav_html += 'font-size:0.95rem; transition:all 0.15s; }'
+    nav_html += '.nav-link:hover { background:#3a3d4a; border-color:#5e6ad2; }'
+    nav_html += '.nav-link.active { background:#FF4B4B; border-color:#FF4B4B; '
+    nav_html += 'color:white; font-weight:600; }'
+    nav_html += '</style>'
+    
     for page_id in PAGES:
         is_active = page_id == current_page
-        if st.button(
-            PAGE_LABELS[page_id],
-            key=f"nav_{page_id}",
-            use_container_width=True,
-            type="primary" if is_active else "secondary",
-        ):
-            # Clear session state
-            keys_to_keep = {"_active_page"}
-            for k in list(st.session_state.keys()):
-                if k not in keys_to_keep:
-                    try:
-                        del st.session_state[k]
-                    except KeyError:
-                        pass
-            # Drop view modules from sys.modules to force fresh import
-            for mod_name in list(sys.modules.keys()):
-                if mod_name.startswith("views."):
-                    try:
-                        del sys.modules[mod_name]
-                    except KeyError:
-                        pass
-            st.session_state["_active_page"] = page_id
-            _set_query_page(page_id)
-            st.rerun()
-
-
-# ===== Render selected page inside an isolated container =====
-# Use a unique key per page to force Streamlit to recreate the DOM tree
-# when switching pages, preventing widget/element bleed-through
-page_container = st.empty()
-
-with page_container.container():
-    # DEBUG: Show clearly which page is rendering (for troubleshooting Streamlit Cloud cache)
-    st.caption(f"🔧 v4.0-keyed · current_page = `{current_page}`")
+        cls = "nav-link active" if is_active else "nav-link"
+        # target="_self" forces same-tab full reload
+        nav_html += f'<a href="?page={page_id}" target="_self" class="{cls}">'
+        nav_html += f'{PAGE_LABELS[page_id]}</a>'
     
-    # Wrap render in a uniquely-keyed container per page
-    render_slot = st.container(key=f"page_slot_{current_page}")
-    with render_slot:
-        if current_page == "dashboard":
-            from views import dashboard_view
-            dashboard_view.render()
-        elif current_page == "quotation":
-            from views import quotation_view
-            quotation_view.render()
-        elif current_page == "shipments":
-            from views import shipments_view
-            shipments_view.render()
-        else:
-            st.error(f"Unknown page: {current_page}")
+    st.markdown(nav_html, unsafe_allow_html=True)
+
+
+# ===== Render selected page =====
+st.caption(f"🔧 v5.0-htmllinks · current_page = `{current_page}`")
+
+if current_page == "dashboard":
+    from views import dashboard_view
+    dashboard_view.render()
+elif current_page == "quotation":
+    from views import quotation_view
+    quotation_view.render()
+elif current_page == "shipments":
+    from views import shipments_view
+    shipments_view.render()
+else:
+    st.error(f"Unknown page: {current_page}")
