@@ -1,4 +1,7 @@
-"""Streamlit page: Shipment Job Control Sheet."""
+"""Streamlit page: Shipment Job Control ONLY.
+
+This file MUST NOT contain any Quotation or Dashboard forms.
+"""
 import streamlit as st
 from datetime import date
 import pandas as pd
@@ -12,8 +15,8 @@ from managers.shipment_manager import (
 from utils.nav import setup_sidebar
 
 init_database()
-
 setup_sidebar()
+
 st.title("📦 Shipment Job Control")
 st.caption("ใบคุมงาน - บันทึกและติดตามสถานะ shipment ทุกประเภทงาน")
 

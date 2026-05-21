@@ -1,7 +1,4 @@
-"""Streamlit page: Quotation Management ONLY - create, edit, copy, download PDFs.
-
-This file MUST NOT contain any Shipment or Dashboard forms.
-"""
+"""Streamlit page: create, edit, copy, and download quotation PDFs."""
 import streamlit as st
 from datetime import date, timedelta
 import pandas as pd
@@ -19,10 +16,9 @@ from pdf.quotation_pdf import generate_quotation_pdf
 from utils.nav import setup_sidebar
 
 init_database()
-setup_sidebar()
 
+setup_sidebar()
 st.title("📄 Quotation Management")
-st.caption("จัดการใบเสนอราคา - สร้าง แก้ไข คัดลอก และดาวน์โหลด PDF")
 
 tab_create, tab_all = st.tabs(["➕ Create New", "📋 All Quotations"])
 
