@@ -9,20 +9,20 @@ st.set_page_config(
 
 # ===== Define all pages with explicit URL paths =====
 dashboard_page = st.Page(
-    "pages_src/dashboard.py",
+    "app_pages/dashboard.py",
     title="Dashboard",
     icon=":material/dashboard:",
     url_path="dashboard",
     default=True,
 )
 quotation_page = st.Page(
-    "pages_src/quotation.py",
+    "app_pages/quotation.py",
     title="Quotation",
     icon=":material/description:",
     url_path="quotation",
 )
 shipments_page = st.Page(
-    "pages_src/shipments.py",
+    "app_pages/shipments.py",
     title="Shipments",
     icon=":material/inventory_2:",
     url_path="shipments",
