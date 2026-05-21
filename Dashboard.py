@@ -1,7 +1,7 @@
 """Smart Freight NTT - Single-page entry with query-param navigation.
 
-This single-file approach guarantees that switching pages renders ONLY
-the selected page's content. No leakage from other pages possible.
+Single-file approach guarantees that switching pages renders ONLY
+the selected page's content. No leakage between pages possible.
 """
 import streamlit as st
 
@@ -26,53 +26,89 @@ def _init_db():
 _init_db()
 
 
-# ===== Determine current page from query param =====
-PAGES = {
-    "dashboard": ("📊 Dashboard", "dashboard_view"),
-    "quotation": ("📄 Quotation", "quotation_view"),
-    "shipments": ("📦 Shipments", "shipments_view"),
+# ===== Determine current page from query param OR session state =====
+PAGES = ["dashboard", "quotation", "shipments"]
+PAGE_LABELS = {
+    "dashboard": "📊 Dashboard",
+    "quotation": "📄 Quotation",
+    "shipments": "📦 Shipments",
 }
 
-# Read page from URL query param, default to "dashboard"
-qp = st.query_params
-current_page = qp.get("page", "dashboard")
-if current_page not in PAGES:
+# Read from query params (handles both old and new Streamlit APIs)
+def _get_query_page():
+    try:
+        # New API (Streamlit >= 1.30)
+        qp = st.query_params
+        val = qp.get("page", None)
+        if isinstance(val, list):
+            val = val[0] if val else None
+        return val
+    except Exception:
+        try:
+            # Legacy API
+            qp = st.experimental_get_query_params()
+            val = qp.get("page", [None])
+            return val[0] if val else None
+        except Exception:
+            return None
+
+
+def _set_query_page(page_id):
+    try:
+        st.query_params["page"] = page_id
+    except Exception:
+        try:
+            st.experimental_set_query_params(page=page_id)
+        except Exception:
+            pass
+
+
+# Priority: session_state (button click) > query param > default
+url_page = _get_query_page()
+session_page = st.session_state.get("_active_page", None)
+
+if session_page in PAGES:
+    current_page = session_page
+elif url_page in PAGES:
+    current_page = url_page
+else:
     current_page = "dashboard"
 
-# ===== Detect page change and clear stale state =====
-last_page = st.session_state.get("_active_page")
-if last_page != current_page:
-    # Wipe all session state when switching pages
-    for k in list(st.session_state.keys()):
-        if k != "_active_page":
-            try:
-                del st.session_state[k]
-            except KeyError:
-                pass
-    st.session_state["_active_page"] = current_page
+# Sync state and URL
+st.session_state["_active_page"] = current_page
+if url_page != current_page:
+    _set_query_page(current_page)
 
-# ===== Sidebar navigation (custom, replaces Streamlit's default) =====
+
+# ===== Sidebar navigation (custom buttons) =====
 setup_sidebar()
 
 with st.sidebar:
     st.markdown("### 🚢 Smart Freight NTT")
     st.markdown("---")
-    for page_id, (label, _) in PAGES.items():
+    for page_id in PAGES:
         is_active = page_id == current_page
-        # Use button styled as nav link
         if st.button(
-            label,
+            PAGE_LABELS[page_id],
             key=f"nav_{page_id}",
             use_container_width=True,
             type="primary" if is_active else "secondary",
         ):
-            st.query_params["page"] = page_id
+            # Clear ALL session state except active page tracker
+            keys_to_keep = {"_active_page"}
+            for k in list(st.session_state.keys()):
+                if k not in keys_to_keep:
+                    try:
+                        del st.session_state[k]
+                    except KeyError:
+                        pass
+            st.session_state["_active_page"] = page_id
+            _set_query_page(page_id)
             st.rerun()
 
 
-# ===== Render the selected page =====
-_, module_name = PAGES[current_page]
-
+# ===== Render ONLY the selected page =====
+# This is a hard switch — no other page's code is executed
 if current_page == "dashboard":
     from views import dashboard_view
     dashboard_view.render()
@@ -82,3 +118,5 @@ elif current_page == "quotation":
 elif current_page == "shipments":
     from views import shipments_view
     shipments_view.render()
+else:
+    st.error(f"Unknown page: {current_page}")
