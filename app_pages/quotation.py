@@ -1,31 +1,61 @@
-"""Streamlit page: create, edit, copy, and download quotation PDFs."""
+"""Streamlit page: create, edit, copy, and download quotation PDFs.
+
+This page MUST be importable even if optional dependencies (reportlab, etc.) fail.
+"""
 import streamlit as st
 from datetime import date, timedelta
 import pandas as pd
 
-from config import JOB_TYPES, DEFAULT_TERMS
-from database.connection import init_database
-from managers.quotation_manager import (
-    create_quotation, get_quotation_by_no, list_quotations,
-    update_quotation, duplicate_quotation,
-)
-from managers.customer_manager import (
-    search_customers, get_customer_by_name, list_customers,
-)
-from pdf.quotation_pdf import generate_quotation_pdf
-from utils.nav import setup_sidebar
+# Critical imports - if these fail, show error but don't crash page registration
+_IMPORT_ERROR = None
+try:
+    from config import JOB_TYPES, DEFAULT_TERMS
+    from database.connection import init_database
+    from managers.quotation_manager import (
+        create_quotation, get_quotation_by_no, list_quotations,
+        update_quotation, duplicate_quotation,
+    )
+    from managers.customer_manager import (
+        search_customers, get_customer_by_name, list_customers,
+    )
+    from utils.nav import setup_sidebar
+except Exception as _e:
+    _IMPORT_ERROR = f"Import error: {_e}"
 
-init_database()
+# PDF generator is optional - if reportlab fails, disable PDF features
+_PDF_AVAILABLE = True
+_PDF_ERROR = None
+try:
+    from pdf.quotation_pdf import generate_quotation_pdf
+except Exception as _e:
+    _PDF_AVAILABLE = False
+    _PDF_ERROR = str(_e)
+    def generate_quotation_pdf(*args, **kwargs):
+        raise RuntimeError(f"PDF generation not available: {_PDF_ERROR}")
+
+
+# Show critical errors but still render the page
+if _IMPORT_ERROR:
+    st.error(f"⚠️ {_IMPORT_ERROR}")
+    st.stop()
+
+# Initialize DB and sidebar
+try:
+    init_database()
+except Exception as e:
+    st.warning(f"Database init: {e}")
 
 setup_sidebar()
 st.title("📄 Quotation Management")
+
+if not _PDF_AVAILABLE:
+    st.warning(f"📄 PDF generation disabled: {_PDF_ERROR}")
 
 tab_create, tab_all = st.tabs(["➕ Create New", "📋 All Quotations"])
 
 
 def _customer_autocomplete(prefix, default_value=""):
-    """Customer name input with autocomplete dropdown.
-    Returns the selected/typed customer name."""
+    """Customer name input with autocomplete dropdown."""
     typed = st.text_input(
         "Customer * (พิมพ์เพื่อค้นหา)",
         value=default_value,
@@ -33,9 +63,11 @@ def _customer_autocomplete(prefix, default_value=""):
         help="พิมพ์ชื่อบางส่วน เช่น 'Sun' จะแสดงรายชื่อลูกค้าที่เคยใช้",
     )
     
-    # Show matching customers as a selectbox if typing
     if typed and typed.strip() and len(typed.strip()) >= 2:
-        matches = search_customers(typed)
+        try:
+            matches = search_customers(typed)
+        except Exception:
+            matches = []
         if matches:
             options = [""] + [m["company_name"] for m in matches]
             picked = st.selectbox(
@@ -44,7 +76,6 @@ def _customer_autocomplete(prefix, default_value=""):
                 key=f"{prefix}_cust_pick",
             )
             if picked:
-                # Store picked in session_state and rerun to populate fields
                 st.session_state[f"{prefix}_picked_customer"] = picked
                 cust = get_customer_by_name(picked)
                 if cust:
@@ -56,7 +87,7 @@ def _customer_autocomplete(prefix, default_value=""):
 
 
 def _quotation_form(prefix, defaults=None):
-    """Reusable quotation form. Returns (data_dict, items_list)."""
+    """Reusable quotation form."""
     d = defaults or {}
     
     col1, col2 = st.columns(2)
@@ -69,7 +100,6 @@ def _quotation_form(prefix, defaults=None):
             key=f"{prefix}_job_type",
         )
         
-        # Customer with autocomplete
         cust_default = st.session_state.get(
             f"{prefix}_picked_customer", d.get("customer_name", "")
         )
@@ -84,7 +114,6 @@ def _quotation_form(prefix, defaults=None):
         pod = st.text_input("POD",
             value=d.get("pod", ""), key=f"{prefix}_pod")
         
-        # Attention auto-filled from picked customer
         attn_default = st.session_state.get(
             f"{prefix}_picked_attention", d.get("attention", "")
         )
@@ -151,7 +180,7 @@ def _quotation_form(prefix, defaults=None):
 
 
 def _items_editor(prefix, d):
-    """Items editor with row controls (up/down/insert above/below/delete)."""
+    """Items editor with row controls."""
     st.markdown("---")
     st.subheader("Quotation Items")
     st.caption("⬆/⬇ เลื่อน · ⤴ แทรกข้างบน · ⤵ แทรกข้างล่าง · 🗑 ลบ")
@@ -175,7 +204,6 @@ def _items_editor(prefix, d):
     
     items = st.session_state[items_key]
     
-    # Header row
     h = st.columns([3, 0.8, 1, 0.8, 2, 0.4, 0.4, 0.4, 0.4, 0.4])
     h[0].markdown("**Description**")
     h[1].markdown("<div style='text-align:center'><b>CURR</b></div>",
@@ -261,7 +289,6 @@ def _extract_valid_items(items_df):
 
 
 def _clear_form_state(prefix):
-    """Clear all session_state keys for a given form prefix."""
     keys_to_clear = [k for k in st.session_state.keys() if k.startswith(f"{prefix}_")]
     for k in keys_to_clear:
         del st.session_state[k]
@@ -288,21 +315,21 @@ with tab_create:
         else:
             try:
                 qno = create_quotation(form_data, valid_items)
-                saved = get_quotation_by_no(qno)
-                pdf_path = generate_quotation_pdf(saved, saved["items"])
                 st.success(f"✅ Quotation **{qno}** created!")
-                with open(pdf_path, "rb") as f:
-                    st.download_button(f"📥 Download {qno}.pdf", f.read(),
-                        f"{qno}.pdf", "application/pdf", type="primary")
+                if _PDF_AVAILABLE:
+                    saved = get_quotation_by_no(qno)
+                    pdf_path = generate_quotation_pdf(saved, saved["items"])
+                    with open(pdf_path, "rb") as f:
+                        st.download_button(f"📥 Download {qno}.pdf", f.read(),
+                            f"{qno}.pdf", "application/pdf", type="primary")
             except Exception as ex:
                 st.error(f"Failed: {ex}")
 
 
-# =================== ALL QUOTATIONS TAB (with Edit/Copy) ===================
+# =================== ALL QUOTATIONS TAB ===================
 with tab_all:
     st.subheader("📋 All Quotations")
     
-    # Search bar at top
     search_col1, search_col2 = st.columns([2, 3])
     with search_col1:
         search_qno = st.text_input(
@@ -318,7 +345,6 @@ with tab_all:
     rows = list_quotations(
         job_type=None if filter_type == "All" else filter_type)
     
-    # Apply search filter
     if search_qno and search_qno.strip():
         q = search_qno.strip().lower()
         rows = [r for r in rows if q in r["quotation_no"].lower()]
@@ -335,7 +361,6 @@ with tab_all:
         
         st.markdown("---")
         
-        # Selection + Action buttons
         sel_col, act_col1, act_col2, act_col3 = st.columns([3, 1, 1, 1])
         with sel_col:
             sel_qno = st.selectbox(
@@ -343,7 +368,7 @@ with tab_all:
                 df["quotation_no"].tolist(), key="all_sel")
         with act_col1:
             st.write(""); st.write("")
-            view_btn = st.button("📥 PDF", use_container_width=True)
+            view_btn = st.button("📥 PDF", use_container_width=True, disabled=not _PDF_AVAILABLE)
         with act_col2:
             st.write(""); st.write("")
             edit_btn = st.button("✏️ Edit", use_container_width=True)
@@ -351,7 +376,7 @@ with tab_all:
             st.write(""); st.write("")
             copy_btn = st.button("📑 Copy", use_container_width=True)
         
-        if view_btn:
+        if view_btn and _PDF_AVAILABLE:
             saved = get_quotation_by_no(sel_qno)
             if saved:
                 pdf_path = generate_quotation_pdf(saved, saved["items"])
@@ -373,7 +398,6 @@ with tab_all:
             else:
                 st.error("Duplication failed")
         
-        # ===== EDIT FORM (inline) =====
         if st.session_state.get("edit_loaded"):
             loaded = get_quotation_by_no(st.session_state["edit_loaded"])
             if loaded:
@@ -385,7 +409,6 @@ with tab_all:
                     del st.session_state["edit_loaded"]
                     st.rerun()
                 
-                # Editable Quotation No.
                 new_qno = st.text_input(
                     "Quotation No. (แก้ไขเลขที่ได้)",
                     value=loaded["quotation_no"], key="edit_new_qno")
@@ -409,12 +432,13 @@ with tab_all:
                             final_no = new_qno.strip()
                             st.session_state["edit_loaded"] = final_no
                             st.success(f"✅ Updated {final_no}")
-                            saved = get_quotation_by_no(final_no)
-                            pdf_path = generate_quotation_pdf(saved, saved["items"])
-                            with open(pdf_path, "rb") as f:
-                                st.download_button(
-                                    f"📥 Download updated PDF", f.read(),
-                                    f"{final_no}.pdf", "application/pdf",
-                                    type="primary")
+                            if _PDF_AVAILABLE:
+                                saved = get_quotation_by_no(final_no)
+                                pdf_path = generate_quotation_pdf(saved, saved["items"])
+                                with open(pdf_path, "rb") as f:
+                                    st.download_button(
+                                        f"📥 Download updated PDF", f.read(),
+                                        f"{final_no}.pdf", "application/pdf",
+                                        type="primary")
                         else:
                             st.error("Update failed")
