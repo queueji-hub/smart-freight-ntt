@@ -1,8 +1,4 @@
-"""Smart Freight NTT - Single-page entry with HARD page reload navigation.
-
-Uses HTML anchor links that trigger full browser reload to guarantee
-no DOM leakage between pages on Streamlit Cloud.
-"""
+"""Smart Freight NTT - Single-page entry with HARD page reload navigation."""
 import streamlit as st
 
 st.set_page_config(
@@ -63,21 +59,41 @@ with st.sidebar:
     st.markdown("### 🚢 Smart Freight NTT")
     st.markdown("---")
     
-    # Build HTML links - each click triggers full browser reload
-    nav_html = '<style>'
-    nav_html += '.nav-link { display:block; padding:0.5rem 1rem; margin:0.25rem 0; '
-    nav_html += 'border-radius:0.5rem; text-decoration:none; color:#FAFAFA; '
-    nav_html += 'background:#262730; border:1px solid #464853; text-align:left; '
-    nav_html += 'font-size:0.95rem; transition:all 0.15s; }'
-    nav_html += '.nav-link:hover { background:#3a3d4a; border-color:#5e6ad2; }'
-    nav_html += '.nav-link.active { background:#FF4B4B; border-color:#FF4B4B; '
-    nav_html += 'color:white; font-weight:600; }'
-    nav_html += '</style>'
+    nav_html = """
+    <style>
+    .nav-link {
+        display: block;
+        padding: 0.55rem 1rem;
+        margin: 0.3rem 0;
+        border-radius: 0.5rem;
+        text-decoration: none !important;
+        color: #FAFAFA !important;
+        background: #262730;
+        border: 1px solid #464853;
+        text-align: left;
+        font-size: 0.95rem;
+        transition: all 0.15s ease;
+    }
+    .nav-link:hover {
+        background: #3a3d4a;
+        border-color: #5e6ad2;
+        text-decoration: none !important;
+    }
+    .nav-link.active {
+        background: #FF4B4B;
+        border-color: #FF4B4B;
+        color: white !important;
+        font-weight: 600;
+    }
+    .nav-link:visited, .nav-link:focus, .nav-link:active {
+        text-decoration: none !important;
+    }
+    </style>
+    """
     
     for page_id in PAGES:
         is_active = page_id == current_page
         cls = "nav-link active" if is_active else "nav-link"
-        # target="_self" forces same-tab full reload
         nav_html += f'<a href="?page={page_id}" target="_self" class="{cls}">'
         nav_html += f'{PAGE_LABELS[page_id]}</a>'
     
@@ -85,8 +101,6 @@ with st.sidebar:
 
 
 # ===== Render selected page =====
-st.caption(f"🔧 v5.0-htmllinks · current_page = `{current_page}`")
-
 if current_page == "dashboard":
     from views import dashboard_view
     dashboard_view.render()
