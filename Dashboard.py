@@ -113,20 +113,25 @@ with st.sidebar:
 
 
 # ===== Render selected page inside an isolated container =====
+# Use a unique key per page to force Streamlit to recreate the DOM tree
+# when switching pages, preventing widget/element bleed-through
 page_container = st.empty()
 
 with page_container.container():
     # DEBUG: Show clearly which page is rendering (for troubleshooting Streamlit Cloud cache)
-    st.caption(f"🔧 v3.0-isolated · current_page = `{current_page}`")
+    st.caption(f"🔧 v4.0-keyed · current_page = `{current_page}`")
     
-    if current_page == "dashboard":
-        from views import dashboard_view
-        dashboard_view.render()
-    elif current_page == "quotation":
-        from views import quotation_view
-        quotation_view.render()
-    elif current_page == "shipments":
-        from views import shipments_view
-        shipments_view.render()
-    else:
-        st.error(f"Unknown page: {current_page}")
+    # Wrap render in a uniquely-keyed container per page
+    render_slot = st.container(key=f"page_slot_{current_page}")
+    with render_slot:
+        if current_page == "dashboard":
+            from views import dashboard_view
+            dashboard_view.render()
+        elif current_page == "quotation":
+            from views import quotation_view
+            quotation_view.render()
+        elif current_page == "shipments":
+            from views import shipments_view
+            shipments_view.render()
+        else:
+            st.error(f"Unknown page: {current_page}")
