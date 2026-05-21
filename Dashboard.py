@@ -116,6 +116,9 @@ with st.sidebar:
 page_container = st.empty()
 
 with page_container.container():
+    # DEBUG: Show clearly which page is rendering (for troubleshooting Streamlit Cloud cache)
+    st.caption(f"🔧 v3.0-isolated · current_page = `{current_page}`")
+    
     if current_page == "dashboard":
         from views import dashboard_view
         dashboard_view.render()
