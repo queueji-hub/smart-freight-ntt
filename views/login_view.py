@@ -1,11 +1,11 @@
 """Login view."""
 import streamlit as st
 from managers.auth_manager import authenticate, ROLE_LABELS
+from managers.session_manager import create_session
 
 
 def render():
-    """Show login form. Sets st.session_state.user on success."""
-    # Center the login form
+    """Show login form. Sets st.session_state.user + URL token on success."""
     _, col, _ = st.columns([1, 2, 1])
     
     with col:
@@ -18,14 +18,27 @@ def render():
         
         with st.form("login_form", clear_on_submit=False):
             st.subheader("🔐 Sign In")
-            username = st.text_input("Username", placeholder="admin / sales / cs / operation / accounting")
-            password = st.text_input("Password", type="password", placeholder="Default: <username>123")
-            submit = st.form_submit_button("Login", type="primary", use_container_width=True)
+            username = st.text_input("Username",
+                placeholder="admin / sales / cs / operation / accounting")
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Login", type="primary",
+                                            use_container_width=True)
         
         if submit:
             user = authenticate(username, password)
             if user:
+                # Create persistent session token
+                token = create_session(user["id"])
                 st.session_state["user"] = user
+                st.session_state["session_token"] = token
+                # Store token in URL so it survives full reloads
+                try:
+                    st.query_params["token"] = token
+                except Exception:
+                    try:
+                        st.experimental_set_query_params(token=token)
+                    except Exception:
+                        pass
                 st.success(f"Welcome, {user['full_name']} ({ROLE_LABELS[user['role']]})!")
                 st.rerun()
             else:
