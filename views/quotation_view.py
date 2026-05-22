@@ -132,6 +132,7 @@ def _items_editor(prefix, d):
     st.markdown("---")
     st.subheader("Quotation Items")
     st.caption("⬆/⬇ เลื่อน · ⤴ แทรกข้างบน · ⤵ แทรกข้างล่าง · 🗑 ลบ")
+    
     items_key = f"{prefix}_items_list"
     if items_key not in st.session_state:
         if d.get("items"):
@@ -146,51 +147,122 @@ def _items_editor(prefix, d):
             st.session_state[items_key] = [
                 {"description": "", "currency": "USD", "price": 0.0,
                  "unit": "", "remark": ""}]
+    
+    # ===== CRITICAL: Sync widget values BACK to items list before any mutation =====
+    # Streamlit widgets store their state under their key. We need to read them
+    # and write back to items[i] before reorder/insert/delete operations.
     items = st.session_state[items_key]
-
+    n_items = len(items)
+    
+    def _sync_from_widgets():
+        """Read all widget keys back into items list."""
+        for idx in range(len(st.session_state.get(items_key, []))):
+            row = st.session_state[items_key][idx]
+            for field, suffix in [
+                ("description", "desc"), ("currency", "cur"),
+                ("price", "p"), ("unit", "u"), ("remark", "r"),
+            ]:
+                wkey = f"{prefix}_{suffix}_{idx}"
+                if wkey in st.session_state:
+                    row[field] = st.session_state[wkey]
+    
+    def _purge_item_widget_keys():
+        """Remove all widget state keys for items so widgets re-render fresh."""
+        for k in list(st.session_state.keys()):
+            for suffix in ("desc", "cur", "p", "u", "r",
+                           "up", "dn", "insup", "insdn", "del"):
+                if k.startswith(f"{prefix}_{suffix}_"):
+                    try:
+                        del st.session_state[k]
+                    except KeyError:
+                        pass
+                    break
+    
+    # Header row
     h = st.columns([3, 0.8, 1, 0.8, 2, 0.4, 0.4, 0.4, 0.4, 0.4])
     h[0].markdown("**Description**")
-    h[1].markdown("<div style='text-align:center'><b>CURR</b></div>", unsafe_allow_html=True)
-    h[2].markdown("<div style='text-align:center'><b>Price</b></div>", unsafe_allow_html=True)
-    h[3].markdown("<div style='text-align:center'><b>Unit</b></div>", unsafe_allow_html=True)
+    h[1].markdown("<div style='text-align:center'><b>CURR</b></div>",
+                  unsafe_allow_html=True)
+    h[2].markdown("<div style='text-align:center'><b>Price</b></div>",
+                  unsafe_allow_html=True)
+    h[3].markdown("<div style='text-align:center'><b>Unit</b></div>",
+                  unsafe_allow_html=True)
     h[4].markdown("**Remark**")
     h[5].markdown("**⬆**"); h[6].markdown("**⬇**"); h[7].markdown("**⤴**")
     h[8].markdown("**⤵**"); h[9].markdown("**🗑**")
 
-    for i in range(len(items)):
+    # Track which action was triggered (process AFTER all widgets render)
+    pending_action = None  # (action, index)
+    
+    for i in range(n_items):
         c = st.columns([3, 0.8, 1, 0.8, 2, 0.4, 0.4, 0.4, 0.4, 0.4])
-        items[i]["description"] = c[0].text_input("d",
-            value=items[i].get("description", ""),
+        c[0].text_input("d", value=items[i].get("description", ""),
             key=f"{prefix}_desc_{i}", label_visibility="collapsed")
-        items[i]["currency"] = c[1].selectbox("c",
-            ["USD","THB","CNY","EUR"],
+        c[1].selectbox("c", ["USD","THB","CNY","EUR"],
             index=["USD","THB","CNY","EUR"].index(items[i].get("currency","USD"))
                 if items[i].get("currency") in ["USD","THB","CNY","EUR"] else 0,
             key=f"{prefix}_cur_{i}", label_visibility="collapsed")
-        items[i]["price"] = c[2].number_input("p",
-            value=float(items[i].get("price",0)), min_value=0.0,
-            format="%.2f", key=f"{prefix}_p_{i}", label_visibility="collapsed")
-        items[i]["unit"] = c[3].text_input("u",
-            value=items[i].get("unit","") or "",
+        c[2].number_input("p", value=float(items[i].get("price", 0)),
+            min_value=0.0, format="%.2f",
+            key=f"{prefix}_p_{i}", label_visibility="collapsed")
+        c[3].text_input("u", value=items[i].get("unit", "") or "",
             key=f"{prefix}_u_{i}", label_visibility="collapsed")
-        items[i]["remark"] = c[4].text_input("r",
-            value=items[i].get("remark","") or "",
+        c[4].text_input("r", value=items[i].get("remark", "") or "",
             key=f"{prefix}_r_{i}", label_visibility="collapsed")
-        if c[5].button("⬆", key=f"{prefix}_up_{i}", disabled=(i==0)):
-            items[i-1], items[i] = items[i], items[i-1]; st.rerun()
-        if c[6].button("⬇", key=f"{prefix}_dn_{i}", disabled=(i==len(items)-1)):
-            items[i+1], items[i] = items[i], items[i+1]; st.rerun()
-        if c[7].button("⤴", key=f"{prefix}_insup_{i}"):
-            items.insert(i, {"description":"","currency":"USD","price":0.0,"unit":"","remark":""})
-            st.rerun()
-        if c[8].button("⤵", key=f"{prefix}_insdn_{i}"):
-            items.insert(i+1, {"description":"","currency":"USD","price":0.0,"unit":"","remark":""})
-            st.rerun()
-        if c[9].button("🗑", key=f"{prefix}_del_{i}", disabled=(len(items)<=1)):
-            items.pop(i); st.rerun()
+        
+        if c[5].button("⬆", key=f"{prefix}_up_{i}",
+                        disabled=(i == 0), help="เลื่อนขึ้น"):
+            pending_action = ("up", i)
+        if c[6].button("⬇", key=f"{prefix}_dn_{i}",
+                        disabled=(i == n_items - 1), help="เลื่อนลง"):
+            pending_action = ("dn", i)
+        if c[7].button("⤴", key=f"{prefix}_insup_{i}",
+                        help="แทรกข้างบน"):
+            pending_action = ("insup", i)
+        if c[8].button("⤵", key=f"{prefix}_insdn_{i}",
+                        help="แทรกข้างล่าง"):
+            pending_action = ("insdn", i)
+        if c[9].button("🗑", key=f"{prefix}_del_{i}",
+                        disabled=(n_items <= 1), help="ลบ"):
+            pending_action = ("del", i)
+    
+    # ===== Process action AFTER all widgets have rendered =====
+    if pending_action:
+        action, idx = pending_action
+        # First, sync any widget edits back to items list
+        _sync_from_widgets()
+        items = st.session_state[items_key]
+        
+        # Apply the mutation
+        empty_row = {"description": "", "currency": "USD",
+                     "price": 0.0, "unit": "", "remark": ""}
+        if action == "up" and idx > 0:
+            items[idx - 1], items[idx] = items[idx], items[idx - 1]
+        elif action == "dn" and idx < len(items) - 1:
+            items[idx + 1], items[idx] = items[idx], items[idx + 1]
+        elif action == "insup":
+            items.insert(idx, dict(empty_row))
+        elif action == "insdn":
+            items.insert(idx + 1, dict(empty_row))
+        elif action == "del" and len(items) > 1:
+            items.pop(idx)
+        
+        st.session_state[items_key] = items
+        # Purge ALL widget keys so next render uses fresh values from items list
+        _purge_item_widget_keys()
+        st.rerun()
+    
+    # Sync any free-text edits before returning
+    _sync_from_widgets()
+    items = st.session_state[items_key]
 
     if st.button("➕ Add Item at End", key=f"{prefix}_add_end"):
-        items.append({"description":"","currency":"USD","price":0.0,"unit":"","remark":""})
+        _sync_from_widgets()
+        st.session_state[items_key].append(
+            {"description": "", "currency": "USD",
+             "price": 0.0, "unit": "", "remark": ""}
+        )
+        _purge_item_widget_keys()
         st.rerun()
     return pd.DataFrame(items)
 
