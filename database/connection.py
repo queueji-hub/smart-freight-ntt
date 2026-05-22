@@ -279,11 +279,34 @@ def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    
+    # Auto-schedule push to GitHub when commits happen (Streamlit Cloud persistence)
+    try:
+        from managers.db_persistence import schedule_push
+        # Only schedule on commit (write operations)
+        original_commit = conn.commit
+        def _commit_with_push():
+            original_commit()
+            schedule_push()
+        conn.commit = _commit_with_push
+    except Exception:
+        pass
+    
     return conn
 
 
 def init_database() -> None:
-    """Create all tables + run migrations + seed default users."""
+    """Create all tables + run migrations + seed default users.
+    
+    On first call: pull latest DB from GitHub if configured.
+    """
+    # Pull from GitHub before any local DB operations
+    try:
+        from managers.db_persistence import pull_db_from_github
+        pull_db_from_github()
+    except Exception:
+        pass
+    
     with get_connection() as conn:
         # Create new tables (won't affect existing ones)
         conn.executescript(SCHEMA)

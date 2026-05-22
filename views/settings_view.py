@@ -17,8 +17,9 @@ def render():
     st.title("⚙️ Settings")
     st.caption("Email templates · SMTP config · Activity logs")
     
-    tab_t, tab_s, tab_l = st.tabs([
-        "📝 Email Templates", "📨 SMTP & Email Log", "🔍 Activity Log",
+    tab_t, tab_s, tab_l, tab_b = st.tabs([
+        "📝 Email Templates", "📨 SMTP & Email Log",
+        "🔍 Activity Log", "💾 Database Backup",
     ])
     
     # ==== TEMPLATES ====
@@ -113,3 +114,78 @@ From: {cfg.get('from_email')}
                           hide_index=True, height=400)
         else:
             st.info("No activity logged yet.")
+    
+    # ==== DATABASE BACKUP (Auto-persist to GitHub) ====
+    with tab_b:
+        from managers.db_persistence import (
+            get_backup_status, force_push, is_github_configured,
+        )
+        
+        status = get_backup_status()
+        
+        if status["configured"]:
+            st.success(f"✅ Auto-backup configured · Repo: `{status['repo']}`")
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.metric("Last Push", status["last_push_str"])
+            with c2:
+                st.metric("Initial Pull",
+                    "✅ Done" if status["initial_pull_done"] else "Pending")
+            
+            st.markdown("##### 🔄 Manual Backup")
+            st.markdown(
+                "ระบบจะ auto-backup ทุก 30 วินาทีหลังบันทึกข้อมูล "
+                "(หากต้องการ backup ทันที ให้กดปุ่มด้านล่าง)"
+            )
+            if st.button("💾 Backup Now (Push to GitHub)",
+                          type="primary", use_container_width=True):
+                with st.spinner("Pushing to GitHub..."):
+                    ok = force_push()
+                if ok:
+                    st.success("✅ Database pushed to GitHub")
+                    st.rerun()
+                else:
+                    st.error("❌ Push failed - check secrets config")
+        else:
+            st.warning("⚠️ Auto-backup NOT configured")
+            st.markdown("""
+            ### 📋 Setup Auto-backup ใน 4 ขั้นตอน
+            
+            **1. สร้าง GitHub Personal Access Token (PAT):**
+            
+            - ไปที่ https://github.com/settings/tokens
+            - คลิก **"Generate new token (classic)"**
+            - ตั้งชื่อ: `streamlit-db-backup`
+            - เลือก scope: ✅ **`repo`** (full control)
+            - กด **Generate token** → copy token (ขึ้นต้น `ghp_...`)
+            
+            **2. ใน Streamlit Cloud → app settings → Secrets → paste:**
+            
+            ```toml
+            [github]
+            token = "ghp_paste_your_token_here"
+            repo = "queueji-hub/smart-freight-ntt"
+            branch = "main"
+            author_name = "Smart Freight Bot"
+            author_email = "bot@nattayaraat.com"
+            db_path = "data/smart_freight.db"
+            ```
+            
+            **3. กด Save secrets**
+            
+            **4. Reboot app**
+            
+            หลังจากนั้น:
+            - 📥 ทุกครั้งที่เปิด app ระบบจะ pull DB ล่าสุดจาก GitHub
+            - 📤 ทุกครั้งที่บันทึกข้อมูลในระบบ ระบบจะ auto-push DB ขึ้น GitHub (debounce 30 วินาที)
+            - ✅ ข้อมูลจะคงอยู่แม้ Reboot/Redeploy
+            """)
+            
+            with st.expander("⚠️ ข้อจำกัดที่ควรทราบ"):
+                st.markdown("""
+                - **อย่าใช้ระบบพร้อมกันหลายคนบันทึกในเวลาเดียวกัน** อาจเกิด race condition
+                - การ push บ่อยๆ อาจถูก GitHub rate limit (ปกติไม่เกิน 5,000 ครั้ง/ชม.)
+                - DB file ควรไม่เกิน 100MB (limit ของ GitHub)
+                - ทุกการเปลี่ยนแปลงจะปรากฏใน GitHub commit history
+                """)
