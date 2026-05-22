@@ -37,9 +37,11 @@ PAGES = [
     ("booking", "📑 Booking", "booking"),
     ("shipments", "📦 Shipment", "shipment"),
     ("tracking", "📍 Tracking", "shipment"),
+    ("profit", "📊 Profit Sheet", "billing"),
     ("billing", "💰 Billing", "billing"),
     ("fx", "💱 FX Rates", "billing"),
     ("reports", "📈 Reports", "reports"),
+    ("users", "👤 Users", "users"),
     ("settings", "⚙️ Settings", "users"),
 ]
 
@@ -187,6 +189,9 @@ elif current_page == "shipments":
 elif current_page == "tracking":
     from views import tracking_view
     tracking_view.render()
+elif current_page == "profit":
+    from views import profit_view
+    profit_view.render()
 elif current_page == "billing":
     from views import billing_view
     billing_view.render()
@@ -196,6 +201,9 @@ elif current_page == "fx":
 elif current_page == "reports":
     from views import reports_view
     reports_view.render()
+elif current_page == "users":
+    from views import users_view
+    users_view.render()
 elif current_page == "settings":
     from views import settings_view
     settings_view.render()

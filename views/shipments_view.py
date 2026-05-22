@@ -335,6 +335,22 @@ def _edit_view(can_edit):
                                       use_container_width=True)
     
     if save:
+        # ===== STATUS WORKFLOW GUARDS =====
+        from managers.profit_manager import has_profit_sheet
+        
+        # Block "Closed" status if no profit sheet exists
+        if new_status == "Closed" and not has_profit_sheet(sel["id"]):
+            st.error("⚠️ Cannot set status to 'Closed' — "
+                     "Generate Profit Sheet first (go to 📊 Profit Sheet page)")
+            return
+        
+        # Block "Finished" → "Closed" by non-accounting roles
+        from managers.auth_manager import can_write
+        role = user.get("role", "") if (user := st.session_state.get("user", {})) else ""
+        if new_status == "Closed" and role not in ("admin", "accounting"):
+            st.error("⚠️ Only Accounting role can change status to 'Closed'")
+            return
+        
         update_shipment(sel["job_no"], {
             "status": new_status, "bl_no": new_bl_no,
             "container_no": new_container_no, "seal_no": new_seal_no,

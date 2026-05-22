@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS quotations (
     terms_conditions TEXT,
     prepared_by TEXT,
     status TEXT DEFAULT 'Draft',
+    cargo_type TEXT,
+    container_size TEXT,
+    estimated_cost REAL DEFAULT 0,
+    selling_price REAL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_quotations_customer ON quotations(customer_id);
@@ -240,6 +244,10 @@ MIGRATIONS = {
     },
     "quotations": {
         "status": "TEXT DEFAULT 'Draft'",
+        "cargo_type": "TEXT",
+        "container_size": "TEXT",
+        "estimated_cost": "REAL DEFAULT 0",
+        "selling_price": "REAL DEFAULT 0",
     },
     "shipments": {
         "shipper": "TEXT",
