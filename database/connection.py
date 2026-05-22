@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS quotations (
     subject TEXT,
     terms_conditions TEXT,
     prepared_by TEXT,
-    status TEXT DEFAULT 'Draft' CHECK(status IN ('Draft','Sent','Accepted','Rejected','Expired')),
+    status TEXT DEFAULT 'Draft',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_quotations_customer ON quotations(customer_id);
@@ -79,36 +79,26 @@ CREATE TABLE IF NOT EXISTS job_counters (
 CREATE TABLE IF NOT EXISTS bookings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     booking_no TEXT UNIQUE NOT NULL,
-    job_type TEXT NOT NULL CHECK(job_type IN ('SE','SI','AE','AI','TE','TI')),
+    job_type TEXT NOT NULL,
     customer_id INTEGER REFERENCES customers(id),
     customer_name TEXT,
     shipper TEXT,
     consignee TEXT,
     notify_party TEXT,
-    pol TEXT,
-    por TEXT,
-    pod TEXT,
+    pol TEXT, por TEXT, pod TEXT,
     final_destination TEXT,
     transhipment_port TEXT,
-    cy_date DATE,
-    cy_place TEXT,
-    cfs_date DATE,
-    cfs_place TEXT,
+    cy_date DATE, cy_place TEXT,
+    cfs_date DATE, cfs_place TEXT,
     customer_return_date DATE,
     return_place TEXT,
-    etd DATE,
-    eta DATE,
-    carrier TEXT,
-    m_vessel TEXT,
-    feeder TEXT,
-    liner TEXT,
+    etd DATE, eta DATE,
+    carrier TEXT, m_vessel TEXT, feeder TEXT, liner TEXT,
     closing_time TEXT,
-    cargo_type TEXT CHECK(cargo_type IN ('FCL','LCL','AIR','TRUCK','')),
-    commodity TEXT,
-    quantity TEXT,
-    remark TEXT,
+    cargo_type TEXT,
+    commodity TEXT, quantity TEXT, remark TEXT,
     quotation_id INTEGER REFERENCES quotations(id),
-    status TEXT DEFAULT 'Proceed' CHECK(status IN ('Proceed','Finished','Closed','Canceled')),
+    status TEXT DEFAULT 'Proceed',
     created_by TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -121,48 +111,24 @@ CREATE INDEX IF NOT EXISTS idx_bookings_customer ON bookings(customer_id);
 CREATE TABLE IF NOT EXISTS shipments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_no TEXT UNIQUE NOT NULL,
-    job_type TEXT NOT NULL CHECK(job_type IN ('SE','SI','AE','AI','TE','TI')),
-    booking_id INTEGER REFERENCES bookings(id),
-    booking_no TEXT,
-    customer_id INTEGER REFERENCES customers(id),
-    customer_name TEXT,
-    shipper TEXT,
-    consignee TEXT,
-    notify_party TEXT,
-    brand TEXT,
-    commodity TEXT,
-    combine_commodity TEXT,
-    cargo_type TEXT CHECK(cargo_type IN ('FCL','LCL','AIR','TRUCK','')),
-    full_or_half TEXT,
-    pick_up_date DATE,
-    stuffing_date DATE,
-    return_date DATE,
-    etd DATE,
-    eta DATE,
-    container_no TEXT,
-    seal_no TEXT,
-    container_size TEXT,
-    weight_origin TEXT,
-    weight_port TEXT,
-    carrier TEXT,
-    m_vessel TEXT,
-    feeder TEXT,
-    pol TEXT,
-    por TEXT,
-    pod TEXT,
-    final_destination TEXT,
-    transhipment_port TEXT,
-    bl_no TEXT,
-    bl_status TEXT,
-    closing_time TEXT,
+    job_type TEXT NOT NULL,
+    booking_id INTEGER, booking_no TEXT,
+    customer_id INTEGER, customer_name TEXT,
+    shipper TEXT, consignee TEXT, notify_party TEXT,
+    brand TEXT, commodity TEXT, combine_commodity TEXT,
+    cargo_type TEXT, full_or_half TEXT,
+    pick_up_date DATE, stuffing_date DATE, return_date DATE,
+    etd DATE, eta DATE,
+    container_no TEXT, seal_no TEXT, container_size TEXT,
+    weight_origin TEXT, weight_port TEXT,
+    carrier TEXT, m_vessel TEXT, feeder TEXT,
+    pol TEXT, por TEXT, pod TEXT,
+    final_destination TEXT, transhipment_port TEXT,
+    bl_no TEXT, bl_status TEXT, closing_time TEXT,
     overnight_trucking INTEGER DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'Proceed'
-        CHECK(status IN ('Proceed','Finished','Closed','Canceled')),
-    invoice_no TEXT,
-    customer_paid INTEGER DEFAULT 0,
-    dn_type TEXT,
-    dn_no TEXT,
-    remark TEXT,
+    status TEXT NOT NULL DEFAULT 'Proceed',
+    invoice_no TEXT, customer_paid INTEGER DEFAULT 0,
+    dn_type TEXT, dn_no TEXT, remark TEXT,
     created_by TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -171,7 +137,6 @@ CREATE INDEX IF NOT EXISTS idx_shipments_job_type ON shipments(job_type);
 CREATE INDEX IF NOT EXISTS idx_shipments_status ON shipments(status);
 CREATE INDEX IF NOT EXISTS idx_shipments_etd ON shipments(etd);
 CREATE INDEX IF NOT EXISTS idx_shipments_carrier ON shipments(carrier);
-CREATE INDEX IF NOT EXISTS idx_shipments_customer ON shipments(customer_id);
 
 
 -- ===== Shipment Milestones =====
@@ -184,18 +149,15 @@ CREATE TABLE IF NOT EXISTS shipment_milestones (
     note TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_milestones_shipment ON shipment_milestones(shipment_id);
 
 
 -- ===== Financial Documents =====
 CREATE TABLE IF NOT EXISTS invoices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     doc_no TEXT UNIQUE NOT NULL,
-    doc_type TEXT NOT NULL CHECK(doc_type IN ('INV','BN','CN','DN','SOA')),
-    shipment_id INTEGER REFERENCES shipments(id),
-    job_no TEXT,
-    customer_id INTEGER REFERENCES customers(id),
-    customer_name TEXT,
+    doc_type TEXT NOT NULL,
+    shipment_id INTEGER, job_no TEXT,
+    customer_id INTEGER, customer_name TEXT,
     issue_date DATE NOT NULL,
     due_date DATE,
     currency TEXT DEFAULT 'THB',
@@ -207,7 +169,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     total_amount REAL DEFAULT 0,
     paid_amount REAL DEFAULT 0,
     outstanding REAL DEFAULT 0,
-    payment_status TEXT DEFAULT 'Unpaid' CHECK(payment_status IN ('Unpaid','Partial','Paid','Cancelled')),
+    payment_status TEXT DEFAULT 'Unpaid',
     payment_date DATE,
     ref_doc_no TEXT,
     remark TEXT,
@@ -217,7 +179,6 @@ CREATE TABLE IF NOT EXISTS invoices (
 );
 CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(payment_status);
-CREATE INDEX IF NOT EXISTS idx_invoices_shipment ON invoices(shipment_id);
 
 
 CREATE TABLE IF NOT EXISTS invoice_items (
@@ -231,7 +192,7 @@ CREATE TABLE IF NOT EXISTS invoice_items (
 );
 
 
--- ===== Document Counter (for invoice numbering) =====
+-- ===== Document Counter =====
 CREATE TABLE IF NOT EXISTS doc_counters (
     doc_type TEXT NOT NULL,
     yymm TEXT NOT NULL,
@@ -247,7 +208,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     full_name TEXT,
     email TEXT,
-    role TEXT NOT NULL CHECK(role IN ('admin','sales','cs','operation','accounting')),
+    role TEXT NOT NULL,
     is_active INTEGER DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -256,7 +217,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- ===== Activity Log =====
 CREATE TABLE IF NOT EXISTS activity_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER REFERENCES users(id),
+    user_id INTEGER,
     username TEXT,
     action TEXT NOT NULL,
     entity_type TEXT,
@@ -269,6 +230,41 @@ CREATE INDEX IF NOT EXISTS idx_logs_created ON activity_logs(created_at);
 """
 
 
+# Migration definitions: tables and columns to add for older databases
+MIGRATIONS = {
+    "customers": {
+        "credit_terms_days": "INTEGER DEFAULT 30",
+        "notes": "TEXT",
+        "is_active": "INTEGER DEFAULT 1",
+        "updated_at": "TIMESTAMP",
+    },
+    "quotations": {
+        "status": "TEXT DEFAULT 'Draft'",
+    },
+    "shipments": {
+        "shipper": "TEXT",
+        "consignee": "TEXT",
+        "notify_party": "TEXT",
+        "cargo_type": "TEXT",
+        "m_vessel": "TEXT",
+        "feeder": "TEXT",
+        "por": "TEXT",
+        "final_destination": "TEXT",
+        "transhipment_port": "TEXT",
+        "bl_no": "TEXT",
+        "closing_time": "TEXT",
+        "booking_id": "INTEGER",
+        "customer_id": "INTEGER",
+        "created_by": "TEXT",
+    },
+    "users": {
+        "is_active": "INTEGER DEFAULT 1",
+        "email": "TEXT",
+        "full_name": "TEXT",
+    },
+}
+
+
 def get_connection() -> sqlite3.Connection:
     """Return a new SQLite connection with foreign keys enabled."""
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
@@ -279,45 +275,44 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_database() -> None:
-    """Create all tables if they do not exist + ensure default users."""
+    """Create all tables + run migrations + seed default users."""
     with get_connection() as conn:
+        # Create new tables (won't affect existing ones)
         conn.executescript(SCHEMA)
-        # Migrate older shipments table: add new columns if missing
-        _ensure_columns(conn, "shipments", {
-            "shipper": "TEXT",
-            "consignee": "TEXT",
-            "notify_party": "TEXT",
-            "cargo_type": "TEXT",
-            "m_vessel": "TEXT",
-            "feeder": "TEXT",
-            "por": "TEXT",
-            "final_destination": "TEXT",
-            "transhipment_port": "TEXT",
-            "bl_no": "TEXT",
-            "closing_time": "TEXT",
-            "booking_id": "INTEGER",
-            "customer_id": "INTEGER",
-            "created_by": "TEXT",
-        })
-        # Seed default users if no users exist
+        
+        # Run migrations: add missing columns to existing tables
+        for table, columns in MIGRATIONS.items():
+            _ensure_columns(conn, table, columns)
+        
+        # Seed default users (idempotent)
         _seed_default_users(conn)
 
 
-def _ensure_columns(conn, table, columns: dict):
-    """Add columns to existing table if they don't exist (for migration)."""
-    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+def _ensure_columns(conn, table: str, columns: dict) -> None:
+    """Add missing columns. Skips if table doesn't exist or column already exists."""
+    try:
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    except sqlite3.OperationalError:
+        return
+    if not existing:
+        # Table doesn't exist
+        return
     for col, ddl in columns.items():
         if col not in existing:
             try:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
             except sqlite3.OperationalError:
+                # Column might already exist or DDL incompatible
                 pass
 
 
-def _seed_default_users(conn):
-    """Create default users on first run."""
+def _seed_default_users(conn) -> None:
+    """Create default users on first run if none exist."""
     import hashlib
-    count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    except sqlite3.OperationalError:
+        return
     if count > 0:
         return
     
@@ -330,7 +325,11 @@ def _seed_default_users(conn):
     ]
     for username, pwd, full_name, role in defaults:
         hashed = hashlib.sha256(pwd.encode()).hexdigest()
-        conn.execute(
-            "INSERT INTO users (username, password_hash, full_name, role) VALUES (?,?,?,?)",
-            (username, hashed, full_name, role)
-        )
+        try:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, full_name, role, is_active) "
+                "VALUES (?,?,?,?,1)",
+                (username, hashed, full_name, role)
+            )
+        except sqlite3.IntegrityError:
+            pass

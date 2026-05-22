@@ -54,11 +54,19 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
     
     pwd_hash = hash_password(password)
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT id, username, full_name, email, role FROM users "
-            "WHERE username=? AND password_hash=? AND is_active=1",
-            (username.strip().lower(), pwd_hash)
-        ).fetchone()
+        # Try with is_active filter first; fall back if column missing
+        try:
+            row = conn.execute(
+                "SELECT id, username, full_name, email, role FROM users "
+                "WHERE username=? AND password_hash=? AND is_active=1",
+                (username.strip().lower(), pwd_hash)
+            ).fetchone()
+        except Exception:
+            row = conn.execute(
+                "SELECT id, username, full_name, email, role FROM users "
+                "WHERE username=? AND password_hash=?",
+                (username.strip().lower(), pwd_hash)
+            ).fetchone()
     
     return dict(row) if row else None
 
