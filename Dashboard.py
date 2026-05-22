@@ -43,6 +43,7 @@ PAGES = [
     ("reports", "📈 Reports", "reports"),
     ("users", "👤 Users", "users"),
     ("settings", "⚙️ Settings", "users"),
+    ("help", "📘 Help / Manual", "dashboard"),
 ]
 
 
@@ -207,5 +208,8 @@ elif current_page == "users":
 elif current_page == "settings":
     from views import settings_view
     settings_view.render()
+elif current_page == "help":
+    from views import help_view
+    help_view.render()
 else:
     st.error(f"Unknown page: {current_page}")
