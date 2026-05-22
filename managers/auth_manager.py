@@ -5,6 +5,13 @@ from database.connection import get_connection
 
 
 # ===== Role Permissions =====
+# CS and Operation share identical permissions - they form the "ops team"
+_OPS_PERMS = {
+    "dashboard": "r", "crm": "rw", "quotation": "rw",
+    "booking": "rw", "shipment": "rw", "billing": "r",
+    "reports": "r",
+}
+
 PERMISSIONS = {
     "admin": {
         "dashboard": "rw", "crm": "rw", "quotation": "rw",
@@ -16,16 +23,8 @@ PERMISSIONS = {
         "booking": "r", "shipment": "r", "billing": "r",
         "reports": "r",
     },
-    "cs": {
-        "dashboard": "r", "crm": "r", "quotation": "r",
-        "booking": "rw", "shipment": "r", "billing": "r",
-        "reports": "r",
-    },
-    "operation": {
-        "dashboard": "r", "crm": "r", "quotation": "r",
-        "booking": "r", "shipment": "rw", "billing": "r",
-        "reports": "r",
-    },
+    "cs": _OPS_PERMS,
+    "operation": _OPS_PERMS,
     "accounting": {
         "dashboard": "r", "crm": "r", "quotation": "r",
         "booking": "r", "shipment": "r", "billing": "rw",

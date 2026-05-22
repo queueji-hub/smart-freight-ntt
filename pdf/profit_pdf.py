@@ -13,6 +13,7 @@ from reportlab.platypus import (
 )
 
 from config import COMPANY, OUTPUT_DIR
+from pdf.fonts import THAI_FONT, THAI_FONT_BOLD
 
 BRAND_BLUE = colors.HexColor("#1F4E9E")
 BRAND_GOLD = colors.HexColor("#C9A227")
@@ -32,27 +33,27 @@ def _styles():
     base = getSampleStyleSheet()
     return {
         "company": ParagraphStyle("c", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=14, textColor=BRAND_GOLD),
+            fontName=THAI_FONT_BOLD, fontSize=14, textColor=BRAND_GOLD),
         "addr": ParagraphStyle("a", parent=base["Normal"],
-            fontName="Helvetica", fontSize=8, textColor=BRAND_BLUE, leading=10),
+            fontName=THAI_FONT, fontSize=8, textColor=BRAND_BLUE, leading=10),
         "title": ParagraphStyle("t", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=18, textColor=BRAND_BLUE,
+            fontName=THAI_FONT_BOLD, fontSize=18, textColor=BRAND_BLUE,
             alignment=TA_CENTER, spaceBefore=4, spaceAfter=8),
         "subtitle": ParagraphStyle("st", parent=base["Normal"],
-            fontName="Helvetica-Oblique", fontSize=9, textColor=colors.grey,
+            fontName=THAI_FONT, fontSize=9, textColor=colors.grey,
             alignment=TA_CENTER, spaceAfter=8),
         "label": ParagraphStyle("l", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=8),
+            fontName=THAI_FONT_BOLD, fontSize=8),
         "value": ParagraphStyle("v", parent=base["Normal"],
-            fontName="Helvetica", fontSize=8, leading=10),
+            fontName=THAI_FONT, fontSize=8, leading=10),
         "right": ParagraphStyle("r", parent=base["Normal"],
-            fontName="Helvetica", fontSize=8, alignment=TA_RIGHT),
+            fontName=THAI_FONT, fontSize=8, alignment=TA_RIGHT),
         "right_b": ParagraphStyle("rb", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=9, alignment=TA_RIGHT),
+            fontName=THAI_FONT_BOLD, fontSize=9, alignment=TA_RIGHT),
         "body": ParagraphStyle("b", parent=base["Normal"],
-            fontName="Helvetica", fontSize=8, leading=10),
+            fontName=THAI_FONT, fontSize=8, leading=10),
         "small": ParagraphStyle("s", parent=base["Normal"],
-            fontName="Helvetica", fontSize=7, leading=9),
+            fontName=THAI_FONT, fontSize=7, leading=9),
     }
 
 

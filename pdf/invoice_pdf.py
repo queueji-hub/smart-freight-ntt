@@ -13,6 +13,7 @@ from reportlab.platypus import (
 )
 
 from config import COMPANY, OUTPUT_DIR
+from pdf.fonts import THAI_FONT, THAI_FONT_BOLD
 
 BRAND_BLUE = colors.HexColor("#1F4E9E")
 BRAND_GOLD = colors.HexColor("#C9A227")
@@ -49,20 +50,20 @@ def _styles():
     base = getSampleStyleSheet()
     return {
         "company": ParagraphStyle("c", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=15, textColor=BRAND_GOLD),
+            fontName=THAI_FONT_BOLD, fontSize=15, textColor=BRAND_GOLD),
         "addr": ParagraphStyle("a", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9, textColor=BRAND_BLUE, leading=12),
+            fontName=THAI_FONT, fontSize=9, textColor=BRAND_BLUE, leading=12),
         "title": ParagraphStyle("t", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=18, textColor=BRAND_BLUE,
+            fontName=THAI_FONT_BOLD, fontSize=18, textColor=BRAND_BLUE,
             alignment=TA_CENTER, spaceBefore=4, spaceAfter=8),
         "label": ParagraphStyle("l", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=9),
+            fontName=THAI_FONT_BOLD, fontSize=9),
         "value": ParagraphStyle("v", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9),
+            fontName=THAI_FONT, fontSize=9),
         "body": ParagraphStyle("b", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9, leading=12),
+            fontName=THAI_FONT, fontSize=9, leading=12),
         "right": ParagraphStyle("r", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9, alignment=TA_RIGHT),
+            fontName=THAI_FONT, fontSize=9, alignment=TA_RIGHT),
     }
 
 
@@ -207,7 +208,7 @@ def _totals_block(invoice, styles):
         ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ("BACKGROUND", (0,3), (-1,3), BRAND_BLUE),
         ("TEXTCOLOR", (0,3), (-1,3), colors.white),
-        ("FONTNAME", (0,3), (-1,3), "Helvetica-Bold"),
+        ("FONTNAME", (0,3), (-1,3), THAI_FONT_BOLD),
         ("LINEABOVE", (0,3), (-1,3), 1, colors.black),
     ]))
     return tbl

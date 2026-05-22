@@ -14,6 +14,7 @@ from reportlab.platypus import (
 )
 
 from config import COMPANY, OUTPUT_DIR
+from pdf.fonts import THAI_FONT, THAI_FONT_BOLD
 
 # Brand colors (matching the sample PDF)
 BRAND_BLUE = colors.HexColor("#1F4E9E")
@@ -38,43 +39,43 @@ def _styles() -> Dict[str, ParagraphStyle]:
     return {
         "company": ParagraphStyle(
             "company", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=16, textColor=BRAND_GOLD,
+            fontName=THAI_FONT_BOLD, fontSize=16, textColor=BRAND_GOLD,
             alignment=TA_LEFT, spaceAfter=4,
         ),
         "company_addr": ParagraphStyle(
             "company_addr", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9, textColor=BRAND_BLUE,
+            fontName=THAI_FONT, fontSize=9, textColor=BRAND_BLUE,
             alignment=TA_LEFT, leading=12,
         ),
         "title": ParagraphStyle(
             "title", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=14, textColor=BRAND_BLUE,
+            fontName=THAI_FONT_BOLD, fontSize=14, textColor=BRAND_BLUE,
             alignment=TA_CENTER, spaceBefore=8, spaceAfter=4,
         ),
         "label": ParagraphStyle(
             "label", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=9, textColor=colors.black,
+            fontName=THAI_FONT_BOLD, fontSize=9, textColor=colors.black,
         ),
         "value": ParagraphStyle(
             "value", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9, textColor=colors.black,
+            fontName=THAI_FONT, fontSize=9, textColor=colors.black,
         ),
         "subject": ParagraphStyle(
             "subject", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=10,
+            fontName=THAI_FONT_BOLD, fontSize=10,
         ),
         "body": ParagraphStyle(
             "body", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9, leading=12, alignment=TA_LEFT,
+            fontName=THAI_FONT, fontSize=9, leading=12, alignment=TA_LEFT,
         ),
         "tc_heading": ParagraphStyle(
             "tc_heading", parent=base["Normal"],
-            fontName="Helvetica-BoldOblique", fontSize=10,
+            fontName=THAI_FONT_BOLD, fontSize=10,
             textColor=colors.black, spaceBefore=4, spaceAfter=4,
         ),
         "tc_item": ParagraphStyle(
             "tc_item", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9, leading=12,
+            fontName=THAI_FONT, fontSize=9, leading=12,
             leftIndent=20, bulletIndent=8,
         ),
     }
@@ -275,7 +276,7 @@ def _build_signature(styles) -> Table:
 def _page_decoration(canvas, doc):
     """Draw page footer 'Page X' on every page."""
     canvas.saveState()
-    canvas.setFont("Helvetica", 8)
+    canvas.setFont(THAI_FONT, 8)
     canvas.setFillColor(colors.grey)
     canvas.drawCentredString(
         A4[0] / 2, 10 * mm, f"Page {doc.page}"

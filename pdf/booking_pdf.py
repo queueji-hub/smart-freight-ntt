@@ -13,6 +13,7 @@ from reportlab.platypus import (
 )
 
 from config import COMPANY, OUTPUT_DIR
+from pdf.fonts import THAI_FONT, THAI_FONT_BOLD
 
 BRAND_BLUE = colors.HexColor("#1F4E9E")
 BRAND_GOLD = colors.HexColor("#C9A227")
@@ -34,21 +35,21 @@ def _styles():
     base = getSampleStyleSheet()
     return {
         "company": ParagraphStyle("c", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=16,
+            fontName=THAI_FONT_BOLD, fontSize=16,
             textColor=BRAND_GOLD, alignment=TA_LEFT),
         "addr": ParagraphStyle("a", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9, textColor=BRAND_BLUE, leading=12),
+            fontName=THAI_FONT, fontSize=9, textColor=BRAND_BLUE, leading=12),
         "title": ParagraphStyle("t", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=18, textColor=BRAND_BLUE,
+            fontName=THAI_FONT_BOLD, fontSize=18, textColor=BRAND_BLUE,
             alignment=TA_CENTER, spaceBefore=4, spaceAfter=10),
         "label": ParagraphStyle("l", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=9),
+            fontName=THAI_FONT_BOLD, fontSize=9),
         "value": ParagraphStyle("v", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9),
+            fontName=THAI_FONT, fontSize=9),
         "body": ParagraphStyle("b", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9, leading=12),
+            fontName=THAI_FONT, fontSize=9, leading=12),
         "footer": ParagraphStyle("f", parent=base["Normal"],
-            fontName="Helvetica-Oblique", fontSize=8,
+            fontName=THAI_FONT, fontSize=8,
             textColor=colors.grey, alignment=TA_CENTER),
     }
 
@@ -255,7 +256,7 @@ def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None) -> st
 
 def _footer(canvas, doc):
     canvas.saveState()
-    canvas.setFont("Helvetica", 8)
+    canvas.setFont(THAI_FONT, 8)
     canvas.setFillColor(colors.grey)
     canvas.drawCentredString(A4[0] / 2, 10*mm, f"Page {doc.page}")
     canvas.restoreState()

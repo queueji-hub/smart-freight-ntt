@@ -72,13 +72,12 @@ https://nattayaraat-freight.streamlit.app/
 - 📖 ดู Booking, Shipment (อ่านอย่างเดียว)
 - 👁 Review Profit Sheet (ตรวจสอบ)
 
-#### 📞 CS / Customer Service
-- ✅ สร้าง Booking Confirmation
-- ✅ จัดการลูกค้า (อ่าน/แก้ไข)
-- 📖 ดู Quotation (อ่านอย่างเดียว)
-- 📖 ดู Shipment
+#### 📞 CS / Customer Service & 🚢 Operation
+> **CS และ Operation มีสิทธิ์เหมือนกันทุกประการ** — ทำงานทดแทนกันได้ใน "Operations Team"
 
-#### 🚢 Operation (ปฏิบัติการ)
+- ✅ จัดการลูกค้า CRM (สร้าง/แก้ไข)
+- ✅ สร้าง/แก้ไข Quotation
+- ✅ สร้าง/แก้ไข Booking Confirmation
 - ✅ จัดการ Shipment (สร้าง/แก้ไข)
 - ✅ Container Tracking + Milestones
 - ✅ Generate B/L PDF

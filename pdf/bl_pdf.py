@@ -13,6 +13,7 @@ from reportlab.platypus import (
 )
 
 from config import COMPANY, OUTPUT_DIR
+from pdf.fonts import THAI_FONT, THAI_FONT_BOLD
 
 BRAND_BLUE = colors.HexColor("#1F4E9E")
 BRAND_DARK = colors.HexColor("#0E2A47")
@@ -34,22 +35,22 @@ def _styles():
     base = getSampleStyleSheet()
     return {
         "title": ParagraphStyle("t", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=22, textColor=BRAND_DARK,
+            fontName=THAI_FONT_BOLD, fontSize=22, textColor=BRAND_DARK,
             alignment=TA_CENTER, spaceBefore=4, spaceAfter=2),
         "subtitle": ParagraphStyle("st", parent=base["Normal"],
-            fontName="Helvetica", fontSize=10, textColor=colors.grey,
+            fontName=THAI_FONT, fontSize=10, textColor=colors.grey,
             alignment=TA_CENTER, spaceAfter=8),
         "label": ParagraphStyle("l", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=8,
+            fontName=THAI_FONT_BOLD, fontSize=8,
             textColor=BRAND_BLUE),
         "value": ParagraphStyle("v", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9, leading=11),
+            fontName=THAI_FONT, fontSize=9, leading=11),
         "value_b": ParagraphStyle("vb", parent=base["Normal"],
-            fontName="Helvetica-Bold", fontSize=10),
+            fontName=THAI_FONT_BOLD, fontSize=10),
         "body": ParagraphStyle("b", parent=base["Normal"],
-            fontName="Helvetica", fontSize=9, leading=12),
+            fontName=THAI_FONT, fontSize=9, leading=12),
         "small": ParagraphStyle("s", parent=base["Normal"],
-            fontName="Helvetica", fontSize=7, leading=9),
+            fontName=THAI_FONT, fontSize=7, leading=9),
     }
 
 
