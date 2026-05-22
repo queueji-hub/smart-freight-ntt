@@ -12,6 +12,7 @@ DB_PATH = DATA_DIR / "smart_freight.db"
 # Company information (shown on quotation header)
 COMPANY = {
     "name": "NATTAYARAAT CO., LTD.",
+    "address_space": "",                                        # ปล่อยว่างไว้เพื่อดันบรรทัด
     "address_line1": "59/9 The Balanz Zigma Village, Moo 4, Soi Bangkrathuek 3",
     "address_line2": "Bangkrathuek Subdistrict, Sam Phran District Nakhon Pathom",
     "address_line3": "Province 73210",
