@@ -1,14 +1,58 @@
 """Quotation CRUD operations."""
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
-from managers.job_number import generate_job_number
 from managers.customer_manager import upsert_customer
 
 
+def _generate_quotation_no(job_type: str, ref_date=None) -> str:
+    """Generate quotation number with Q prefix using a separate counter.
+    
+    Format: Q{JOB_TYPE}{YYMM}{NNNN}, e.g. QSE26050001
+    Uses 'Q-{job_type}' as counter key so it's separate from shipment counter.
+    """
+    if job_type not in ("SE", "SI", "AE", "AI", "TE", "TI"):
+        raise ValueError(f"Invalid job_type: {job_type}")
+    
+    if ref_date is None:
+        ref = date.today()
+    elif isinstance(ref_date, str):
+        ref = datetime.strptime(ref_date, "%Y-%m-%d").date()
+    elif isinstance(ref_date, datetime):
+        ref = ref_date.date()
+    else:
+        ref = ref_date
+    
+    yy = f"{ref.year % 100:02d}"
+    mm = f"{ref.month:02d}"
+    yymm = f"{yy}{mm}"
+    counter_key = f"Q-{job_type}"
+    
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO job_counters (job_type, yymm, last_running)
+            VALUES (?, ?, 1)
+            ON CONFLICT (job_type, yymm) DO UPDATE
+            SET last_running = last_running + 1
+        """, (counter_key, yymm))
+        row = conn.execute(
+            "SELECT last_running FROM job_counters WHERE job_type=? AND yymm=?",
+            (counter_key, yymm)
+        ).fetchone()
+    
+    return f"Q{job_type}{yymm}{row[0]:04d}"
+
+
 def create_quotation(quotation: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
-    """Create a quotation with items. Returns the generated quotation_no."""
-    quotation_no = generate_job_number(quotation["job_type"], quotation.get("quotation_date"))
+    """Create a quotation with items. Returns the generated quotation_no.
+    
+    Format: Q{JOB_TYPE}{YYMM}{NNNN} (e.g. QSE26050001)
+    The 'Q' prefix distinguishes quotations from shipment job numbers.
+    Uses a separate counter from shipments so numbers don't collide.
+    """
+    quotation_no = _generate_quotation_no(
+        quotation["job_type"], quotation.get("quotation_date")
+    )
     
     # Auto-save customer info
     upsert_customer(
