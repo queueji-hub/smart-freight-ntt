@@ -17,6 +17,12 @@ from managers.session_manager import get_user_by_token, delete_session
 @st.cache_resource
 def _init_db():
     init_database()
+    # Seed FX rates on first run
+    try:
+        from managers.fx_manager import seed_default_rates
+        seed_default_rates()
+    except Exception:
+        pass
     return True
 
 
@@ -30,7 +36,9 @@ PAGES = [
     ("quotation", "📄 Quotation", "quotation"),
     ("booking", "📑 Booking", "booking"),
     ("shipments", "📦 Shipment", "shipment"),
+    ("tracking", "📍 Tracking", "shipment"),
     ("billing", "💰 Billing", "billing"),
+    ("fx", "💱 FX Rates", "billing"),
     ("reports", "📈 Reports", "reports"),
 ]
 
@@ -175,9 +183,15 @@ elif current_page == "booking":
 elif current_page == "shipments":
     from views import shipments_view
     shipments_view.render()
+elif current_page == "tracking":
+    from views import tracking_view
+    tracking_view.render()
 elif current_page == "billing":
     from views import billing_view
     billing_view.render()
+elif current_page == "fx":
+    from views import fx_view
+    fx_view.render()
 elif current_page == "reports":
     from views import reports_view
     reports_view.render()
