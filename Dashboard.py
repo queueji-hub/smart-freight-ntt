@@ -40,6 +40,7 @@ PAGES = [
     ("billing", "💰 Billing", "billing"),
     ("fx", "💱 FX Rates", "billing"),
     ("reports", "📈 Reports", "reports"),
+    ("settings", "⚙️ Settings", "users"),
 ]
 
 
@@ -195,5 +196,8 @@ elif current_page == "fx":
 elif current_page == "reports":
     from views import reports_view
     reports_view.render()
+elif current_page == "settings":
+    from views import settings_view
+    settings_view.render()
 else:
     st.error(f"Unknown page: {current_page}")
