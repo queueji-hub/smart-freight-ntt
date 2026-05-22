@@ -1,0 +1,287 @@
+"""A4 Tax Invoice / Receipt / CN / DN / Billing Note PDF generator."""
+from pathlib import Path
+from datetime import date, datetime
+from typing import Dict, Any, List
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.lib import colors
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image,
+)
+
+from config import COMPANY, OUTPUT_DIR
+
+BRAND_BLUE = colors.HexColor("#1F4E9E")
+BRAND_GOLD = colors.HexColor("#C9A227")
+HEADER_GREY = colors.HexColor("#9CA3AF")
+
+DOC_TITLES = {
+    "INV": "TAX INVOICE / RECEIPT",
+    "BN": "BILLING NOTE",
+    "CN": "CREDIT NOTE",
+    "DN": "DEBIT NOTE",
+    "SOA": "STATEMENT OF ACCOUNT",
+}
+
+
+def _fmt(d) -> str:
+    if not d:
+        return ""
+    if isinstance(d, str):
+        try:
+            return datetime.strptime(d, "%Y-%m-%d").strftime("%d-%b-%Y")
+        except Exception:
+            return d
+    return d.strftime("%d-%b-%Y")
+
+
+def _money(n) -> str:
+    try:
+        return f"{float(n or 0):,.2f}"
+    except Exception:
+        return "0.00"
+
+
+def _styles():
+    base = getSampleStyleSheet()
+    return {
+        "company": ParagraphStyle("c", parent=base["Normal"],
+            fontName="Helvetica-Bold", fontSize=15, textColor=BRAND_GOLD),
+        "addr": ParagraphStyle("a", parent=base["Normal"],
+            fontName="Helvetica", fontSize=9, textColor=BRAND_BLUE, leading=12),
+        "title": ParagraphStyle("t", parent=base["Normal"],
+            fontName="Helvetica-Bold", fontSize=18, textColor=BRAND_BLUE,
+            alignment=TA_CENTER, spaceBefore=4, spaceAfter=8),
+        "label": ParagraphStyle("l", parent=base["Normal"],
+            fontName="Helvetica-Bold", fontSize=9),
+        "value": ParagraphStyle("v", parent=base["Normal"],
+            fontName="Helvetica", fontSize=9),
+        "body": ParagraphStyle("b", parent=base["Normal"],
+            fontName="Helvetica", fontSize=9, leading=12),
+        "right": ParagraphStyle("r", parent=base["Normal"],
+            fontName="Helvetica", fontSize=9, alignment=TA_RIGHT),
+    }
+
+
+def _header(styles):
+    logo_path = COMPANY.get("logo_path")
+    if logo_path and Path(logo_path).exists():
+        from reportlab.lib.utils import ImageReader
+        ir = ImageReader(logo_path)
+        iw, ih = ir.getSize()
+        scale = min(40*mm / iw, 24*mm / ih)
+        logo = Image(logo_path, width=iw*scale, height=ih*scale)
+    else:
+        logo = Paragraph("[LOGO]", styles["body"])
+    
+    addr = (f'<font color="#1F4E9E" size="9">'
+            f'{COMPANY["address_line1"]}<br/>'
+            f'{COMPANY["address_line2"]} {COMPANY["address_line3"]}<br/>'
+            f'Tax ID: {COMPANY["tax_id"]} · Tel: {COMPANY["tel"]}<br/>'
+            f'Email: {COMPANY["email"]}'
+            f'</font>')
+    
+    company_block = [
+        Paragraph(COMPANY["name"], styles["company"]),
+        Paragraph(addr, styles["addr"]),
+    ]
+    
+    tbl = Table([[logo, company_block]], colWidths=[40*mm, 140*mm])
+    tbl.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+    ]))
+    return tbl
+
+
+def _info_block(invoice, styles):
+    """Two-column info: bill-to + invoice details."""
+    bill_to = [
+        Paragraph("<b>BILL TO:</b>", styles["label"]),
+        Paragraph(f"<b>{invoice.get('customer_name','')}</b>", styles["value"]),
+        Paragraph(f"Tax ID: {invoice.get('customer_tax_id','—')}",
+                  styles["value"]),
+        Paragraph(f"Address: {invoice.get('customer_address','—')}",
+                  styles["value"]),
+    ]
+    
+    details = [
+        [Paragraph("<b>Document No.</b>", styles["label"]),
+         Paragraph(invoice.get("doc_no", ""), styles["value"])],
+        [Paragraph("<b>Issue Date</b>", styles["label"]),
+         Paragraph(_fmt(invoice.get("issue_date")), styles["value"])],
+        [Paragraph("<b>Due Date</b>", styles["label"]),
+         Paragraph(_fmt(invoice.get("due_date")), styles["value"])],
+        [Paragraph("<b>Reference</b>", styles["label"]),
+         Paragraph(invoice.get("ref_doc_no") or invoice.get("job_no", "—"),
+                   styles["value"])],
+        [Paragraph("<b>Currency</b>", styles["label"]),
+         Paragraph(invoice.get("currency", "THB"), styles["value"])],
+    ]
+    details_tbl = Table(details, colWidths=[35*mm, 50*mm])
+    details_tbl.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING", (0,0), (-1,-1), 2),
+        ("TOPPADDING", (0,0), (-1,-1), 2),
+    ]))
+    
+    tbl = Table([[bill_to, details_tbl]], colWidths=[95*mm, 85*mm])
+    tbl.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+    ]))
+    return tbl
+
+
+def _items_table(items: List[Dict[str, Any]], currency, styles):
+    sym = "฿" if currency == "THB" else (currency + " ")
+    
+    data = [[
+        Paragraph("<b>NO.</b>", styles["label"]),
+        Paragraph("<b>DESCRIPTION</b>", styles["label"]),
+        Paragraph("<b>QTY</b>", styles["label"]),
+        Paragraph("<b>UNIT PRICE</b>", styles["label"]),
+        Paragraph("<b>AMOUNT</b>", styles["label"]),
+    ]]
+    
+    for i, item in enumerate(items, 1):
+        data.append([
+            Paragraph(str(i), styles["value"]),
+            Paragraph(item.get("description", ""), styles["value"]),
+            Paragraph(_money(item.get("quantity", 0)), styles["right"]),
+            Paragraph(_money(item.get("unit_price", 0)), styles["right"]),
+            Paragraph(_money(item.get("amount", 0)), styles["right"]),
+        ])
+    
+    tbl = Table(data, colWidths=[12*mm, 90*mm, 20*mm, 28*mm, 30*mm])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), BRAND_BLUE),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+        ("ALIGN", (0,0), (-1,0), "CENTER"),
+        ("ALIGN", (2,1), (-1,-1), "RIGHT"),
+        ("ALIGN", (0,1), (0,-1), "CENTER"),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING", (0,0), (-1,-1), 4),
+        ("RIGHTPADDING", (0,0), (-1,-1), 4),
+        ("TOPPADDING", (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ("BOX", (0,0), (-1,-1), 0.5, colors.black),
+        ("INNERGRID", (0,0), (-1,-1), 0.3, colors.grey),
+    ]))
+    return tbl
+
+
+def _totals_block(invoice, styles):
+    cur = invoice.get("currency", "THB")
+    sym = "฿" if cur == "THB" else (cur + " ")
+    
+    rows = [
+        ["Subtotal", f"{sym}{_money(invoice.get('subtotal', 0))}"],
+        [f"VAT ({invoice.get('vat_rate', 7)}%)",
+         f"{sym}{_money(invoice.get('vat_amount', 0))}"],
+    ]
+    
+    if (invoice.get("wht_amount") or 0) > 0:
+        rows.append([f"WHT ({invoice.get('wht_rate', 0)}%)",
+                     f"-{sym}{_money(invoice.get('wht_amount', 0))}"])
+    
+    rows.append(["", ""])
+    rows.append(["TOTAL DUE",
+                 f"{sym}{_money(invoice.get('total_amount', 0))}"])
+    
+    if (invoice.get("paid_amount") or 0) > 0:
+        rows.append(["Paid", f"{sym}{_money(invoice.get('paid_amount', 0))}"])
+        rows.append(["Outstanding",
+                     f"{sym}{_money(invoice.get('outstanding', 0))}"])
+    
+    data = [[Paragraph(r[0], styles["body"]),
+             Paragraph(r[1], styles["right"])] for r in rows]
+    
+    tbl = Table(data, colWidths=[60*mm, 40*mm])
+    tbl.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("LEFTPADDING", (0,0), (-1,-1), 4),
+        ("RIGHTPADDING", (0,0), (-1,-1), 4),
+        ("TOPPADDING", (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+        ("BACKGROUND", (0,3), (-1,3), BRAND_BLUE),
+        ("TEXTCOLOR", (0,3), (-1,3), colors.white),
+        ("FONTNAME", (0,3), (-1,3), "Helvetica-Bold"),
+        ("LINEABOVE", (0,3), (-1,3), 1, colors.black),
+    ]))
+    return tbl
+
+
+def generate_invoice_pdf(invoice: Dict[str, Any],
+                          customer: Dict[str, Any] = None,
+                          output_path: str = None) -> str:
+    """Generate invoice/CN/DN/BN PDF."""
+    doc_type = invoice.get("doc_type", "INV")
+    if output_path is None:
+        output_path = str(Path(OUTPUT_DIR) /
+                           f"{doc_type}_{invoice.get('doc_no','doc')}.pdf")
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    
+    # Merge customer info into invoice for display
+    if customer:
+        invoice = {
+            **invoice,
+            "customer_tax_id": customer.get("tax_id"),
+            "customer_address": customer.get("address"),
+        }
+    
+    doc = SimpleDocTemplate(
+        output_path, pagesize=A4,
+        leftMargin=15*mm, rightMargin=15*mm,
+        topMargin=15*mm, bottomMargin=20*mm,
+        title=f"{DOC_TITLES.get(doc_type, doc_type)} {invoice.get('doc_no','')}",
+        author=COMPANY["name"],
+    )
+    styles = _styles()
+    story = []
+    
+    story.append(_header(styles))
+    story.append(Spacer(1, 4*mm))
+    story.append(Paragraph(DOC_TITLES.get(doc_type, doc_type), styles["title"]))
+    story.append(_info_block(invoice, styles))
+    story.append(Spacer(1, 6*mm))
+    story.append(_items_table(invoice.get("items", []),
+                                invoice.get("currency", "THB"), styles))
+    story.append(Spacer(1, 4*mm))
+    
+    # Right-align totals block
+    totals_wrap = Table([["", _totals_block(invoice, styles)]],
+                         colWidths=[80*mm, 100*mm])
+    totals_wrap.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+    ]))
+    story.append(totals_wrap)
+    
+    if invoice.get("remark"):
+        story.append(Spacer(1, 4*mm))
+        story.append(Paragraph(f"<b>Remark:</b> {invoice.get('remark','')}",
+                                styles["body"]))
+    
+    # Signature block
+    story.append(Spacer(1, 12*mm))
+    sig = Table([[
+        [Paragraph("Authorized by:", styles["body"]),
+         Spacer(1, 14*mm),
+         Paragraph("_" * 30, styles["body"]),
+         Paragraph(f"<b>{COMPANY['signer_name']}</b>", styles["body"]),
+         Paragraph(COMPANY["signer_title"], styles["body"])],
+        [Paragraph("Received by:", styles["body"]),
+         Spacer(1, 14*mm),
+         Paragraph("_" * 30, styles["body"]),
+         Paragraph("Customer Signature", styles["body"]),
+         Paragraph("Date: ____________", styles["body"])],
+    ]], colWidths=[90*mm, 90*mm])
+    sig.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+    ]))
+    story.append(sig)
+    
+    doc.build(story)
+    return output_path

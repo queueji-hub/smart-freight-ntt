@@ -11,6 +11,8 @@ from managers.quotation_manager import (
 from managers.customer_manager import (
     search_customers, get_customer_by_name,
 )
+from managers.booking_manager import create_booking
+from managers.auth_manager import can_write
 
 # PDF generator (optional)
 _PDF_AVAILABLE = True
@@ -20,6 +22,9 @@ try:
 except Exception as _e:
     _PDF_AVAILABLE = False
     _PDF_ERROR = str(_e)
+
+
+QUOTATION_STATUS = ["Draft", "Sent", "Accepted", "Rejected", "Expired"]
 
 
 def _customer_autocomplete(prefix, default_value=""):
@@ -282,7 +287,7 @@ def render():
                          hide_index=True, height=300)
             st.markdown("---")
 
-            sel_col, act_col1, act_col2, act_col3 = st.columns([3, 1, 1, 1])
+            sel_col, act_col1, act_col2, act_col3, act_col4 = st.columns([3, 1, 1, 1, 1.4])
             with sel_col:
                 sel_qno = st.selectbox("เลือก Quotation",
                     df["quotation_no"].tolist(), key="all_sel")
@@ -296,6 +301,11 @@ def render():
             with act_col3:
                 st.write(""); st.write("")
                 copy_btn = st.button("📑 Copy", use_container_width=True)
+            with act_col4:
+                st.write(""); st.write("")
+                convert_btn = st.button("➡️ → Booking",
+                    use_container_width=True,
+                    help="Create Booking Confirmation from this Quotation")
 
             if view_btn and _PDF_AVAILABLE:
                 saved = get_quotation_by_no(sel_qno)
@@ -318,6 +328,29 @@ def render():
                     st.rerun()
                 else:
                     st.error("Duplication failed")
+            
+            if convert_btn:
+                # Convert quotation → booking
+                src = get_quotation_by_no(sel_qno)
+                if src:
+                    user = st.session_state.get("user", {})
+                    try:
+                        booking_no = create_booking({
+                            "job_type": src.get("job_type", "SE"),
+                            "customer_name": src.get("customer_name"),
+                            "shipper": src.get("shipper_cnee"),
+                            "carrier": src.get("carrier"),
+                            "pol": src.get("pol"),
+                            "pod": src.get("pod"),
+                            "commodity": src.get("commodity"),
+                            "quotation_id": src.get("id"),
+                            "remark": f"From Quotation: {sel_qno}",
+                            "created_by": user.get("username"),
+                        })
+                        st.success(f"✅ Created Booking: **{booking_no}**")
+                        st.info(f"Go to Booking page to add CY/CFS details")
+                    except Exception as ex:
+                        st.error(f"Failed: {ex}")
 
             if st.session_state.get("edit_loaded"):
                 loaded = get_quotation_by_no(st.session_state["edit_loaded"])

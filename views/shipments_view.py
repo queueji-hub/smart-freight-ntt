@@ -241,14 +241,37 @@ def _list_view():
         ]
         display_cols = [c for c in display_cols if c in df.columns]
         st.dataframe(df[display_cols], use_container_width=True,
-                     hide_index=True, height=500)
+                     hide_index=True, height=400)
         
-        col_a, _ = st.columns([1, 5])
-        with col_a:
+        col_csv, col_bl = st.columns([1, 2])
+        with col_csv:
             csv = df[display_cols].to_csv(index=False).encode("utf-8-sig")
             st.download_button("📥 Export CSV", data=csv,
                 file_name="shipments.csv", mime="text/csv",
                 use_container_width=True, key="ship_export")
+        
+        # ===== B/L PDF Generation =====
+        st.markdown("---")
+        st.markdown("##### 📄 Generate Bill of Lading (B/L)")
+        bl_options = [r["job_no"] for r in rows]
+        sel_bl = st.selectbox("Select shipment for B/L",
+            bl_options, key="ship_bl_sel",
+            format_func=lambda x: f"{x} — {next((r.get('customer_name','') for r in rows if r['job_no']==x), '')}")
+        if st.button("📥 Generate B/L PDF", type="primary", key="ship_bl_btn"):
+            try:
+                from pdf.bl_pdf import generate_bl_pdf
+                ship = get_shipment(sel_bl)
+                if ship:
+                    pdf_path = generate_bl_pdf(ship)
+                    with open(pdf_path, "rb") as f:
+                        bl_no = ship.get("bl_no") or ship.get("job_no")
+                        st.download_button(
+                            f"📥 Download BL_{bl_no}.pdf", f.read(),
+                            f"BL_{bl_no}.pdf", "application/pdf",
+                            type="primary", key="ship_bl_dl")
+                    st.success(f"B/L PDF generated")
+            except Exception as ex:
+                st.error(f"B/L generation failed: {ex}")
 
 
 def _edit_view(can_edit):

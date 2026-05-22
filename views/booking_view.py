@@ -166,7 +166,31 @@ def _list_view():
                     "pol", "pod", "carrier", "etd", "eta", "status"]
     display_cols = [c for c in display_cols if c in df.columns]
     st.dataframe(df[display_cols], use_container_width=True,
-                 hide_index=True, height=500)
+                 hide_index=True, height=400)
+    
+    # PDF generation
+    st.markdown("---")
+    st.markdown("##### 📄 Generate Booking Confirmation PDF")
+    options = [(r["booking_no"], f"{r['booking_no']} — {r.get('customer_name','')}")
+               for r in rows]
+    sel = st.selectbox("Select booking", [o[0] for o in options],
+        format_func=lambda x: next(o[1] for o in options if o[0] == x),
+        key="bk_pdf_sel")
+    
+    if st.button("📥 Generate PDF", type="primary"):
+        try:
+            from pdf.booking_pdf import generate_booking_pdf
+            booking = get_booking(sel)
+            if booking:
+                pdf_path = generate_booking_pdf(booking)
+                with open(pdf_path, "rb") as f:
+                    st.download_button(
+                        f"📥 Download BC_{sel}.pdf", f.read(),
+                        f"BC_{sel}.pdf", "application/pdf",
+                        type="primary", key="bk_dl")
+                st.success(f"PDF generated for {sel}")
+        except Exception as ex:
+            st.error(f"PDF generation failed: {ex}")
 
 
 def _edit_view():

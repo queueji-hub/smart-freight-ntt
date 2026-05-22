@@ -249,7 +249,7 @@ def _list_view():
                     "payment_status"]
     display_cols = [c for c in display_cols if c in df.columns]
     st.dataframe(df[display_cols], use_container_width=True,
-                 hide_index=True, height=500,
+                 hide_index=True, height=400,
                  column_config={
                      "doc_no": "Doc No.",
                      "doc_type": "Type",
@@ -265,9 +265,36 @@ def _list_view():
                      "payment_status": "Status",
                  })
     
-    csv = df[display_cols].to_csv(index=False).encode("utf-8-sig")
-    st.download_button("📥 Export CSV", data=csv,
-        file_name="financial_documents.csv", mime="text/csv")
+    col_csv, col_pdf = st.columns([1, 2])
+    with col_csv:
+        csv = df[display_cols].to_csv(index=False).encode("utf-8-sig")
+        st.download_button("📥 Export CSV", data=csv,
+            file_name="financial_documents.csv", mime="text/csv",
+            use_container_width=True, key="bill_csv")
+    
+    # PDF generation
+    st.markdown("---")
+    st.markdown("##### 📄 Generate Document PDF")
+    options = [r["doc_no"] for r in rows]
+    sel = st.selectbox("Select document",
+        options, key="bill_pdf_sel",
+        format_func=lambda x: f"{x} — {next((r.get('customer_name','') for r in rows if r['doc_no']==x), '')}")
+    
+    if st.button("📥 Generate PDF", type="primary", key="bill_pdf_btn"):
+        try:
+            from pdf.invoice_pdf import generate_invoice_pdf
+            inv = get_invoice_by_no(sel)
+            if inv:
+                cust = get_customer(inv.get("customer_id")) if inv.get("customer_id") else None
+                pdf_path = generate_invoice_pdf(inv, customer=cust)
+                with open(pdf_path, "rb") as f:
+                    st.download_button(
+                        f"📥 Download {sel}.pdf", f.read(),
+                        f"{sel}.pdf", "application/pdf",
+                        type="primary", key="bill_pdf_dl")
+                st.success(f"PDF generated for {sel}")
+        except Exception as ex:
+            st.error(f"PDF generation failed: {ex}")
 
 
 def _payment_view():
