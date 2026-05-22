@@ -4,20 +4,35 @@ from database.connection import get_connection
 from managers.job_number import generate_job_number
 
 
+# All editable fields (excluding auto-generated id, job_no, job_type, timestamps)
 SHIPMENT_FIELDS = [
-    "booking_no", "customer_name", "brand", "commodity", "combine_commodity",
-    "full_or_half", "pick_up_date", "stuffing_date", "return_date", "etd", "eta",
-    "container_no", "seal_no", "container_size", "weight_origin", "weight_port",
-    "carrier", "pol", "pod", "bl_status", "overnight_trucking", "status",
-    "invoice_no", "customer_paid", "dn_type", "dn_no", "remark",
+    "booking_id", "booking_no",
+    "customer_id", "customer_name",
+    "shipper", "consignee", "notify_party",
+    "brand", "commodity", "combine_commodity",
+    "cargo_type", "full_or_half",
+    "pick_up_date", "stuffing_date", "return_date", "etd", "eta",
+    "container_no", "seal_no", "container_size",
+    "weight_origin", "weight_port",
+    "carrier", "m_vessel", "feeder",
+    "pol", "por", "pod", "final_destination", "transhipment_port",
+    "bl_no", "bl_status", "closing_time",
+    "overnight_trucking", "status",
+    "invoice_no", "customer_paid",
+    "dn_type", "dn_no", "remark", "created_by",
 ]
 
+VALID_STATUS = ("Proceed", "Finished", "Closed", "Canceled")
 
-def create_shipment(data: Dict[str, Any]) -> str:
-    """Create a shipment record. Auto-generates job_no.
-    Returns the generated job_no."""
+
+def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
+    """Create a shipment record. Auto-generates job_no."""
     job_type = data["job_type"]
-    job_no = generate_job_number(job_type, data.get("etd") or data.get("pick_up_date"))
+    job_no = generate_job_number(
+        job_type,
+        data.get("etd") or data.get("pick_up_date"),
+        company_prefix
+    )
     
     cols = ["job_no", "job_type"] + SHIPMENT_FIELDS
     values = [job_no, job_type] + [data.get(f) for f in SHIPMENT_FIELDS]
@@ -32,7 +47,7 @@ def create_shipment(data: Dict[str, Any]) -> str:
 
 
 def update_shipment(job_no: str, updates: Dict[str, Any]) -> bool:
-    """Update fields of a shipment by job_no. Returns True on success."""
+    """Update fields of a shipment by job_no."""
     allowed = [f for f in updates.keys() if f in SHIPMENT_FIELDS]
     if not allowed:
         return False
@@ -67,38 +82,58 @@ def list_shipments(
     job_type: Optional[str] = None,
     status: Optional[str] = None,
     carrier: Optional[str] = None,
+    customer_id: Optional[int] = None,
+    limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    """List all shipments with optional filters."""
+    """List shipments with optional filters."""
     sql = "SELECT * FROM shipments WHERE 1=1"
     params = []
     if job_type:
-        sql += " AND job_type=?"
-        params.append(job_type)
+        sql += " AND job_type=?"; params.append(job_type)
     if status:
-        sql += " AND status=?"
-        params.append(status)
+        sql += " AND status=?"; params.append(status)
     if carrier:
-        sql += " AND carrier=?"
-        params.append(carrier)
+        sql += " AND carrier=?"; params.append(carrier)
+    if customer_id:
+        sql += " AND customer_id=?"; params.append(customer_id)
     sql += " ORDER BY etd DESC, id DESC"
+    if limit:
+        sql += f" LIMIT {int(limit)}"
     
     with get_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
 
+def clone_shipment(source_job_no: str) -> Optional[str]:
+    """Duplicate an existing shipment as a new draft."""
+    src = get_shipment(source_job_no)
+    if not src:
+        return None
+    # Strip identifiers, mark as new draft
+    clone_data = {k: v for k, v in src.items()
+                  if k not in ("id", "job_no", "created_at", "updated_at",
+                               "invoice_no", "customer_paid")}
+    clone_data["status"] = "Proceed"
+    clone_data["remark"] = f"Cloned from {source_job_no}\n" + (src.get("remark") or "")
+    return create_shipment(clone_data)
+
+
 def get_dashboard_stats() -> Dict[str, Any]:
     """Aggregated stats for dashboard KPIs."""
     with get_connection() as conn:
         total = conn.execute("SELECT COUNT(*) FROM shipments").fetchone()[0]
-        in_progress = conn.execute(
-            "SELECT COUNT(*) FROM shipments WHERE status='In-Progress'"
+        proceed = conn.execute(
+            "SELECT COUNT(*) FROM shipments WHERE status='Proceed'"
         ).fetchone()[0]
         finished = conn.execute(
             "SELECT COUNT(*) FROM shipments WHERE status='Finished'"
         ).fetchone()[0]
-        cancelled = conn.execute(
-            "SELECT COUNT(*) FROM shipments WHERE status='Cancelled'"
+        closed = conn.execute(
+            "SELECT COUNT(*) FROM shipments WHERE status='Closed'"
+        ).fetchone()[0]
+        canceled = conn.execute(
+            "SELECT COUNT(*) FROM shipments WHERE status='Canceled'"
         ).fetchone()[0]
         
         by_type = conn.execute(
@@ -113,19 +148,14 @@ def get_dashboard_stats() -> Dict[str, Any]:
             "SELECT strftime('%Y-%m', etd) ym, COUNT(*) c FROM shipments "
             "WHERE etd IS NOT NULL GROUP BY ym ORDER BY ym"
         ).fetchall()
-        by_pod = conn.execute(
-            "SELECT pod, COUNT(*) c FROM shipments "
-            "WHERE pod IS NOT NULL AND pod!='' "
-            "GROUP BY pod ORDER BY c DESC LIMIT 10"
-        ).fetchall()
     
     return {
         "total": total,
-        "in_progress": in_progress,
+        "proceed": proceed,
         "finished": finished,
-        "cancelled": cancelled,
+        "closed": closed,
+        "canceled": canceled,
         "by_type": [dict(r) for r in by_type],
         "by_carrier": [dict(r) for r in by_carrier],
         "by_month": [dict(r) for r in by_month],
-        "by_pod": [dict(r) for r in by_pod],
     }
