@@ -35,9 +35,9 @@ def render():
             st.markdown("""
             | Role | Username | Password |
             |------|----------|----------|
-            | 👑 Admin | `admin` | `admin123` |
-            | 💼 Sales | `sales` | `sales123` |
-            | 📞 Customer Service | `cs` | `cs123` |
-            | 🚢 Operation | `operation` | `ops123` |
-            | 💰 Accounting | `accounting` | `acc123` |
+            | 👑 Admin | `admin` | `Admin@2026!` |
+            | 💼 Sales | `sales` | `Sales@2026!` |
+            | 📞 Customer Service | `cs` | `Cs@2026!` |
+            | 🚢 Operation | `operation` | `Ops@2026!` |
+            | 💰 Accounting | `accounting` | `Acc@2026!` |
             """)

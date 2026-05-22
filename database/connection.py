@@ -307,29 +307,49 @@ def _ensure_columns(conn, table: str, columns: dict) -> None:
 
 
 def _seed_default_users(conn) -> None:
-    """Create default users on first run if none exist."""
+    """Create or update default users with secure passwords."""
     import hashlib
-    try:
-        count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    except sqlite3.OperationalError:
-        return
-    if count > 0:
-        return
     
     defaults = [
-        ("admin", "admin123", "System Admin", "admin"),
-        ("sales", "sales123", "Sales Demo", "sales"),
-        ("cs", "cs123", "CS Demo", "cs"),
-        ("operation", "ops123", "Operation Demo", "operation"),
-        ("accounting", "acc123", "Accounting Demo", "accounting"),
+        ("admin", "Admin@2026!", "System Admin", "admin"),
+        ("sales", "Sales@2026!", "Sales Demo", "sales"),
+        ("cs", "Cs@2026!", "CS Demo", "cs"),
+        ("operation", "Ops@2026!", "Operation Demo", "operation"),
+        ("accounting", "Acc@2026!", "Accounting Demo", "accounting"),
     ]
+    
+    # Old weak passwords to replace if found (for existing DBs)
+    old_passwords = {
+        "admin": "admin123", "sales": "sales123", "cs": "cs123",
+        "operation": "ops123", "accounting": "acc123",
+    }
+    
+    try:
+        existing_users = {row[0]: row[1] for row in
+                          conn.execute("SELECT username, password_hash FROM users")}
+    except Exception:
+        existing_users = {}
+    
     for username, pwd, full_name, role in defaults:
-        hashed = hashlib.sha256(pwd.encode()).hexdigest()
-        try:
-            conn.execute(
-                "INSERT INTO users (username, password_hash, full_name, role, is_active) "
-                "VALUES (?,?,?,?,1)",
-                (username, hashed, full_name, role)
-            )
-        except sqlite3.IntegrityError:
-            pass
+        new_hash = hashlib.sha256(pwd.encode()).hexdigest()
+        old_hash = hashlib.sha256(old_passwords[username].encode()).hexdigest()
+        
+        if username not in existing_users:
+            # New user — insert
+            try:
+                conn.execute(
+                    "INSERT INTO users (username, password_hash, full_name, role, is_active) "
+                    "VALUES (?,?,?,?,1)",
+                    (username, new_hash, full_name, role)
+                )
+            except Exception:
+                pass
+        elif existing_users[username] == old_hash:
+            # User has old weak password — upgrade
+            try:
+                conn.execute(
+                    "UPDATE users SET password_hash=? WHERE username=?",
+                    (new_hash, username)
+                )
+            except Exception:
+                pass
