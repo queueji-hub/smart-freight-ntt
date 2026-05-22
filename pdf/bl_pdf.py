@@ -84,14 +84,19 @@ def _header(styles, bl):
     
     title_block = [
         Paragraph(f"<b>{COMPANY['name']}</b>", styles["value_b"]),
-        Spacer(1, 2*mm),
+        Spacer(1, 4*mm),
         Paragraph("BILL OF LADING", styles["title"]),
+        Spacer(1, 1*mm),
         Paragraph("(For combined transport or port to port)", styles["subtitle"]),
     ]
     
     tbl = Table([[title_block, right_info]], colWidths=[120*mm, 60*mm])
     tbl.setStyle(TableStyle([
         ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING", (0,0), (-1,-1), 0),
+        ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("TOPPADDING", (0,0), (-1,-1), 0),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 0),
     ]))
     return tbl
 

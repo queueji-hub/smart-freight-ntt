@@ -39,13 +39,13 @@ def _styles() -> Dict[str, ParagraphStyle]:
     return {
         "company": ParagraphStyle(
             "company", parent=base["Normal"],
-            fontName=THAI_FONT_BOLD, fontSize=16, textColor=BRAND_GOLD,
-            alignment=TA_LEFT, spaceAfter=4,
+            fontName=THAI_FONT_BOLD, fontSize=18, textColor=BRAND_GOLD,
+            alignment=TA_LEFT, spaceAfter=10, leading=22,
         ),
         "company_addr": ParagraphStyle(
             "company_addr", parent=base["Normal"],
             fontName=THAI_FONT, fontSize=9, textColor=BRAND_BLUE,
-            alignment=TA_LEFT, leading=12,
+            alignment=TA_LEFT, leading=13, spaceBefore=4,
         ),
         "title": ParagraphStyle(
             "title", parent=base["Normal"],
@@ -106,6 +106,7 @@ def _build_header(styles) -> Table:
     )
     company_block = [
         Paragraph(COMPANY["name"], styles["company"]),
+        Spacer(1, 3*mm),
         Paragraph(addr_html, styles["company_addr"]),
     ]
     
@@ -114,6 +115,8 @@ def _build_header(styles) -> Table:
         ("VALIGN", (0,0), (-1,-1), "TOP"),
         ("LEFTPADDING", (0,0), (-1,-1), 0),
         ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("TOPPADDING", (0,0), (-1,-1), 0),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 0),
     ]))
     return tbl
 

@@ -50,9 +50,11 @@ def _styles():
     base = getSampleStyleSheet()
     return {
         "company": ParagraphStyle("c", parent=base["Normal"],
-            fontName=THAI_FONT_BOLD, fontSize=15, textColor=BRAND_GOLD),
+            fontName=THAI_FONT_BOLD, fontSize=17, textColor=BRAND_GOLD,
+            spaceAfter=10, leading=21),
         "addr": ParagraphStyle("a", parent=base["Normal"],
-            fontName=THAI_FONT, fontSize=9, textColor=BRAND_BLUE, leading=12),
+            fontName=THAI_FONT, fontSize=9, textColor=BRAND_BLUE,
+            leading=13, spaceBefore=4),
         "title": ParagraphStyle("t", parent=base["Normal"],
             fontName=THAI_FONT_BOLD, fontSize=18, textColor=BRAND_BLUE,
             alignment=TA_CENTER, spaceBefore=4, spaceAfter=8),
@@ -87,12 +89,17 @@ def _header(styles):
     
     company_block = [
         Paragraph(COMPANY["name"], styles["company"]),
+        Spacer(1, 3*mm),
         Paragraph(addr, styles["addr"]),
     ]
     
     tbl = Table([[logo, company_block]], colWidths=[40*mm, 140*mm])
     tbl.setStyle(TableStyle([
         ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING", (0,0), (-1,-1), 0),
+        ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("TOPPADDING", (0,0), (-1,-1), 0),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 0),
     ]))
     return tbl
 
