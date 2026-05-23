@@ -9,12 +9,16 @@ logging.basicConfig(level=logging.INFO)
 @st.cache_resource
 def get_db_pool():
     try:
-        # ตรวจสอบว่ามี secrets อยู่จริงก่อนเข้าถึง
+        # เช็คให้แน่ใจว่าเข้าถึง st.secrets ได้
+        if "connections" not in st.secrets:
+            logging.error("❌ 'connections' key not found in secrets!")
+            return None
+        if "postgresql" not in st.secrets["connections"]:
+            logging.error("❌ 'postgresql' key not found in secrets!")
+            return None
+            
         db_secrets = st.secrets["connections"]["postgresql"]
-        return psycopg2.pool.SimpleConnectionPool(
-            1, 20, 
-            **db_secrets
-        )
+        return psycopg2.pool.SimpleConnectionPool(1, 20, **db_secrets)
     except Exception as e:
         logging.error(f"❌ Connection Pool Error: {e}")
         return None
