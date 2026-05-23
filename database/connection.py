@@ -246,20 +246,30 @@ class SQLiteCursorWrapper:
     def __init__(self, cursor):
         self._cursor = cursor
 
-    # 1. ⚠️ เพิ่มฟังก์ชันนี้เพื่อให้รองรับคำสั่ง with ... as cursor:
     def __enter__(self):
         return self
 
-    # 2. ⚠️ เพิ่มฟังก์ชันนี้เพื่อใช้ปิดระบบเมื่อทำงานเสร็จหลังสิ้นสุด block with
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    # --- โค้ดฟังก์ชันเดิมๆ ด้านล่างที่มีอยู่แล้ว (เช่น execute, fetchone) ปล่อยไว้เหมือนเดิมครับ ---
     def execute(self, query, params=None):
-        # โค้ดเดิมของคุณ...
-        if params is not None:
+        # ป้องกันกรณีที่ query ของ SQLite ใช้ ? ให้เปลี่ยนเป็น %s สำหรับ Postgres
+        if params:
+            query = query.replace('?', '%s')
             return self._cursor.execute(query, params)
         return self._cursor.execute(query)
+
+    # --- ⚠️ เพิ่มเมธอดเหล่านี้เพื่อให้รองรับการดึงข้อมูล ---
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+    
+    @property
+    def description(self):
+        return self._cursor.description
+    # ----------------------------------------------------
 
     def close(self):
         self._cursor.close()

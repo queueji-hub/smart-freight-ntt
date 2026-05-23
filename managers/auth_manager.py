@@ -47,33 +47,35 @@ def hash_password(password: str) -> str:
 
 
 def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
-    """Verify username/password. Returns user dict or None."""
     if not username or not password:
         return None
     
     pwd_hash = hash_password(password)
     with get_connection() as conn:
-        with conn.cursor() as cursor:  # 👈 ใช้ cursor เสมอ
-            # Try with is_active filter first; fall back if column missing
-            try:
-                # 👈 ปรับเครื่องหมายเงื่อนไขเป็น %s สำหรับ PostgreSQL
-                cursor.execute(
-                    "SELECT id, username, full_name, email, role FROM users "
-                    "WHERE username=%s AND password_hash=%s AND is_active=1",
-                    (username.strip().lower(), pwd_hash)
-                )
+        with conn.cursor() as cursor:
+            # ใช้การ Query แบบปกติ
+            query = "SELECT id, username, full_name, email, role FROM users WHERE username=%s AND password_hash=%s"
+            cursor.execute(query, (username.strip().lower(), pwd_hash))
+            
+            # 💡 เพิ่มการตรวจสอบตรงนี้ครับ: 
+            # ถ้า cursor เป็น Object ของเราเองที่ไม่มี fetchone ให้ลองเข้าถึงผ่าน attribute อื่นๆ
+            if hasattr(cursor, 'fetchone'):
                 row = cursor.fetchone()
-            except Exception:
-                # 👈 ปรับเครื่องหมายเงื่อนไขเป็น %s สำหรับ PostgreSQL
-                cursor.execute(
-                    "SELECT id, username, full_name, email, role FROM users "
-                    "WHERE username=%s AND password_hash=%s",
-                    (username.strip().lower(), pwd_hash)
-                )
-                row = cursor.fetchone()
+            else:
+                # กรณีถ้าเป็น list ของ dict หรือผลลัพธ์แบบอื่น
+                rows = list(cursor)
+                row = rows[0] if rows else None
     
-    return dict(row) if row else None
-
+    # ถ้า row เป็น object (ไม่ใช่ dict) ให้ลอง convert ให้เป็น dict
+    if row:
+        if isinstance(row, dict):
+            return row
+        try:
+            # กรณี row เป็น tuple จากฐานข้อมูล
+            return dict(zip([col[0] for col in cursor.description], row))
+        except:
+            return dict(row)
+    return None
 
 def can(role: str, module: str, action: str = "r") -> bool:
     """Check permission. action: 'r' (read) or 'w' (write).
