@@ -309,7 +309,6 @@ def get_connection():
         db_secrets = st.secrets["connections"]["postgresql"]
         
         pg_conn = psycopg2.connect(
-            dialect=db_secrets["dialect"],
             host=db_secrets["host"],
             database=db_secrets["database"],
             user=db_secrets["user"],
