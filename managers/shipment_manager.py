@@ -80,12 +80,12 @@ def list_shipments(job_type: str = None, status: str = None, limit: int = None) 
         return [dict(r) for r in rows]
 
 def get_dashboard_stats() -> Dict[str, Any]:
-    """Aggregated stats for dashboard with safe defaults."""
+    """Aggregated stats for dashboard with all required keys."""
     with get_connection() as conn:
-        # ดึงสถานะทั้งหมดจาก DB
+        # ดึงสถานะทั้งหมดจากตาราง
         rows = conn.execute("SELECT status, COUNT(*) as c FROM shipments GROUP BY status").fetchall()
         
-        # แปลงเป็น dict (รองรับทั้ง tuple และ dict)
+        # แปลงข้อมูลเป็น dict
         stats_data = {}
         for r in rows:
             if isinstance(r, dict):
@@ -101,8 +101,9 @@ def get_dashboard_stats() -> Dict[str, Any]:
             "total": total,
             "proceed": stats_data.get('proceed', 0),
             "pending": stats_data.get('pending', 0),
-            "finished": stats_data.get('finished', 0), # เพิ่ม Key ที่ขาดไป
+            "finished": stats_data.get('finished', 0),
             "completed": stats_data.get('completed', 0),
+            "closed": stats_data.get('closed', 0),  # เพิ่ม Key ที่ขาดไปให้แล้ว
             "by_type": [dict(r) for r in conn.execute("SELECT job_type, COUNT(*) as c FROM shipments GROUP BY job_type").fetchall()],
             "by_month": [dict(r) for r in conn.execute("SELECT TO_CHAR(etd, 'YYYY-MM') as ym, COUNT(*) as c FROM shipments WHERE etd IS NOT NULL GROUP BY ym ORDER BY ym").fetchall()]
         }
