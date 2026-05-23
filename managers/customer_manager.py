@@ -81,4 +81,8 @@ def get_customer(customer_id):
             (customer_id,)
         ).fetchone()
 
-        return dict(result) if result else None
+        return {
+    "id": row["id"],
+    "name": row["full_name"],   # 👈 map ให้ UI ใช้ชื่อเดียว
+    "email": row["email"],
+}
