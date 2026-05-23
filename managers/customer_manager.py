@@ -53,6 +53,15 @@ def create_customer(data: Dict[str, Any]) -> None:
             VALUES (%s, %s, %s, %s)
         """, (data["name"], data.get("company_name"), data.get("attention"), data.get("tel")))
 
+def delete_customer(customer_id: int) -> bool:
+    """Delete a customer record by ID."""
+    with get_connection() as conn:
+        try:
+            conn.execute("DELETE FROM customers WHERE id=%s", (customer_id,))
+            return True
+        except Exception:
+            return False
+            
 def update_customer(name: str, data: Dict[str, Any]) -> bool:
     """Update existing customer details."""
     _ensure_table()
