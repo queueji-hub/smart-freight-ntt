@@ -80,20 +80,28 @@ def list_shipments(job_type: str = None, status: str = None, limit: int = None) 
         return [dict(r) for r in rows]
 
 def get_dashboard_stats() -> Dict[str, Any]:
-    """Aggregated stats for dashboard."""
+    """Aggregated stats for dashboard with safe defaults."""
     with get_connection() as conn:
-        def fetch_count(query: str) -> int:
-            # ใช้ Alias 'cnt' และรองรับทั้งรูปแบบ dict หรือ tuple
-            sql = query.replace("COUNT(*)", "COUNT(*) as cnt")
-            row = conn.execute(sql).fetchone()
-            if not row: return 0
-            if isinstance(row, dict): return row.get('cnt', 0)
-            return row[0]
+        # 1. ดึงข้อมูลสถานะและจำนวนงาน
+        rows = conn.execute("SELECT status, COUNT(*) as c FROM shipments GROUP BY status").fetchall()
+        
+        # 2. แปลงข้อมูลเป็น Dict (รองรับทั้ง dict และ tuple)
+        stats_data = {}
+        for r in rows:
+            if isinstance(r, dict):
+                status_key = str(r.get('status', 'unknown')).lower()
+                stats_data[status_key] = r.get('c', 0)
+            else:
+                status_key = str(r[0]).lower()
+                stats_data[status_key] = r[1]
 
-        total = fetch_count("SELECT COUNT(*) FROM shipments")
-        stats = {
+        # 3. คำนวณยอดรวมและคืนค่าพร้อม Key ที่หน้า Dashboard ต้องการ
+        total = sum(stats_data.values())
+        return {
             "total": total,
+            "proceed": stats_data.get('proceed', 0),
+            "pending": stats_data.get('pending', 0),
+            "completed": stats_data.get('completed', 0),
             "by_type": [dict(r) for r in conn.execute("SELECT job_type, COUNT(*) as c FROM shipments GROUP BY job_type").fetchall()],
             "by_month": [dict(r) for r in conn.execute("SELECT TO_CHAR(etd, 'YYYY-MM') as ym, COUNT(*) as c FROM shipments WHERE etd IS NOT NULL GROUP BY ym ORDER BY ym").fetchall()]
         }
-    return stats
