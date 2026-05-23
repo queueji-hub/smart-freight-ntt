@@ -84,14 +84,14 @@ PAGES = [
     ("quotation", "📄 Quotation", "quotation"),
     ("booking", "📑 Booking", "booking"),
     ("shipments", "📦 Shipment", "shipment"),
-    ("tracking", "📍 Tracking", "shipment"),
-    ("profit", "📊 Profit Sheet", "billing"),
+    ("tracking", "📍 Tracking", "milestone"),
+    ("profit", "📊 Profit Sheet", "profit"),
     ("billing", "💰 Billing", "billing"),
-    ("fx", "💱 FX Rates", "billing"),
+    ("fx", "💱 FX Rates", "fx"),
     ("reports", "📈 Reports", "reports"),
     ("users", "👤 Users", "users"),
-    ("settings", "⚙️ Settings", "users"),
-    ("help", "📘 Help / Manual", "dashboard"),
+    ("settings", "⚙️ Settings", "email"),
+    ("help", "📘 Help / Manual", "session"),
 ]
 
 role = user.get("role", "")
