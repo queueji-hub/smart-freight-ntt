@@ -1,12 +1,13 @@
-"""SQLite database connection and initialization."""
-import sqlite3
-from pathlib import Path
-from config import DB_PATH
+"""Supabase (PostgreSQL) database connection and initialization with SQLite compatibility layer."""
+import psycopg2
+import psycopg2.extras
+import streamlit as st
 
-SCHEMA = """
+# ปรับปรุงโครงสร้าง SCHEMA ให้เข้ากับ PostgreSQL (เปลี่ยน AUTOINCREMENT เป็น SERIAL)
+RAW_SCHEMA = """
 -- ===== CRM / Customer Database =====
 CREATE TABLE IF NOT EXISTS customers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     company_name TEXT NOT NULL,
     contact_person TEXT,
     tel TEXT,
@@ -25,7 +26,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_taxid ON customers(tax_id);
 
 -- ===== Quotation =====
 CREATE TABLE IF NOT EXISTS quotations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     quotation_no TEXT UNIQUE NOT NULL,
     job_type TEXT NOT NULL CHECK(job_type IN ('SE','SI','AE','AI','TE','TI')),
     customer_id INTEGER REFERENCES customers(id),
@@ -59,7 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_quotations_date ON quotations(quotation_date);
 
 
 CREATE TABLE IF NOT EXISTS quotation_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     quotation_id INTEGER NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
     description TEXT NOT NULL,
     currency TEXT NOT NULL DEFAULT 'USD',
@@ -81,7 +82,7 @@ CREATE TABLE IF NOT EXISTS job_counters (
 
 -- ===== Booking Confirmation =====
 CREATE TABLE IF NOT EXISTS bookings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     booking_no TEXT UNIQUE NOT NULL,
     job_type TEXT NOT NULL,
     customer_id INTEGER REFERENCES customers(id),
@@ -113,7 +114,7 @@ CREATE INDEX IF NOT EXISTS idx_bookings_customer ON bookings(customer_id);
 
 -- ===== Shipments (Job) =====
 CREATE TABLE IF NOT EXISTS shipments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     job_no TEXT UNIQUE NOT NULL,
     job_type TEXT NOT NULL,
     booking_id INTEGER, booking_no TEXT,
@@ -145,7 +146,7 @@ CREATE INDEX IF NOT EXISTS idx_shipments_carrier ON shipments(carrier);
 
 -- ===== Shipment Milestones =====
 CREATE TABLE IF NOT EXISTS shipment_milestones (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
     milestone_code TEXT NOT NULL,
     milestone_name TEXT NOT NULL,
@@ -157,7 +158,7 @@ CREATE TABLE IF NOT EXISTS shipment_milestones (
 
 -- ===== Financial Documents =====
 CREATE TABLE IF NOT EXISTS invoices (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     doc_no TEXT UNIQUE NOT NULL,
     doc_type TEXT NOT NULL,
     shipment_id INTEGER, job_no TEXT,
@@ -186,7 +187,7 @@ CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(payment_status);
 
 
 CREATE TABLE IF NOT EXISTS invoice_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
     description TEXT NOT NULL,
     quantity REAL DEFAULT 1,
@@ -209,7 +210,7 @@ CREATE TABLE IF NOT EXISTS doc_counters (
 
 -- ===== Users (RBAC) =====
 CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     full_name TEXT,
@@ -222,7 +223,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- ===== Activity Log =====
 CREATE TABLE IF NOT EXISTS activity_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     user_id INTEGER,
     username TEXT,
     action TEXT NOT NULL,
@@ -235,8 +236,6 @@ CREATE INDEX IF NOT EXISTS idx_logs_user ON activity_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_logs_created ON activity_logs(created_at);
 """
 
-
-# Migration definitions: tables and columns to add for older databases
 MIGRATIONS = {
     "customers": {
         "credit_terms_days": "INTEGER DEFAULT 30",
@@ -284,115 +283,17 @@ MIGRATIONS = {
     },
 }
 
+# =====================================================================
+#  SQLite to PostgreSQL Compatibility Layers (ฉนวนแปลงคำสั่งเพื่อความปลอดภัย)
+# =====================================================================
 
-def get_connection() -> sqlite3.Connection:
-    """Return a new SQLite connection with foreign keys enabled."""
-    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    
-    # Auto-schedule push to GitHub when commits happen (Streamlit Cloud persistence)
-    try:
-        from managers.db_persistence import schedule_push
-        # Only schedule on commit (write operations)
-        original_commit = conn.commit
-        def _commit_with_push():
-            original_commit()
-            schedule_push()
-        conn.commit = _commit_with_push
-    except Exception:
-        pass
-    
-    return conn
+class SQLiteCursorWrapper:
+    def __init__(self, pg_cursor):
+        self._cursor = pg_cursor
 
-
-def init_database() -> None:
-    """Create all tables + run migrations + seed default users.
-    
-    On first call: pull latest DB from GitHub if configured.
-    """
-    # Pull from GitHub before any local DB operations
-    try:
-        from managers.db_persistence import pull_db_from_github
-        pull_db_from_github()
-    except Exception:
-        pass
-    
-    with get_connection() as conn:
-        # Create new tables (won't affect existing ones)
-        conn.executescript(SCHEMA)
+    def execute(self, query, params=None):
+        # 1. แปลงตัวแปรคำถามจาก ? เป็น %s ให้เข้ากับ PostgreSQL 
+        if "?" in query:
+            query = query.replace("?", "%s")
         
-        # Run migrations: add missing columns to existing tables
-        for table, columns in MIGRATIONS.items():
-            _ensure_columns(conn, table, columns)
-        
-        # Seed default users (idempotent)
-        _seed_default_users(conn)
-
-
-def _ensure_columns(conn, table: str, columns: dict) -> None:
-    """Add missing columns. Skips if table doesn't exist or column already exists."""
-    try:
-        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
-    except sqlite3.OperationalError:
-        return
-    if not existing:
-        # Table doesn't exist
-        return
-    for col, ddl in columns.items():
-        if col not in existing:
-            try:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
-            except sqlite3.OperationalError:
-                # Column might already exist or DDL incompatible
-                pass
-
-
-def _seed_default_users(conn) -> None:
-    """Create or update default users with secure passwords."""
-    import hashlib
-    
-    defaults = [
-        ("admin", "Admin@2026!", "System Admin", "admin"),
-        ("sales", "Sales@2026!", "Sales Demo", "sales"),
-        ("cs", "Cs@2026!", "CS Demo", "cs"),
-        ("operation", "Ops@2026!", "Operation Demo", "operation"),
-        ("accounting", "Acc@2026!", "Accounting Demo", "accounting"),
-    ]
-    
-    # Old weak passwords to replace if found (for existing DBs)
-    old_passwords = {
-        "admin": "admin123", "sales": "sales123", "cs": "cs123",
-        "operation": "ops123", "accounting": "acc123",
-    }
-    
-    try:
-        existing_users = {row[0]: row[1] for row in
-                          conn.execute("SELECT username, password_hash FROM users")}
-    except Exception:
-        existing_users = {}
-    
-    for username, pwd, full_name, role in defaults:
-        new_hash = hashlib.sha256(pwd.encode()).hexdigest()
-        old_hash = hashlib.sha256(old_passwords[username].encode()).hexdigest()
-        
-        if username not in existing_users:
-            # New user — insert
-            try:
-                conn.execute(
-                    "INSERT INTO users (username, password_hash, full_name, role, is_active) "
-                    "VALUES (?,?,?,?,1)",
-                    (username, new_hash, full_name, role)
-                )
-            except Exception:
-                pass
-        elif existing_users[username] == old_hash:
-            # User has old weak password — upgrade
-            try:
-                conn.execute(
-                    "UPDATE users SET password_hash=? WHERE username=?",
-                    (new_hash, username)
-                )
-            except Exception:
-                pass
+        #
