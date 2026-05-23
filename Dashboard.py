@@ -13,11 +13,10 @@ from utils.nav import setup_sidebar
 from managers.auth_manager import can_read, ROLE_LABELS
 from managers.session_manager import get_user_by_token, delete_session
 
-
+# ===== Initialization =====
 @st.cache_resource
 def _init_db():
     init_database()
-    # Seed FX rates on first run
     try:
         from managers.fx_manager import seed_default_rates
         seed_default_rates()
@@ -25,70 +24,49 @@ def _init_db():
         pass
     return True
 
-
 _init_db()
 
-
-# Auto-push DB to GitHub if dirty (run on every rerun)
+# Auto-push DB to GitHub if dirty
 try:
     from managers.db_persistence import push_if_dirty
     push_if_dirty()
 except Exception:
     pass
 
-
-# ===== Pages config =====
+# ===== Pages Configuration =====
 PAGES = [
-    ("dashboard", "📊 Dashboard", "dashboard"),
-    ("crm", "👥 CRM", "crm"),
-    ("quotation", "📄 Quotation", "quotation"),
-    ("booking", "📑 Booking", "booking"),
-    ("shipments", "📦 Shipment", "shipment"),
-    ("tracking", "📍 Tracking", "shipment"),
-    ("profit", "📊 Profit Sheet", "billing"),
-    ("billing", "💰 Billing", "billing"),
-    ("fx", "💱 FX Rates", "billing"),
-    ("reports", "📈 Reports", "reports"),
-    ("users", "👤 Users", "users"),
-    ("settings", "⚙️ Settings", "users"),
+    ("dashboard", "📊 Dashboard", "dashboard"), ("crm", "👥 CRM", "crm"),
+    ("quotation", "📄 Quotation", "quotation"), ("booking", "📑 Booking", "booking"),
+    ("shipments", "📦 Shipment", "shipment"), ("tracking", "📍 Tracking", "shipment"),
+    ("profit", "📊 Profit Sheet", "billing"), ("billing", "💰 Billing", "billing"),
+    ("fx", "💱 FX Rates", "billing"), ("reports", "📈 Reports", "reports"),
+    ("users", "👤 Users", "users"), ("settings", "⚙️ Settings", "users"),
     ("help", "📘 Help / Manual", "dashboard"),
 ]
 
-
+# ===== Helpers for URL Params =====
 def _get_query(key: str):
-    """Get a query param value (handles new + legacy API)."""
     try:
         qp = st.query_params
-        val = qp.get(key, None)
-        if isinstance(val, list):
-            val = val[0] if val else None
-        return val
+        val = qp.get(key)
+        return val if val else None
     except Exception:
-        try:
-            qp = st.experimental_get_query_params()
-            val = qp.get(key, [None])
-            return val[0] if val else None
-        except Exception:
-            return None
-
+        return None
 
 def _set_query(**kwargs):
-    """Set query params (preserving others)."""
     try:
         for k, v in kwargs.items():
             if v is None:
-                if k in st.query_params:
-                    del st.query_params[k]
+                if k in st.query_params: del st.query_params[k]
             else:
                 st.query_params[k] = v
     except Exception:
         pass
 
-
-# ===== AUTHENTICATION via session token =====
-# Priority: session_state.user > token in URL > not logged in
+# ===== AUTHENTICATION FLOW =====
 user = st.session_state.get("user")
 
+# ถ้าไม่มี user ใน session ให้ลองกู้คืนจาก URL Token
 if not user:
     token = _get_query("token")
     if token:
@@ -96,26 +74,26 @@ if not user:
         if user:
             st.session_state["user"] = user
             st.session_state["session_token"] = token
+        else:
+            # Token ไม่ถูกต้องหรือหมดอายุ
+            st.error("Session expired. Please login again.")
+            _set_query(token=None)
 
+# ถ้ายังไม่มี user ให้แสดงหน้า Login
 if not user:
-    setup_sidebar()
     from views import login_view
     login_view.render()
     st.stop()
 
+# หาก Login แล้ว เตรียมข้อมูลสำหรับแสดงผล
 role = user.get("role", "")
 session_token = st.session_state.get("session_token") or _get_query("token")
 
-# ===== Determine current page =====
+# ===== Sidebar & Navigation =====
+setup_sidebar()
 url_page = _get_query("page")
 allowed_pages = [p[0] for p in PAGES if can_read(role, p[2])]
-current_page = url_page if url_page in allowed_pages else (
-    allowed_pages[0] if allowed_pages else "dashboard"
-)
-
-
-# ===== Sidebar with HTML link navigation (preserves token) =====
-setup_sidebar()
+current_page = url_page if url_page in allowed_pages else (allowed_pages[0] if allowed_pages else "dashboard")
 
 with st.sidebar:
     st.markdown(f"""
@@ -128,96 +106,35 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     st.markdown("---")
     
-    nav_html = """
-    <style>
-    .nav-link {
-        display:block; padding:0.55rem 1rem; margin:0.25rem 0;
-        border-radius:0.5rem; text-decoration:none !important;
-        color:#FAFAFA !important; background:#262730;
-        border:1px solid #464853; text-align:left;
-        font-size:0.92rem; transition:all 0.15s ease;
-    }
-    .nav-link:hover {
-        background:#3a3d4a; border-color:#5e6ad2;
-        text-decoration:none !important;
-    }
-    .nav-link.active {
-        background:#FF4B4B; border-color:#FF4B4B;
-        color:white !important; font-weight:600;
-    }
-    .nav-link:visited, .nav-link:focus, .nav-link:active {
-        text-decoration:none !important;
-    }
-    </style>
-    """
-    
-    # Build nav links — IMPORTANT: include token in href to preserve login
+    # Navigation logic
     for page_id, label, module in PAGES:
-        if not can_read(role, module):
-            continue
+        if not can_read(role, module): continue
         is_active = page_id == current_page
-        cls = "nav-link active" if is_active else "nav-link"
         href = f"?page={page_id}"
-        if session_token:
-            href += f"&token={session_token}"
-        nav_html += f'<a href="{href}" target="_self" class="{cls}">{label}</a>'
-    
-    st.markdown(nav_html, unsafe_allow_html=True)
-    
+        if session_token: href += f"&token={session_token}"
+        
+        # ใช้ปุ่มแทน link เพื่อความเสถียรในบาง browser หรือใช้ a tag เดิม
+        st.markdown(f'<a href="{href}" target="_self" class="{"nav-link active" if is_active else "nav-link"}">{label}</a>', unsafe_allow_html=True)
+
     st.markdown("---")
     if st.button("🚪 Sign Out", use_container_width=True):
-        # Invalidate session in DB
-        if session_token:
-            delete_session(session_token)
-        # Clear session state and URL token
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
-        try:
-            st.query_params.clear()
-        except Exception:
-            pass
+        if session_token: delete_session(session_token)
+        st.session_state.clear()
+        _set_query(token=None, page=None)
         st.rerun()
 
+# ===== Render Page Content =====
+page_map = {
+    "dashboard": "dashboard_view", "crm": "crm_view", "quotation": "quotation_view",
+    "booking": "booking_view", "shipments": "shipments_view", "tracking": "tracking_view",
+    "profit": "profit_view", "billing": "billing_view", "fx": "fx_manager", 
+    "reports": "reports_view", "users": "users_view", "settings": "settings_view", "help": "help_view"
+}
 
-# ===== Render selected page =====
-if current_page == "dashboard":
-    from views import dashboard_view
-    dashboard_view.render()
-elif current_page == "crm":
-    from views import crm_view
-    crm_view.render()
-elif current_page == "quotation":
-    from views import quotation_view
-    quotation_view.render()
-elif current_page == "booking":
-    from views import booking_view
-    booking_view.render()
-elif current_page == "shipments":
-    from views import shipments_view
-    shipments_view.render()
-elif current_page == "tracking":
-    from views import tracking_view
-    tracking_view.render()
-elif current_page == "profit":
-    from views import profit_view
-    profit_view.render()
-elif current_page == "billing":
-    from views import billing_view
-    billing_view.render()
-elif current_page == "fx":
-    from views import fx_view
-    fx_view.render()
-elif current_page == "reports":
-    from views import reports_view
-    reports_view.render()
-elif current_page == "users":
-    from views import users_view
-    users_view.render()
-elif current_page == "settings":
-    from views import settings_view
-    settings_view.render()
-elif current_page == "help":
-    from views import help_view
-    help_view.render()
-else:
-    st.error(f"Unknown page: {current_page}")
+try:
+    # นำเข้า view แบบไดนามิกตาม page_map
+    module_name = page_map.get(current_page, "dashboard_view")
+    view_module = __import__(f"views.{module_name}", fromlist=['render'])
+    view_module.render()
+except Exception as e:
+    st.error(f"Error loading page: {e}")
