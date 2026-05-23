@@ -22,7 +22,6 @@ def can_write(role: str, module: str) -> bool:
 
 def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
     # Clear the logic to ensure it's not crashing here
-    # pwd_hash = hash_password(password)
     pwd_hash = password
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -30,8 +29,8 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
             query = "SELECT id, username, full_name, email, role FROM users WHERE username=%s AND password_hash=%s"
             cursor.execute(query, (username.strip().lower(), pwd_hash))
             user = cursor.fetchone()
-            print(query)
             return dict(user) if user else None
+
             # เพิ่มส่วนนี้เข้าไปในไฟล์ managers/auth_manager.py
 PERMISSIONS = {
     "admin": {
