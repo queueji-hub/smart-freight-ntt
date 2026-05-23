@@ -2,7 +2,6 @@
 from typing import Dict, List, Any, Optional
 from database.connection import get_connection
 
-
 # Built-in templates with placeholders {{var}}
 DEFAULT_TEMPLATES = {
     "quotation_send": {
@@ -66,10 +65,10 @@ DEFAULT_TEMPLATES = {
     },
 }
 
+_SEED_DONE = False
 
 def _ensure_table():
     with get_connection() as conn:
-        # 🟢 แก้ไข: เปลี่ยน INTEGER PRIMARY KEY AUTOINCREMENT เป็น SERIAL PRIMARY KEY
         conn.execute("""
             CREATE TABLE IF NOT EXISTS email_templates (
                 id SERIAL PRIMARY KEY,
@@ -82,58 +81,46 @@ def _ensure_table():
             )
         """)
 
-
 def seed_default_templates():
+    global _SEED_DONE
+    if _SEED_DONE: return
     _ensure_table()
     with get_connection() as conn:
         for code, tpl in DEFAULT_TEMPLATES.items():
-            # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
-            existing = conn.execute(
-                "SELECT id FROM email_templates WHERE code=%s", (code,)
-            ).fetchone()
-            if not existing:
-                # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
-                conn.execute(
-                    "INSERT INTO email_templates (code, name, subject, body, is_default) "
-                    "VALUES (%s,%s,%s,%s,1)",
-                    (code, tpl["name"], tpl["subject"], tpl["body"])
-                )
-
+            conn.execute("""
+                INSERT INTO email_templates (code, name, subject, body, is_default)
+                VALUES (%s, %s, %s, %s, 1)
+                ON CONFLICT (code) DO NOTHING
+            """, (code, tpl["name"], tpl["subject"], tpl["body"]))
+    _SEED_DONE = True
 
 def get_template(code: str) -> Optional[Dict[str, Any]]:
-    _ensure_table()
     seed_default_templates()
     with get_connection() as conn:
-        # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
         row = conn.execute(
             "SELECT * FROM email_templates WHERE code=%s", (code,)
         ).fetchone()
     return dict(row) if row else None
 
-
 def list_templates() -> List[Dict[str, Any]]:
-    _ensure_table()
     seed_default_templates()
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM email_templates ORDER BY name").fetchall()
+            "SELECT * FROM email_templates ORDER BY name"
+        ).fetchall()
     return [dict(r) for r in rows]
-
 
 def update_template(code: str, subject: str, body: str) -> bool:
     _ensure_table()
     with get_connection() as conn:
-        # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
         conn.execute(
-            "UPDATE email_templates SET subject=%s, body=%s, "
-            "updated_at=CURRENT_TIMESTAMP WHERE code=%s",
+            "UPDATE email_templates SET subject=%s, body=%s, updated_at=CURRENT_TIMESTAMP WHERE code=%s",
             (subject, body, code)
         )
     return True
 
-
 def render_template(code: str, context: Dict[str, Any]) -> Dict[str, str]:
-    """Render template with {{var}} substitution. Returns subject + body."""
+    """Render template with {{var}} substitution."""
     tpl = get_template(code)
     if not tpl:
         return {"subject": "", "body": ""}
@@ -141,7 +128,6 @@ def render_template(code: str, context: Dict[str, Any]) -> Dict[str, str]:
     subject = tpl["subject"] or ""
     body = tpl["body"] or ""
     
-    # Add company info to context
     from config import COMPANY
     full_context = {
         "company_name": COMPANY.get("name", ""),

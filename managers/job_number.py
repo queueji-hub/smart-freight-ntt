@@ -1,16 +1,21 @@
-"""Atomic Job Number generator: [{COMPANY}-]{TYPE}{YY}{MM}{NNNN}.
-
-Examples:
-  SI26050004       - default (no company prefix)
-  NTT-SE2605001    - with company prefix
-"""
+"""Atomic Job Number generator."""
 from datetime import date, datetime
 from typing import Optional
 from database.connection import get_connection
 
-
 VALID_JOB_TYPES = ("SE", "SI", "AE", "AI", "TE", "TI")
 
+def _ensure_table():
+    """Ensure the job_counters table exists."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS job_counters (
+                job_type TEXT NOT NULL,
+                yymm TEXT NOT NULL,
+                last_running INTEGER DEFAULT 0,
+                PRIMARY KEY (job_type, yymm)
+            )
+        """)
 
 def _resolve_date(ref_date) -> date:
     if ref_date is None:
@@ -21,48 +26,43 @@ def _resolve_date(ref_date) -> date:
         return ref_date.date()
     return ref_date
 
-
 def generate_job_number(job_type: str,
                         ref_date=None,
                         company_prefix: Optional[str] = None,
                         digits: int = 4) -> str:
-    """Generate next sequential job number.
-    
-    Args:
-        job_type: One of SE/SI/AE/AI/TE/TI
-        ref_date: Reference date (default: today)
-        company_prefix: Optional prefix like "NTT" → "NTT-SE26050001"
-        digits: Number of digits in running number (default 4)
-    """
+    """Generate next sequential job number using PostgreSQL atomic updates."""
+    _ensure_table()
     if job_type not in VALID_JOB_TYPES:
         raise ValueError(f"Invalid job_type: {job_type}")
     
     ref = _resolve_date(ref_date)
-    yy = f"{ref.year % 100:02d}"
-    mm = f"{ref.month:02d}"
-    yymm = f"{yy}{mm}"
+    yymm = f"{ref.year % 100:02d}{ref.month:02d}"
     
     with get_connection() as conn:
+        # 🟢 แก้ไข: ใช้ %s และปรับ syntax สำหรับ Postgres
         conn.execute("""
             INSERT INTO job_counters (job_type, yymm, last_running)
-            VALUES (?, ?, 1)
-            ON CONFLICT (job_type, yymm) DO UPDATE
-            SET last_running = last_running + 1
+            VALUES (%s, %s, 1)
+            ON CONFLICT (job_type, yymm) 
+            DO UPDATE SET last_running = job_counters.last_running + 1
         """, (job_type, yymm))
+        
         row = conn.execute(
-            "SELECT last_running FROM job_counters WHERE job_type=? AND yymm=?",
+            "SELECT last_running FROM job_counters WHERE job_type=%s AND yymm=%s",
             (job_type, yymm)
         ).fetchone()
     
-    running = f"{row[0]:0{digits}d}"
+    # ดึงค่าที่ถูกต้องโดยตรวจสอบว่าเป็น tuple หรือ dict
+    running_val = row[0] if isinstance(row, (tuple, list)) else row['last_running']
+    running = f"{running_val:0{digits}d}"
     base = f"{job_type}{yymm}{running}"
+    
     if company_prefix:
         return f"{company_prefix.strip().rstrip('-')}-{base}"
     return base
 
-
 def generate_booking_number(job_type: str, ref_date=None,
                              company_prefix: Optional[str] = None) -> str:
-    """Generate booking number — same format as job number, prefixed with B-."""
+    """Generate booking number."""
     base = generate_job_number(job_type, ref_date, company_prefix)
     return f"B-{base}" if not company_prefix else base.replace("-", "-B-", 1)
