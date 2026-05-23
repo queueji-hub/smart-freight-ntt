@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 from typing import Dict, Any
 
-# 1. แก้ไขตรงนี้: เพิ่ม _ensure_table เข้าไปใน Import
+# 1. ปรับปรุงการ Import ให้ถูกต้องและครบถ้วน
 from managers.shipment_manager import list_shipments, get_dashboard_stats, _ensure_table
 from managers.invoice_manager import get_outstanding_summary
 from managers.customer_manager import list_customers
@@ -23,8 +23,19 @@ def get_cached_stats():
 def get_cached_customers():
     return list_customers()
 
+def _kpi(col, label, value, sub, color):
+    """ฟังก์ชัน helper สำหรับแสดง KPI card"""
+    with col:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-label">{label}</div>
+            <div class="kpi-value" style="color:{color}">{value}</div>
+            <div style="font-size: 0.75rem; color: #62656B; margin-top: 4px;">{sub}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
 def render():
-    # 2. แก้ไขตรงนี้: เรียกใช้ฟังก์ชันที่ Import มาก่อนเริ่มใช้งาน
+    # 2. ตรวจสอบตารางฐานข้อมูลก่อนรันทุกครั้ง (ป้องกัน NameError)
     _ensure_table()
     
     user = st.session_state.get("user", {})
@@ -61,7 +72,8 @@ def render():
     
     with col_main:
         st.markdown("##### 🚢 Recent Active Shipments")
-        active = list_shipments(status="Proceed") # ไม่ต้องใส่ limit ถ้าฟังก์ชันไม่รองรับ
+        # ใช้ list_shipments ปกติ (ไม่ต้องใส่ limit หากฟังก์ชันเดิมไม่มี parameter นี้)
+        active = list_shipments() 
         if not active:
             st.info("No active shipments.")
         else:
@@ -80,13 +92,8 @@ def render():
                 </div>
             </div>
             """, unsafe_allow_html=True)
-
-def _kpi(col, label, value, sub, color):
-    with col:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-label">{label}</div>
-            <div class="kpi-value" style="color:{color}">{value}</div>
-            <div style="font-size: 0.75rem; color: #62656B; margin-top: 4px;">{sub}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        
+        if stats.get("by_type"):
+            st.markdown("##### 📦 By Job Type")
+            df_type = pd.DataFrame(stats["by_type"])
+            st.bar_chart(df_type.set_index(df_type.columns[0]), height=200)
