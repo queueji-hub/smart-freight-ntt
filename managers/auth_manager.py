@@ -31,6 +31,22 @@ ROLE_LABELS = {
     "accounting": "💰 Accounting",
 }
 
+# --- Internal Table Setup ---
+def _ensure_users_table():
+    """Ensure the users table exists with correct schema."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                full_name TEXT,
+                email TEXT,
+                role TEXT DEFAULT 'sales',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
 # --- Auth Functions ---
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
@@ -49,20 +65,22 @@ def can_write(role: str, module: str) -> bool:
     return can(role, module, "w")
 
 def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
+    _ensure_users_table()
     pwd_hash = hash_password(password)
     with get_connection() as conn:
-        # ใช้ %s สำหรับ Postgres
         query = "SELECT id, username, full_name, email, role FROM users WHERE username=%s AND password_hash=%s"
         result = conn.execute(query, (username.strip().lower(), pwd_hash)).fetchone()
         return dict(result) if result else None
 
-# --- User Management Functions (ที่ขาดหายไป) ---
+# --- User Management Functions ---
 def list_users() -> List[Dict]:
+    _ensure_users_table()
     with get_connection() as conn:
         rows = conn.execute("SELECT id, username, full_name, email, role FROM users").fetchall()
         return [dict(row) for row in rows]
 
 def create_user(username, password, role, full_name, email):
+    _ensure_users_table()
     pwd_hash = hash_password(password)
     with get_connection() as conn:
         conn.execute(
@@ -71,6 +89,7 @@ def create_user(username, password, role, full_name, email):
         )
 
 def update_user_password(username, new_password):
+    _ensure_users_table()
     pwd_hash = hash_password(new_password)
     with get_connection() as conn:
         conn.execute("UPDATE users SET password_hash = %s WHERE username = %s", (pwd_hash, username.strip().lower()))
