@@ -290,3 +290,34 @@ class SQLiteConnectionWrapper:
             self.commit()
 
 # =====================================================================
+def get_connection():
+    """สร้างการเชื่อมต่อกับ PostgreSQL (Supabase) และห่อด้วย Wrapper"""
+    try:
+        # ดึงค่าคอนฟิกจาก Streamlit Secrets
+        db_secrets = st.secrets["connections"]["postgresql"]
+        
+        pg_conn = psycopg2.connect(
+            host=db_secrets["host"],
+            database=db_secrets["database"],
+            user=db_secrets["user"],
+            password=db_secrets["password"],
+            port=db_secrets["port"]
+        )
+        # ส่งกลับในรูปแบบ Wrapper เพื่อให้ใช้งานร่วมกับโค้ด SQLite เดิมได้
+        return SQLiteConnectionWrapper(pg_conn)
+    except Exception as e:
+        st.error(f"❌ ไม่สามารถเชื่อมต่อฐานข้อมูลได้: {e}")
+        raise e
+
+def init_database():
+    """สร้างตารางในฐานข้อมูลเริ่มต้นหากยังไม่มี"""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(RAW_SCHEMA)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        st.error(f"❌ เกิดข้อผิดพลาดในการรัน Schema: {e}")
+    finally:
+        conn.close()

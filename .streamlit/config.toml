@@ -12,4 +12,4 @@ headless = true
 [browser]
 gatherUsageStats = false
 [client]
-toolbarMode = "hidden"
+toolbarMode = "minimal"
