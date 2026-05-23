@@ -32,11 +32,14 @@ class PostgresConnectionWrapper:
         return self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     def execute(self, query, params=None):
-        cur = self.cursor()
-        # เปลี่ยน '?' เป็น '%s' เพื่อให้ตรงกับมาตรฐาน PostgreSQL
-        processed_query = query.replace('?', '%s') 
-        cur.execute(processed_query, params or ())
-        return cur
+    cur = self.conn.cursor()
+
+    if params is None or params == ():
+        cur.execute(query)
+    else:
+        cur.execute(query, params)
+
+    return cur
 
     def commit(self): self._conn.commit()
     def rollback(self): self._conn.rollback()
