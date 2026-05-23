@@ -3,21 +3,16 @@ import psycopg2.pool
 import psycopg2.extras
 import logging
 
-# เพิ่ม Logging เพื่อให้ Debug ได้ง่ายขึ้น
-logging.basicConfig(level=logging.INFO)
-
-@st.cache_resource
+# ลบ @st.cache_resource ออก เพื่อบังคับให้ระบบอ่านค่าใหม่เสมอ
 def get_db_pool():
     try:
-        # เช็คให้แน่ใจว่าเข้าถึง st.secrets ได้
-        if "connections" not in st.secrets:
-            logging.error("❌ 'connections' key not found in secrets!")
-            return None
-        if "postgresql" not in st.secrets["connections"]:
-            logging.error("❌ 'postgresql' key not found in secrets!")
+        # ตรวจสอบว่า secrets มีอยู่จริง
+        if "connections" not in st.secrets or "postgresql" not in st.secrets["connections"]:
+            logging.error("❌ Secrets 'connections.postgresql' missing!")
             return None
             
         db_secrets = st.secrets["connections"]["postgresql"]
+        # สร้าง pool
         return psycopg2.pool.SimpleConnectionPool(1, 20, **db_secrets)
     except Exception as e:
         logging.error(f"❌ Connection Pool Error: {e}")
