@@ -3,106 +3,158 @@ from typing import List, Dict, Any, Optional
 from database.connection import get_connection
 from managers.job_number import generate_job_number
 
+
+# All editable fields (excluding auto-generated id, job_no, job_type, timestamps)
 SHIPMENT_FIELDS = [
-    "booking_id", "booking_no", "customer_id", "customer_name",
-    "shipper", "consignee", "notify_party", "brand", "commodity", 
-    "combine_commodity", "cargo_type", "full_or_half", "pick_up_date", 
-    "stuffing_date", "return_date", "etd", "eta", "container_no", 
-    "seal_no", "container_size", "weight_origin", "weight_port", 
-    "carrier", "m_vessel", "feeder", "pol", "por", "pod", 
-    "final_destination", "transhipment_port", "bl_no", "bl_status", 
-    "closing_time", "overnight_trucking", "status", "invoice_no", 
-    "customer_paid", "dn_type", "dn_no", "remark", "created_by",
+    "booking_id", "booking_no",
+    "customer_id", "customer_name",
+    "shipper", "consignee", "notify_party",
+    "brand", "commodity", "combine_commodity",
+    "cargo_type", "full_or_half",
+    "pick_up_date", "stuffing_date", "return_date", "etd", "eta",
+    "container_no", "seal_no", "container_size",
+    "weight_origin", "weight_port",
+    "carrier", "m_vessel", "feeder",
+    "pol", "por", "pod", "final_destination", "transhipment_port",
+    "bl_no", "bl_status", "closing_time",
+    "overnight_trucking", "status",
+    "invoice_no", "customer_paid",
+    "dn_type", "dn_no", "remark", "created_by",
 ]
 
-def _ensure_table():
-    """Ensure the shipments table exists."""
-    with get_connection() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS shipments (
-                id SERIAL PRIMARY KEY,
-                job_no TEXT UNIQUE NOT NULL,
-                job_type TEXT NOT NULL,
-                booking_id TEXT, booking_no TEXT, customer_id INTEGER, customer_name TEXT,
-                shipper TEXT, consignee TEXT, notify_party TEXT, brand TEXT, commodity TEXT,
-                combine_commodity TEXT, cargo_type TEXT, full_or_half TEXT, pick_up_date DATE,
-                stuffing_date DATE, return_date DATE, etd DATE, eta DATE, container_no TEXT,
-                seal_no TEXT, container_size TEXT, weight_origin NUMERIC(10,2), weight_port NUMERIC(10,2),
-                carrier TEXT, m_vessel TEXT, feeder TEXT, pol TEXT, por TEXT, pod TEXT,
-                final_destination TEXT, transhipment_port TEXT, bl_no TEXT, bl_status TEXT,
-                closing_time TIMESTAMP, overnight_trucking BOOLEAN, status TEXT, invoice_no TEXT,
-                customer_paid BOOLEAN, dn_type TEXT, dn_no TEXT, remark TEXT, created_by TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+VALID_STATUS = ("Proceed", "Finished", "Closed", "Canceled")
+
 
 def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
-    _ensure_table()
+    """Create a shipment record. Auto-generates job_no."""
     job_type = data["job_type"]
-    job_no = generate_job_number(job_type, data.get("etd") or data.get("pick_up_date"), company_prefix)
+    job_no = generate_job_number(
+        job_type,
+        data.get("etd") or data.get("pick_up_date"),
+        company_prefix
+    )
     
     cols = ["job_no", "job_type"] + SHIPMENT_FIELDS
     values = [job_no, job_type] + [data.get(f) for f in SHIPMENT_FIELDS]
-    placeholders = ",".join(["%s"] * len(cols))
+    placeholders = ",".join("?" * len(cols))
     
     with get_connection() as conn:
-        conn.execute(f"INSERT INTO shipments ({','.join(cols)}) VALUES ({placeholders})", values)
+        conn.execute(
+            f"INSERT INTO shipments ({','.join(cols)}) VALUES ({placeholders})",
+            values,
+        )
     return job_no
 
+
 def update_shipment(job_no: str, updates: Dict[str, Any]) -> bool:
+    """Update fields of a shipment by job_no."""
     allowed = [f for f in updates.keys() if f in SHIPMENT_FIELDS]
-    if not allowed: return False
+    if not allowed:
+        return False
     
-    set_clause = ", ".join(f"{f}=%s" for f in allowed)
-    values = [updates[f] for f in allowed]
-    values.append(job_no)
+    set_clause = ", ".join(f"{f}=?" for f in allowed)
+    set_clause += ", updated_at=CURRENT_TIMESTAMP"
+    values = [updates[f] for f in allowed] + [job_no]
     
     with get_connection() as conn:
-        cur = conn.execute(f"UPDATE shipments SET {set_clause}, updated_at=CURRENT_TIMESTAMP WHERE job_no=%s", values)
+        cur = conn.execute(
+            f"UPDATE shipments SET {set_clause} WHERE job_no=?", values
+        )
         return cur.rowcount > 0
+
+
+def delete_shipment(job_no: str) -> bool:
+    """Delete a shipment by job_no."""
+    with get_connection() as conn:
+        cur = conn.execute("DELETE FROM shipments WHERE job_no=?", (job_no,))
+        return cur.rowcount > 0
+
 
 def get_shipment(job_no: str) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
-        row = conn.execute("SELECT * FROM shipments WHERE job_no=%s", (job_no,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM shipments WHERE job_no=?", (job_no,)
+        ).fetchone()
         return dict(row) if row else None
 
-def list_shipments(job_type: str = None, status: str = None, limit: int = None) -> List[Dict[str, Any]]:
+
+def list_shipments(
+    job_type: Optional[str] = None,
+    status: Optional[str] = None,
+    carrier: Optional[str] = None,
+    customer_id: Optional[int] = None,
+    limit: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """List shipments with optional filters."""
     sql = "SELECT * FROM shipments WHERE 1=1"
     params = []
-    if job_type: sql += " AND job_type=%s"; params.append(job_type)
-    if status: sql += " AND status=%s"; params.append(status)
+    if job_type:
+        sql += " AND job_type=?"; params.append(job_type)
+    if status:
+        sql += " AND status=?"; params.append(status)
+    if carrier:
+        sql += " AND carrier=?"; params.append(carrier)
+    if customer_id:
+        sql += " AND customer_id=?"; params.append(customer_id)
     sql += " ORDER BY etd DESC, id DESC"
-    if limit: sql += f" LIMIT {int(limit)}"
+    if limit:
+        sql += f" LIMIT {int(limit)}"
     
     with get_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
-def get_dashboard_stats() -> Dict[str, Any]:
-    """Aggregated stats for dashboard with all required keys."""
-    with get_connection() as conn:
-        # ดึงสถานะทั้งหมดจากตาราง
-        rows = conn.execute("SELECT status, COUNT(*) as c FROM shipments GROUP BY status").fetchall()
-        
-        # แปลงเป็น dict แบบปลอดภัย
-        stats_data = {}
-        for r in rows:
-            if isinstance(r, dict):
-                status_key = str(r.get('status', 'unknown')).lower()
-                stats_data[status_key] = r.get('c', 0)
-            else:
-                status_key = str(r[0]).lower()
-                stats_data[status_key] = r[1]
 
-        # สร้างรายการ Key ที่ Dashboard อาจเรียกใช้ เพื่อเป็นค่าตั้งต้น
-        required_keys = ["proceed", "pending", "finished", "completed", "closed", "canceled", "draft"]
+def clone_shipment(source_job_no: str) -> Optional[str]:
+    """Duplicate an existing shipment as a new draft."""
+    src = get_shipment(source_job_no)
+    if not src:
+        return None
+    # Strip identifiers, mark as new draft
+    clone_data = {k: v for k, v in src.items()
+                  if k not in ("id", "job_no", "created_at", "updated_at",
+                               "invoice_no", "customer_paid")}
+    clone_data["status"] = "Proceed"
+    clone_data["remark"] = f"Cloned from {source_job_no}\n" + (src.get("remark") or "")
+    return create_shipment(clone_data)
+
+
+def get_dashboard_stats() -> Dict[str, Any]:
+    """Aggregated stats for dashboard KPIs."""
+    with get_connection() as conn:
+        def fetch_count(query: str) -> int:
+            row = conn.execute(query).fetchone()
+            return dict(row).get("cnt", 0) if row else 0
+
+        total = fetch_count("SELECT COUNT(*) AS cnt FROM shipments")
+        proceed = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Proceed'")
+        finished = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Finished'")
+        closed = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Closed'")
+        canceled = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Canceled'")
         
-        result = {key: stats_data.get(key, 0) for key in required_keys}
+        by_type = conn.execute(
+            "SELECT job_type, COUNT(*) as c FROM shipments GROUP BY job_type"
+        ).fetchall()
         
-        # เพิ่มข้อมูลสรุปอื่นๆ
-        result["total"] = sum(stats_data.values())
-        result["by_type"] = [dict(r) for r in conn.execute("SELECT job_type, COUNT(*) as c FROM shipments GROUP BY job_type").fetchall()]
-        result["by_month"] = [dict(r) for r in conn.execute("SELECT TO_CHAR(etd, 'YYYY-MM') as ym, COUNT(*) as c FROM shipments WHERE etd IS NOT NULL GROUP BY ym ORDER BY ym").fetchall()]
+        by_carrier = conn.execute(
+            "SELECT carrier, COUNT(*) as c FROM shipments "
+            "WHERE carrier IS NOT NULL AND carrier!='' "
+            "GROUP BY carrier ORDER BY c DESC LIMIT 10"
+        ).fetchall()
         
-        return result
+        # 🟢 แก้ไขตรงนี้: เปลี่ยน strftime เป็น TO_CHAR สำหรับ PostgreSQL
+        by_month = conn.execute(
+            "SELECT TO_CHAR(etd, 'YYYY-MM') as ym, COUNT(*) as c FROM shipments "
+            "WHERE etd IS NOT NULL GROUP BY ym ORDER BY ym"
+        ).fetchall()
+    
+    return {
+        "total": total,
+        "proceed": proceed,
+        "finished": finished,
+        "closed": closed,
+        "canceled": canceled,
+        "by_type": [dict(r) for r in by_type],
+        "by_carrier": [dict(r) for r in by_carrier],
+        "by_month": [dict(r) for r in by_month],
+    }
