@@ -10,7 +10,7 @@ st.set_page_config(
 
 from database.connection import init_database
 from utils.nav import setup_sidebar
-from auth_manager import can_read, ROLE_LABELS
+from managers.auth_manager import can_read, ROLE_LABELS
 from managers.session_manager import get_user_by_token, delete_session
 
 

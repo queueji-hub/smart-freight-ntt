@@ -30,3 +30,32 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
             cursor.execute(query, (username.strip().lower(), pwd_hash))
             user = cursor.fetchone()
             return dict(user) if user else None
+
+            # เพิ่มส่วนนี้เข้าไปในไฟล์ managers/auth_manager.py
+PERMISSIONS = {
+    "admin": {
+        "dashboard": "rw", "crm": "rw", "quotation": "rw",
+        "booking": "rw", "shipment": "rw", "billing": "rw",
+        "reports": "rw", "users": "rw",
+    },
+    "sales": {
+        "dashboard": "r", "crm": "rw", "quotation": "rw",
+        "booking": "r", "shipment": "r", "billing": "r",
+        "reports": "r",
+    },
+    "cs": {"dashboard": "r", "crm": "rw", "quotation": "rw", "booking": "rw", "shipment": "rw", "billing": "r", "reports": "r"},
+    "operation": {"dashboard": "r", "crm": "rw", "quotation": "rw", "booking": "rw", "shipment": "rw", "billing": "r", "reports": "r"},
+    "accounting": {
+        "dashboard": "r", "crm": "r", "quotation": "r",
+        "booking": "r", "shipment": "r", "billing": "rw",
+        "reports": "r",
+    },
+}
+
+ROLE_LABELS = {
+    "admin": "👑 Admin",
+    "sales": "💼 Sales",
+    "cs": "📞 Customer Service",
+    "operation": "🚢 Operation",
+    "accounting": "💰 Accounting",
+}
