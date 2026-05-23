@@ -3,8 +3,8 @@ import streamlit as st
 import pandas as pd
 from typing import Dict, Any
 
-# สมมติว่านี่คือ Imports ของคุณ (ปรับเปลี่ยนตามโครงสร้างโปรเจกต์)
-from managers.shipment_manager import list_shipments, get_dashboard_stats
+# 1. แก้ไขตรงนี้: เพิ่ม _ensure_table เข้าไปใน Import
+from managers.shipment_manager import list_shipments, get_dashboard_stats, _ensure_table
 from managers.invoice_manager import get_outstanding_summary
 from managers.customer_manager import list_customers
 
@@ -24,6 +24,9 @@ def get_cached_customers():
     return list_customers()
 
 def render():
+    # 2. แก้ไขตรงนี้: เรียกใช้ฟังก์ชันที่ Import มาก่อนเริ่มใช้งาน
+    _ensure_table()
+    
     user = st.session_state.get("user", {})
     
     st.markdown(f"### 📊 Dashboard")
@@ -58,7 +61,7 @@ def render():
     
     with col_main:
         st.markdown("##### 🚢 Recent Active Shipments")
-        active = list_shipments(status="Proceed", limit=15)
+        active = list_shipments(status="Proceed") # ไม่ต้องใส่ limit ถ้าฟังก์ชันไม่รองรับ
         if not active:
             st.info("No active shipments.")
         else:
@@ -77,11 +80,6 @@ def render():
                 </div>
             </div>
             """, unsafe_allow_html=True)
-        
-        if stats.get("by_type"):
-            st.markdown("##### 📦 By Job Type")
-            df_type = pd.DataFrame(stats["by_type"])
-            st.bar_chart(df_type.set_index(df_type.columns[0]), height=200)
 
 def _kpi(col, label, value, sub, color):
     with col:
