@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
 from managers.doc_number import generate_doc_number
+from contracts.core_contract import enforce, INVOICE_SUMMARY_SCHEMA
 
 # =========================================================
 # CONFIG
@@ -66,10 +67,10 @@ result = {
     "vat": total_vat,
     "wht": wht_total,
     "grand_total": grand_total,
-    "outstanding": grand_total,
+    "outstanding": grand_total
 }
 
-return validate_invoice_summary(result)
+return enforce(INVOICE_SUMMARY_SCHEMA, result, "invoice_summary")
 
 
 # =========================================================
