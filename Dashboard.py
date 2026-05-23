@@ -71,8 +71,8 @@ def restore_session():
 user = restore_session()
 
 if not user:
-    from views import login_view
-    login_view.render()
+    from views.login_view import render
+    render()
     st.stop()
 
 # =========================================================
