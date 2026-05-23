@@ -124,6 +124,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
+
         query = """
         SELECT
             id,
@@ -143,7 +144,22 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
 
         user = cursor.fetchone()
 
-        if user and verify_password(password, user["password_hash"]):
+        print("USER:", user)
+
+        if not user:
+            print("❌ USER NOT FOUND")
+            return None
+
+        print("HASH:", user["password_hash"])
+
+        result = verify_password(
+            password,
+            user["password_hash"]
+        )
+
+        print("PASSWORD RESULT:", result)
+
+        if result:
             user_data = dict(user)
             del user_data["password_hash"]
             return user_data
