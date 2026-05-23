@@ -63,3 +63,21 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
         
         conn.commit()
     return True
+
+def get_quotation_by_no(quotation_no):
+    """
+    Get quotation by quotation number
+    """
+
+    with get_connection() as conn:
+
+        result = conn.execute(
+            """
+            SELECT *
+            FROM quotations
+            WHERE quotation_no = %s
+            """,
+            (quotation_no,)
+        ).fetchone()
+
+        return dict(result) if result else None
