@@ -38,15 +38,12 @@ def _ensure_table():
         """)
 
 def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
-    """Create a shipment record."""
     _ensure_table()
     job_type = data["job_type"]
     job_no = generate_job_number(job_type, data.get("etd") or data.get("pick_up_date"), company_prefix)
     
     cols = ["job_no", "job_type"] + SHIPMENT_FIELDS
     values = [job_no, job_type] + [data.get(f) for f in SHIPMENT_FIELDS]
-    
-    # สร้าง placeholders %s ตามจำนวน field
     placeholders = ",".join(["%s"] * len(cols))
     
     with get_connection() as conn:
@@ -54,7 +51,6 @@ def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
     return job_no
 
 def update_shipment(job_no: str, updates: Dict[str, Any]) -> bool:
-    """Update fields of a shipment by job_no."""
     allowed = [f for f in updates.keys() if f in SHIPMENT_FIELDS]
     if not allowed: return False
     
@@ -87,10 +83,13 @@ def get_dashboard_stats() -> Dict[str, Any]:
     """Aggregated stats for dashboard."""
     with get_connection() as conn:
         def fetch_count(query: str) -> int:
-            row = conn.execute(query).fetchone()
-            return row[0] if row else 0
+            # ใช้ Alias 'cnt' และรองรับทั้งรูปแบบ dict หรือ tuple
+            sql = query.replace("COUNT(*)", "COUNT(*) as cnt")
+            row = conn.execute(sql).fetchone()
+            if not row: return 0
+            if isinstance(row, dict): return row.get('cnt', 0)
+            return row[0]
 
-        # ใช้คำสั่ง PostgreSQL เฉพาะ
         total = fetch_count("SELECT COUNT(*) FROM shipments")
         stats = {
             "total": total,
