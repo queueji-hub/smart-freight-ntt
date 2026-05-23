@@ -1,29 +1,25 @@
-# contracts/invoice_contract.py
-
 from typing import Dict, Any
 
 INVOICE_SUMMARY_SCHEMA = {
-    "billed": float,
-    "subtotal": float,
-    "vat": float,
-    "wht": float,
+    "total_before_vat": float,
+    "total_vat_7": float,
+    "total_advance": float,
+    "wht_1_amount": float,
+    "wht_3_amount": float,
+    "wht_total": float,
     "grand_total": float,
-    "outstanding": float,
 }
 
+def validate_invoice_summary(summary: Dict[str, Any]) -> Dict[str, float]:
+    """Force contract consistency"""
+    normalized = {}
 
-def validate_invoice_summary(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Enforce schema: ensure all required keys exist + correct type
-    """
-    validated = {}
-
-    for key, expected_type in INVOICE_SUMMARY_SCHEMA.items():
-        value = data.get(key, 0)
+    for key, typ in INVOICE_SUMMARY_SCHEMA.items():
+        value = summary.get(key, 0)
 
         try:
-            validated[key] = expected_type(value)
+            normalized[key] = typ(value)
         except Exception:
-            validated[key] = expected_type(0)
+            normalized[key] = 0.0
 
-    return validated
+    return normalized
