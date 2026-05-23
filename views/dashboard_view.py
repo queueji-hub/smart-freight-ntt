@@ -131,3 +131,31 @@ def _kpi(col, label, value, sub, color):
             <div class="kpi-sub">{sub}</div>
         </div>
         """, unsafe_allow_html=True)
+def get_dashboard_stats() -> Dict[str, Any]:
+    """Aggregated stats for dashboard KPIs."""
+    _ensure_table()
+    with get_connection() as conn:
+        # ปรับ SQL ให้ได้ชื่อคอลัมน์ตรงกับ Key ที่ Dashboard เรียกใช้
+        query = """
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'Proceed' THEN 1 ELSE 0 END) as proceed,
+                SUM(CASE WHEN status = 'Finished' THEN 1 ELSE 0 END) as finished,
+                SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) as closed,
+                SUM(CASE WHEN status = 'Canceled' THEN 1 ELSE 0 END) as canceled
+            FROM shipments
+        """
+        result = conn.execute(query).fetchone()
+        
+    # แปลงเป็น Dictionary ให้สอดคล้องกับ Dashboard View
+    if hasattr(result, 'keys'):
+        return dict(result)
+    else:
+        # กรณี result เป็น Tuple
+        return {
+            'total': result[0] or 0,
+            'proceed': result[1] or 0,
+            'finished': result[2] or 0,
+            'closed': result[3] or 0,
+            'canceled': result[4] or 0
+        }

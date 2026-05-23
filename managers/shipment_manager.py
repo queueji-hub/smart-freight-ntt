@@ -125,27 +125,25 @@ def _ensure_table():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
 def get_dashboard_stats() -> Dict[str, Any]:
-    """Aggregated stats for dashboard KPIs."""
-    _ensure_table()
+    _ensure_table() # ตรวจสอบให้แน่ใจว่าเรียกชื่อฟังก์ชันนี้ในไฟล์นี้จริงๆ
     with get_connection() as conn:
-        # ดึงสถานะสรุปแบบเร็วๆ
         query = """
             SELECT 
-                COUNT(*) as total_shipments,
-                SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending_count,
-                SUM(CASE WHEN status = 'Proceed' THEN 1 ELSE 0 END) as active_count,
-                SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as completed_count
+                COUNT(*) as total, 
+                SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status = 'Proceed' THEN 1 ELSE 0 END) as active,
+                SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as completed
             FROM shipments
         """
         result = conn.execute(query).fetchone()
         
-    # แปลงผลลัพธ์เป็น Dictionary อย่างปลอดภัย
-    stats = dict(result) if hasattr(result, 'keys') else {
-        'total_shipments': result[0],
-        'pending_count': result[1],
-        'active_count': result[2],
-        'completed_count': result[3]
+    # แปลงผลลัพธ์เป็น dict เพื่อให้ใช้ stats["total"] ได้
+    return dict(result) if hasattr(result, 'keys') else {
+        'total': result[0],
+        'pending': result[1],
+        'active': result[2],
+        'completed': result[3]
     }
     return stats
