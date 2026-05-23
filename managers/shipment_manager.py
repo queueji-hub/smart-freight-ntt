@@ -122,7 +122,6 @@ def clone_shipment(source_job_no: str) -> Optional[str]:
 def get_dashboard_stats() -> Dict[str, Any]:
     """Aggregated stats for dashboard KPIs."""
     with get_connection() as conn:
-        # แก้ไขการดึงข้อมูลโดยใช้ Alias (AS cnt) และแปลงเป็น dict เพื่อกัน KeyError
         def fetch_count(query: str) -> int:
             row = conn.execute(query).fetchone()
             return dict(row).get("cnt", 0) if row else 0
@@ -143,8 +142,9 @@ def get_dashboard_stats() -> Dict[str, Any]:
             "GROUP BY carrier ORDER BY c DESC LIMIT 10"
         ).fetchall()
         
+        # 🟢 แก้ไขตรงนี้: เปลี่ยน strftime เป็น TO_CHAR สำหรับ PostgreSQL
         by_month = conn.execute(
-            "SELECT strftime('%Y-%m', etd) as ym, COUNT(*) as c FROM shipments "
+            "SELECT TO_CHAR(etd, 'YYYY-MM') as ym, COUNT(*) as c FROM shipments "
             "WHERE etd IS NOT NULL GROUP BY ym ORDER BY ym"
         ).fetchall()
     
