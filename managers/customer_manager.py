@@ -33,10 +33,13 @@ def get_customer(customer_id: int) -> Optional[Dict[str, Any]]:
 
 
 # =========================================================
-# SEARCH BY NAME
+# GET BY NAME (SAFE EXACT MATCH)
 # =========================================================
 
 def get_customer_by_name(name: str) -> Optional[Dict[str, Any]]:
+    if not name:
+        return None
+
     with get_connection() as conn:
         row = conn.execute("""
             SELECT *
@@ -48,7 +51,14 @@ def get_customer_by_name(name: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
+# =========================================================
+# SEARCH
+# =========================================================
+
 def search_customers(query: str) -> List[Dict[str, Any]]:
+    if not query:
+        return []
+
     with get_connection() as conn:
         rows = conn.execute("""
             SELECT *
@@ -91,14 +101,18 @@ def create_customer(data: Dict[str, Any]) -> None:
             data.get("notes"),
             data.get("is_active", 1)
         ))
+
         conn.commit()
 
 
 # =========================================================
-# UPDATE CUSTOMER
+# UPDATE CUSTOMER (SAFE)
 # =========================================================
 
 def update_customer(company_name: str, data: Dict[str, Any]) -> bool:
+    if not company_name:
+        return False
+
     with get_connection() as conn:
         cur = conn.execute("""
             UPDATE customers
@@ -129,7 +143,7 @@ def update_customer(company_name: str, data: Dict[str, Any]) -> bool:
 
 
 # =========================================================
-# UPSERT (FIXED - SAFE WITHOUT DB CONSTRAINT ERROR)
+# UPSERT (PRODUCTION SAFE - NO ON CONFLICT DEPENDENCY)
 # =========================================================
 
 def upsert_customer(company_name: str, contact_person: str = None, tel: str = None) -> None:
@@ -138,7 +152,7 @@ def upsert_customer(company_name: str, contact_person: str = None, tel: str = No
 
     with get_connection() as conn:
 
-        # STEP 1: check existing
+        # STEP 1: check existence
         row = conn.execute("""
             SELECT id
             FROM customers
@@ -154,6 +168,7 @@ def upsert_customer(company_name: str, contact_person: str = None, tel: str = No
                     updated_at = CURRENT_TIMESTAMP
                 WHERE company_name = %s
             """, (contact_person, tel, company_name))
+
         else:
             # INSERT
             conn.execute("""
