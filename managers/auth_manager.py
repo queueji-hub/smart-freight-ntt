@@ -40,15 +40,11 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
-    if not username or not password:
-        return None
+    # ... (โค้ดส่วนต้น)
     pwd_hash = hash_password(password)
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            query = "SELECT id, username, full_name, email, role FROM users WHERE username=%s AND password_hash=%s AND is_active=1"
-            cursor.execute(query, (username.strip().lower(), pwd_hash))
-            user = cursor.fetchone()
-            return dict(user) if user else None
+    
+    # เพิ่มบรรทัดนี้เพื่อ debug (เช็คใน Log ของ Streamlit)
+    print(f"DEBUG: username={username}, input_password={password}, calculated_hash={pwd_hash}")
 
 def can(role: str, module: str, action: str = "r") -> bool:
     perms = PERMISSIONS.get(role, {})
