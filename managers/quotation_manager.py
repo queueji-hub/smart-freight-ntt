@@ -81,3 +81,23 @@ def get_quotation_by_no(quotation_no):
         ).fetchone()
 
         return dict(result) if result else None
+
+def list_quotations():
+    """
+    Return all quotations
+    """
+
+    with get_connection() as conn:
+
+        results = conn.execute(
+            """
+            SELECT *
+            FROM quotations
+            ORDER BY id DESC
+            """
+        ).fetchall()
+
+        return [
+            dict(r)
+            for r in results
+        ]
