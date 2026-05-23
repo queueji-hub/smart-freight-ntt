@@ -40,11 +40,28 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
-    # ... (โค้ดส่วนต้น)
+    if not username or not password:
+        return None
+    
     pwd_hash = hash_password(password)
     
-    # เพิ่มบรรทัดนี้เพื่อ debug (เช็คใน Log ของ Streamlit)
-    print(f"DEBUG: username={username}, input_password={password}, calculated_hash={pwd_hash}")
+    # 1. Debug: เช็กว่า Hash ที่โปรแกรมสร้างขึ้น ตรงกับที่อยู่ใน DB ไหม
+    print(f"DEBUG: Attempting login for '{username.strip().lower()}'")
+    print(f"DEBUG: Calculated Hash: {pwd_hash}")
+    
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            # 2. Query ไปที่ฐานข้อมูลเพื่อเช็ก username และ password_hash
+            query = "SELECT id, username, full_name, email, role FROM users WHERE username=%s AND password_hash=%s"
+            cursor.execute(query, (username.strip().lower(), pwd_hash))
+            user = cursor.fetchone()
+            
+            # 3. ถ้าเจอ User ให้ return ข้อมูล ถ้าไม่เจอ return None
+            if user:
+                return dict(user) if hasattr(user, 'keys') else user
+            
+            print(f"DEBUG: No user found with provided credentials.")
+            return None
 
 def can(role: str, module: str, action: str = "r") -> bool:
     perms = PERMISSIONS.get(role, {})
