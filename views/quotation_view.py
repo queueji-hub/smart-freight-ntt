@@ -27,36 +27,97 @@ except Exception as _e:
 QUOTATION_STATUS = ["Draft", "Sent", "Accepted", "Rejected", "Expired"]
 
 
+def _on_customer_picked(prefix: str):
+    """Callback fired when user picks a customer from the dropdown.
+    
+    Explicitly sets all related widget session_state keys so the form
+    fields update instantly on the next rerun (no manual refresh needed).
+    """
+    pick_key = f"{prefix}_cust_pick"
+    picked = st.session_state.get(pick_key, "")
+    if not picked:
+        return
+    
+    cust = get_customer_by_name(picked)
+    if not cust:
+        return
+    
+    # Write directly to widget keys so the inputs auto-populate
+    st.session_state[f"{prefix}_cust_search"] = picked
+    st.session_state[f"{prefix}_attn"] = cust.get("contact_person") or ""
+    st.session_state[f"{prefix}_tel"] = cust.get("tel") or ""
+    # Also persist for re-use
+    st.session_state[f"{prefix}_picked_customer"] = picked
+    st.session_state[f"{prefix}_picked_attention"] = cust.get("contact_person") or ""
+    st.session_state[f"{prefix}_picked_tel"] = cust.get("tel") or ""
+    st.session_state[f"{prefix}_picked_email"] = cust.get("email") or ""
+    st.session_state[f"{prefix}_picked_address"] = cust.get("address") or ""
+    st.session_state[f"{prefix}_picked_tax_id"] = cust.get("tax_id") or ""
+
+
 def _customer_autocomplete(prefix, default_value=""):
+    """Customer search + auto-fill all contact fields when one is picked."""
+    search_key = f"{prefix}_cust_search"
+    
+    # Initialize default value if not yet set
+    if search_key not in st.session_state and default_value:
+        st.session_state[search_key] = default_value
+    
     typed = st.text_input(
         "Customer * (พิมพ์เพื่อค้นหา)",
-        value=default_value,
-        key=f"{prefix}_cust_search",
-        help="พิมพ์ชื่อบางส่วน เช่น 'Sun' จะแสดงรายชื่อลูกค้าที่เคยใช้",
+        key=search_key,
+        help="พิมพ์ชื่อบางส่วน เช่น 'Sun' จะแสดงรายชื่อลูกค้าที่เคยใช้ — "
+             "เลือกแล้วระบบจะเติม Contact Person และ Tel ให้อัตโนมัติ",
     )
+    
     if typed and typed.strip() and len(typed.strip()) >= 2:
         try:
             matches = search_customers(typed)
         except Exception:
             matches = []
-        if matches:
+        
+        # If exact match exists, don't show dropdown
+        exact_match = any(
+            m["company_name"].strip().lower() == typed.strip().lower()
+            for m in matches
+        )
+        
+        if matches and not exact_match:
             options = [""] + [m["company_name"] for m in matches]
-            picked = st.selectbox(
-                f"💡 พบลูกค้า {len(matches)} รายชื่อ — เลือกเพื่อใช้:",
-                options, index=0, key=f"{prefix}_cust_pick",
+            st.selectbox(
+                f"💡 พบลูกค้า {len(matches)} ราย — เลือกเพื่อ auto-fill:",
+                options, index=0,
+                key=f"{prefix}_cust_pick",
+                on_change=_on_customer_picked,
+                args=(prefix,),
             )
-            if picked:
-                st.session_state[f"{prefix}_picked_customer"] = picked
-                cust = get_customer_by_name(picked)
-                if cust:
-                    st.session_state[f"{prefix}_picked_attention"] = cust.get("contact_person", "") or ""
-                    st.session_state[f"{prefix}_picked_tel"] = cust.get("tel", "") or ""
-                return picked
+        elif exact_match:
+            # User has a complete match → show subtle confirmation + auto-fill once
+            cust = get_customer_by_name(typed)
+            if cust and not st.session_state.get(f"{prefix}_autofilled_for") == typed:
+                # Only auto-fill if the input fields are empty (don't overwrite manual edits)
+                if not st.session_state.get(f"{prefix}_attn"):
+                    st.session_state[f"{prefix}_attn"] = cust.get("contact_person") or ""
+                if not st.session_state.get(f"{prefix}_tel"):
+                    st.session_state[f"{prefix}_tel"] = cust.get("tel") or ""
+                st.session_state[f"{prefix}_autofilled_for"] = typed
+                st.rerun()
+            st.caption(f"✅ ลูกค้า: **{typed}** "
+                       f"(Contact: {cust.get('contact_person','—') if cust else '—'} · "
+                       f"Tel: {cust.get('tel','—') if cust else '—'})")
+    
     return typed
 
 
 def _quotation_form(prefix, defaults=None):
     d = defaults or {}
+    
+    # Initialize Attention/Tel from defaults (for Edit mode)
+    if d.get("attention") and f"{prefix}_attn" not in st.session_state:
+        st.session_state[f"{prefix}_attn"] = d.get("attention", "")
+    if d.get("tel") and f"{prefix}_tel" not in st.session_state:
+        st.session_state[f"{prefix}_tel"] = d.get("tel", "")
+    
     col1, col2 = st.columns(2)
     with col1:
         job_type = st.selectbox(
@@ -66,22 +127,27 @@ def _quotation_form(prefix, defaults=None):
                 if d.get("job_type") in JOB_TYPES else 1,
             key=f"{prefix}_job_type",
         )
-        cust_default = st.session_state.get(
-            f"{prefix}_picked_customer", d.get("customer_name", ""))
-        customer_name = _customer_autocomplete(prefix, cust_default)
+        # Customer search → auto-fills Attention + Tel via callback
+        customer_name = _customer_autocomplete(prefix, d.get("customer_name", ""))
+        
         shipper_cnee = st.text_input("Shpr/Cnee",
             value=d.get("shipper_cnee", ""), key=f"{prefix}_shipper")
         carrier = st.text_input("Carrier",
             value=d.get("carrier", ""), key=f"{prefix}_carrier")
         pol = st.text_input("POL", value=d.get("pol", ""), key=f"{prefix}_pol")
         pod = st.text_input("POD", value=d.get("pod", ""), key=f"{prefix}_pod")
-        attn_default = st.session_state.get(
-            f"{prefix}_picked_attention", d.get("attention", ""))
-        attention = st.text_input("Attention",
-            value=attn_default, key=f"{prefix}_attn")
-        tel_default = st.session_state.get(
-            f"{prefix}_picked_tel", d.get("tel", ""))
-        tel = st.text_input("Tel.", value=tel_default, key=f"{prefix}_tel")
+        
+        # These read from session_state set by the customer auto-fill callback
+        attention = st.text_input(
+            "Attention (Contact Person)",
+            key=f"{prefix}_attn",
+            help="Auto-filled when customer is selected"
+        )
+        tel = st.text_input(
+            "Tel.",
+            key=f"{prefix}_tel",
+            help="Auto-filled when customer is selected"
+        )
         incoterm = st.text_input("Incoterm",
             value=d.get("incoterm", ""), key=f"{prefix}_incoterm")
     with col2:
