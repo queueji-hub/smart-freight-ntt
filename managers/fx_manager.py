@@ -15,9 +15,10 @@ BASE_CURRENCY = "THB"
 def _ensure_fx_table() -> None:
     """Create FX table if missing."""
     with get_connection() as conn:
+        # 🟢 แก้ไข: เปลี่ยน INTEGER PRIMARY KEY AUTOINCREMENT เป็น SERIAL PRIMARY KEY สำหรับ PostgreSQL
         conn.execute("""
             CREATE TABLE IF NOT EXISTS fx_rates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 currency TEXT NOT NULL,
                 rate_to_thb REAL NOT NULL,
                 effective_date DATE NOT NULL,
@@ -40,18 +41,21 @@ def set_rate(currency: str, rate_to_thb: float,
     eff_str = eff.isoformat() if hasattr(eff, "isoformat") else str(eff)
     
     with get_connection() as conn:
+        # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
         conn.execute("""
             INSERT INTO fx_rates (currency, rate_to_thb, effective_date, source)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT(currency, effective_date) DO UPDATE
             SET rate_to_thb = excluded.rate_to_thb,
                 source = excluded.source
         """, (currency.upper(), float(rate_to_thb), eff_str, source))
+        
+        # 🟢 แก้ไข: เปลี่ยน ? เป็น %s และแก้การดึงค่าป้องกัน KeyError
         cur = conn.execute(
-            "SELECT id FROM fx_rates WHERE currency=? AND effective_date=?",
+            "SELECT id FROM fx_rates WHERE currency=%s AND effective_date=%s",
             (currency.upper(), eff_str)
         ).fetchone()
-    return cur[0] if cur else 0
+    return dict(cur).get("id", 0) if cur else 0
 
 
 def get_rate(currency: str, on_date=None) -> float:
@@ -67,12 +71,13 @@ def get_rate(currency: str, on_date=None) -> float:
     on_str = on_date.isoformat() if hasattr(on_date, "isoformat") else str(on_date)
     
     with get_connection() as conn:
+        # 🟢 แก้ไข: เปลี่ยน ? เป็น %s และแก้การดึงค่าป้องกัน KeyError
         row = conn.execute("""
             SELECT rate_to_thb FROM fx_rates
-            WHERE currency=? AND effective_date <= ?
+            WHERE currency=%s AND effective_date <= %s
             ORDER BY effective_date DESC LIMIT 1
         """, (currency.upper(), on_str)).fetchone()
-    return float(row[0]) if row else 0.0
+    return float(dict(row).get("rate_to_thb", 0.0)) if row else 0.0
 
 
 def convert(amount: float, from_cur: str, to_cur: str,
@@ -103,9 +108,11 @@ def list_rates(currency: Optional[str] = None,
     sql = "SELECT * FROM fx_rates"
     params = []
     if currency:
-        sql += " WHERE currency=?"
+        # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
+        sql += " WHERE currency=%s"
         params.append(currency.upper())
-    sql += " ORDER BY effective_date DESC, id DESC LIMIT ?"
+    # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
+    sql += " ORDER BY effective_date DESC, id DESC LIMIT %s"
     params.append(limit)
     
     with get_connection() as conn:
@@ -122,7 +129,10 @@ def seed_default_rates() -> None:
     """Seed sensible default rates if no rates exist (today's date)."""
     _ensure_fx_table()
     with get_connection() as conn:
-        count = conn.execute("SELECT COUNT(*) FROM fx_rates").fetchone()[0]
+        # 🟢 แก้ไข: ตั้งชื่อคอลัมน์เป็น AS cnt และดึงค่าผ่าน Key ป้องกัน KeyError
+        row = conn.execute("SELECT COUNT(*) AS cnt FROM fx_rates").fetchone()
+        count = dict(row).get("cnt", 0) if row else 0
+        
     if count > 0:
         return
     
