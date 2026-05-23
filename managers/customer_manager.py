@@ -64,3 +64,21 @@ def upsert_customer(name: str, attention: str = None, tel: str = None) -> None:
                 tel = EXCLUDED.tel
         """, (name, attention, tel))
         conn.commit()
+
+def get_customer(customer_id):
+    """
+    Get single customer by ID
+    """
+
+    with get_connection() as conn:
+
+        result = conn.execute(
+            """
+            SELECT *
+            FROM customers
+            WHERE id = %s
+            """,
+            (customer_id,)
+        ).fetchone()
+
+        return dict(result) if result else None
