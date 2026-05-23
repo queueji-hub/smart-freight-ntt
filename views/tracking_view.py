@@ -1,15 +1,13 @@
-"""Container Tracking view - timeline + milestone management."""
 import streamlit as st
 from datetime import datetime, date
 import pandas as pd
 
-from managers.shipment_manager import list_shipments, get_shipment
+from managers.shipment_manager import list_shipments
 from managers.container_manager import (
     MILESTONES, MILESTONE_NAMES, MILESTONE_ICONS,
     add_milestone, get_milestones, delete_milestone, get_latest_status,
 )
 from managers.auth_manager import can_write
-
 
 def render():
     user = st.session_state.get("user", {})
@@ -17,116 +15,75 @@ def render():
     can_edit = can_write(role, "shipment")
     
     st.title("🚢 Container Tracking")
-    st.caption("Real-time milestone tracking · Container movement timeline")
     
-    # Select shipment
-    ships = list_shipments()
+    # 1. Select Shipment (Filter only Active Jobs)
+    ships = [s for s in list_shipments() if s.get('status') not in ['Closed', 'Canceled']]
     if not ships:
-        st.info("No shipments to track. Create one in the Shipment module.")
+        st.info("No active shipments to track.")
         return
     
-    options = {f"{s['job_no']} — {s.get('customer_name','') or '—'} "
-               f"({s.get('container_no','—')})": s for s in ships[:200]}
-    
-    sel_label = st.selectbox("Select shipment", list(options.keys()),
-                              key="track_sel")
+    options = {f"{s['job_no']} — {s.get('customer_name','')} ({s.get('container_no','-')})": s for s in ships}
+    sel_label = st.selectbox("Select shipment", list(options.keys()))
     ship = options[sel_label]
     
-    # Header info
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Job No.", ship["job_no"])
-    with col2:
-        st.metric("Container", ship.get("container_no") or "—")
-    with col3:
-        st.metric("Route",
-            f"{ship.get('pol','?')} → {ship.get('pod','?')}")
-    with col4:
-        latest = get_latest_status(ship["id"])
-        cur_status = latest["milestone_name"] if latest else "Not started"
-        st.metric("Latest Status", cur_status)
+    # 2. Header Status
+    latest = get_latest_status(ship["id"])
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Job No.", ship["job_no"])
+    col2.metric("Container", ship.get("container_no") or "-")
+    col3.metric("Latest Status", latest["milestone_name"] if latest else "Not started")
     
-    st.markdown("---")
+    # Progress bar
+    milestones = get_milestones(ship["id"])
+    progress = min(len(milestones) / len(MILESTONES), 1.0)
+    st.progress(progress, text=f"Route Progress: {int(progress*100)}%")
     
-    # Add milestone form
+    st.divider()
+    
+    # 3. Add Milestone Form
     if can_edit:
         with st.expander("➕ Add Milestone", expanded=False):
+            # ปุ่มลัดเวลาปัจจุบัน
+            if st.button("⏰ Set to Now"):
+                st.session_state["m_date"] = date.today()
+                st.session_state["m_time"] = datetime.now().time()
+            
             mc1, mc2, mc3 = st.columns([2, 1.5, 1])
             with mc1:
-                ms_options = [(c, f"{i} {n}") for c, n, i in MILESTONES]
-                sel_ms = st.selectbox("Milestone", ms_options,
-                    format_func=lambda x: x[1], key="track_ms")
-                code = sel_ms[0]
+                sel_ms = st.selectbox("Milestone", [(c, f"{i} {n}") for c, n, i in MILESTONES], format_func=lambda x: x[1])
             with mc2:
-                date_val = st.date_input("Date", value=date.today(),
-                                           key="track_date")
-                time_val = st.time_input("Time", value=datetime.now().time(),
-                                           key="track_time")
+                d = st.date_input("Date", value=st.session_state.get("m_date", date.today()), key="m_date")
+                t = st.time_input("Time", value=st.session_state.get("m_time", datetime.now().time()), key="m_time")
             with mc3:
-                location = st.text_input("Location", key="track_loc",
-                    placeholder="e.g. Bangkok Port")
+                loc = st.text_input("Location", placeholder="e.g. Bangkok Port")
             
-            note = st.text_input("Note (optional)", key="track_note")
+            note = st.text_input("Note")
             
-            if st.button("✅ Record Milestone", type="primary",
-                          use_container_width=True):
-                occurred = datetime.combine(date_val, time_val)
-                add_milestone(
-                    ship["id"], code, occurred_at=occurred,
-                    location=location, note=note,
-                    created_by=user.get("username")
-                )
-                st.success(f"Recorded: {MILESTONE_NAMES[code]}")
+            if st.button("✅ Record Milestone", type="primary", use_container_width=True):
+                add_milestone(ship["id"], sel_ms[0], occurred_at=datetime.combine(d, t), 
+                              location=loc, note=note, created_by=user.get("username"))
                 st.rerun()
     
-    # Timeline display
+    # 4. Timeline Display
     st.markdown("##### 📍 Timeline")
-    milestones = get_milestones(ship["id"])
-    
     if not milestones:
-        st.info("No milestones recorded yet.")
+        st.info("No milestones recorded.")
     else:
-        # Render timeline as styled cards
-        st.markdown("""
-        <style>
-        .timeline-item {
-            display:flex; gap:12px; padding:10px 14px;
-            background:#101113; border:1px solid #23252B;
-            border-radius:8px; margin-bottom:8px;
-            border-left: 3px solid #26B574;
-        }
-        .ts-icon { font-size: 1.4rem; }
-        .ts-content { flex: 1; }
-        .ts-name { font-weight: 600; font-size: 0.95rem; }
-        .ts-meta { font-size: 0.75rem; color: #9CA0A8; margin-top: 2px; }
-        .ts-note { font-size: 0.8rem; color: #62656B; margin-top: 4px; }
-        </style>
-        """, unsafe_allow_html=True)
+        st.markdown("""<style>.timeline-item{display:flex;gap:12px;padding:10px;background:#101113;border-radius:8px;margin-bottom:8px;border-left:3px solid #26B574;}</style>""", unsafe_allow_html=True)
         
         for m in milestones:
-            icon = MILESTONE_ICONS.get(m["milestone_code"], "📍")
-            occurred = m.get("occurred_at", "")
-            location = m.get("location") or ""
-            note = m.get("note") or ""
-            
             cols = st.columns([10, 1])
             with cols[0]:
                 st.markdown(f"""
                 <div class="timeline-item">
-                    <div class="ts-icon">{icon}</div>
-                    <div class="ts-content">
-                        <div class="ts-name">{m['milestone_name']}</div>
-                        <div class="ts-meta">
-                            🕐 {occurred} {' · 📍 ' + location if location else ''}
-                            {' · by ' + (m.get('created_by') or '') if m.get('created_by') else ''}
-                        </div>
-                        {f'<div class="ts-note">📝 {note}</div>' if note else ''}
+                    <div style="font-size:1.4rem">{MILESTONE_ICONS.get(m['milestone_code'], '📍')}</div>
+                    <div>
+                        <div style="font-weight:600">{m['milestone_name']}</div>
+                        <div style="font-size:0.75rem; color:#9CA0A8">🕐 {m['occurred_at']} · 📍 {m.get('location') or '-'}</div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
             with cols[1]:
-                if can_edit:
-                    if st.button("🗑️", key=f"del_ms_{m['id']}",
-                                  help="Delete milestone"):
-                        delete_milestone(m["id"])
-                        st.rerun()
+                if can_edit and st.button("🗑️", key=f"del_{m['id']}"):
+                    delete_milestone(m["id"])
+                    st.rerun()

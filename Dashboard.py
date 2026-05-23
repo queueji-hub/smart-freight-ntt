@@ -1,25 +1,10 @@
-"""
-Smart Freight NTT
-Enterprise Freight Forwarding Operating System
-
-Production-ready App Entry
-- Session authentication
-- Permission control
-- Dynamic navigation
-- Auto DB initialization
-- Error boundary
-- Persistent session
-- Enterprise sidebar UI
-"""
-
 import traceback
-
+import importlib
 import streamlit as st
 
 # =========================================================
 # PAGE CONFIG
 # =========================================================
-
 st.set_page_config(
     page_title="Smart Freight NTT",
     page_icon="🚢",
@@ -30,457 +15,130 @@ st.set_page_config(
 # =========================================================
 # IMPORTS
 # =========================================================
-
 from database.connection import init_database
-
-from managers.auth_manager import (
-    ROLE_LABELS,
-    can_read,
-)
-
-from managers.session_manager import (
-    delete_session,
-    get_user_by_token,
-)
-
+from managers.auth_manager import ROLE_LABELS, can_read
+from managers.session_manager import delete_session, get_user_by_token
 from utils.nav import setup_sidebar
-
 
 # =========================================================
 # DATABASE INIT
 # =========================================================
-
 @st.cache_resource(show_spinner=False)
 def bootstrap():
-
     init_database()
-
-    # FX SEED
     try:
-
-        from managers.fx_manager import (
-            seed_default_rates
-        )
-
+        from managers.fx_manager import seed_default_rates
         seed_default_rates()
-
-    except Exception:
-        pass
-
-    # DB PUSH
+    except Exception: pass
+    
     try:
-
-        from managers.db_persistence import (
-            push_if_dirty
-        )
-
+        from managers.db_persistence import push_if_dirty
         push_if_dirty()
-
-    except Exception:
-        pass
-
+    except Exception: pass
     return True
 
-
 bootstrap()
-
 
 # =========================================================
 # SESSION AUTH
 # =========================================================
-
 def restore_session():
+    user = st.session_state.get("user")
+    if user: return user
 
-    user = st.session_state.get(
-        "user"
-    )
-
-    # already login
-    if user:
-        return user
-
-    # restore from token
-    token = st.query_params.get(
-        "token"
-    )
-
-    if not token:
-        return None
+    token = st.query_params.get("token")
+    if not token: return None
 
     try:
-
-        restored_user = get_user_by_token(
-            token
-        )
-
+        restored_user = get_user_by_token(token)
         if restored_user:
-
-            st.session_state["user"] = (
-                restored_user
-            )
-
-            st.session_state[
-                "session_token"
-            ] = token
-
+            st.session_state["user"] = restored_user
+            st.session_state["session_token"] = token
             return restored_user
-
         else:
-
-            if "token" in st.query_params:
-                del st.query_params["token"]
-
-            st.error(
-                "Session expired. "
-                "Please login again."
-            )
-
+            if "token" in st.query_params: del st.query_params["token"]
+            st.error("Session expired. Please login again.")
             return None
-
     except Exception:
-
         return None
-
 
 user = restore_session()
 
-# =========================================================
-# LOGIN VIEW
-# =========================================================
-
 if not user:
-
     from views import login_view
-
     login_view.render()
-
     st.stop()
 
-
 # =========================================================
-# USER STATE
+# NAVIGATION CONFIG
 # =========================================================
+PAGES = [
+    ("dashboard", "📊 Dashboard", "dashboard"),
+    ("crm", "👥 CRM", "crm"),
+    ("quotation", "📄 Quotation", "quotation"),
+    ("booking", "📑 Booking", "booking"),
+    ("shipments", "📦 Shipment", "shipment"),
+    ("tracking", "📍 Tracking", "shipment"),
+    ("profit", "📊 Profit Sheet", "billing"),
+    ("billing", "💰 Billing", "billing"),
+    ("fx", "💱 FX Rates", "billing"),
+    ("reports", "📈 Reports", "reports"),
+    ("users", "👤 Users", "users"),
+    ("settings", "⚙️ Settings", "users"),
+    ("help", "📘 Help / Manual", "dashboard"),
+]
 
 role = user.get("role", "")
+allowed_pages = [p for p in PAGES if can_read(role, p[2])]
+allowed_page_ids = [p[0] for p in allowed_pages]
 
-session_token = st.session_state.get(
-    "session_token"
-)
-
-# =========================================================
-# PAGE CONFIG
-# =========================================================
-
-PAGES = [
-    (
-        "dashboard",
-        "📊 Dashboard",
-        "dashboard",
-    ),
-
-    (
-        "crm",
-        "👥 CRM",
-        "crm",
-    ),
-
-    (
-        "quotation",
-        "📄 Quotation",
-        "quotation",
-    ),
-
-    (
-        "booking",
-        "📑 Booking",
-        "booking",
-    ),
-
-    (
-        "shipments",
-        "📦 Shipment",
-        "shipment",
-    ),
-
-    (
-        "tracking",
-        "📍 Tracking",
-        "shipment",
-    ),
-
-    (
-        "profit",
-        "📊 Profit Sheet",
-        "billing",
-    ),
-
-    (
-        "billing",
-        "💰 Billing",
-        "billing",
-    ),
-
-    (
-        "fx",
-        "💱 FX Rates",
-        "billing",
-    ),
-
-    (
-        "reports",
-        "📈 Reports",
-        "reports",
-    ),
-
-    (
-        "users",
-        "👤 Users",
-        "users",
-    ),
-
-    (
-        "settings",
-        "⚙️ Settings",
-        "users",
-    ),
-
-    (
-        "help",
-        "📘 Help / Manual",
-        "dashboard",
-    ),
-]
-
-# =========================================================
-# FILTER ACCESS
-# =========================================================
-
-allowed_pages = [
-    p
-    for p in PAGES
-    if can_read(role, p[2])
-]
-
-allowed_page_ids = [
-    p[0]
-    for p in allowed_pages
-]
-
-# =========================================================
-# CURRENT PAGE
-# =========================================================
-
-current_page = st.query_params.get(
-    "page",
-    "dashboard",
-)
-
+current_page = st.query_params.get("page", "dashboard")
 if current_page not in allowed_page_ids:
-
-    current_page = (
-        allowed_page_ids[0]
-        if allowed_page_ids
-        else "dashboard"
-    )
+    current_page = allowed_page_ids[0] if allowed_page_ids else "dashboard"
 
 # =========================================================
 # SIDEBAR
 # =========================================================
-
 setup_sidebar()
-
 with st.sidebar:
-
-    st.markdown(
-        f"""
-        <div style="
-            padding:1rem;
-            border-radius:12px;
-            background:#111827;
-            border:1px solid #374151;
-            margin-bottom:1rem;
-        ">
-
-            <div style="
-                font-size:1.2rem;
-                font-weight:700;
-                color:white;
-            ">
-                🚢 Smart Freight NTT
-            </div>
-
-            <div style="
-                font-size:0.82rem;
-                color:#9CA3AF;
-                margin-top:6px;
-            ">
-                {user.get('full_name', 'User')}
-            </div>
-
-            <div style="
-                font-size:0.75rem;
-                color:#6B7280;
-            ">
-                {ROLE_LABELS.get(role, role)}
-            </div>
-
+    st.markdown(f"""
+        <div style="padding:1rem; border-radius:12px; background:#111827; border:1px solid #374151; margin-bottom:1rem;">
+            <div style="font-size:1.2rem; font-weight:700; color:white;">🚢 Smart Freight NTT</div>
+            <div style="font-size:0.82rem; color:#9CA3AF; margin-top:6px;">{user.get('full_name', 'User')}</div>
+            <div style="font-size:0.75rem; color:#6B7280;">{ROLE_LABELS.get(role, role)}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """, unsafe_allow_html=True)
 
-    # =====================================================
-    # NAVIGATION
-    # =====================================================
-
-    for (
-        page_id,
-        label,
-        module,
-    ) in allowed_pages:
-
-        btn_type = (
-            "primary"
-            if current_page == page_id
-            else "secondary"
-        )
-
-        if st.button(
-            label,
-            key=f"nav_{page_id}",
-            use_container_width=True,
-            type=btn_type,
-        ):
-
-            st.query_params["page"] = (
-                page_id
-            )
-
+    for page_id, label, module in allowed_pages:
+        if st.button(label, key=f"nav_{page_id}", use_container_width=True, type="primary" if current_page == page_id else "secondary"):
+            st.query_params["page"] = page_id
             st.rerun()
 
     st.markdown("---")
-
-    # =====================================================
-    # SIGN OUT
-    # =====================================================
-
-    if st.button(
-        "🚪 Sign Out",
-        use_container_width=True,
-        type="secondary",
-    ):
-
-        try:
-
-            if session_token:
-
-                delete_session(
-                    session_token
-                )
-
-        except Exception:
-            pass
-
+    if st.button("🚪 Sign Out", use_container_width=True):
+        if st.session_state.get("session_token"):
+            delete_session(st.session_state["session_token"])
         st.session_state.clear()
-
         st.query_params.clear()
-
         st.rerun()
 
 # =========================================================
-# PAGE ROUTER
+# PAGE RENDERER
 # =========================================================
-
-PAGE_ROUTES = {
-    "dashboard":
-        ("views.dashboard_view", "render"),
-
-    "crm":
-        ("views.crm_view", "render"),
-
-    "quotation":
-        ("views.quotation_view", "render"),
-
-    "booking":
-        ("views.booking_view", "render"),
-
-    "shipments":
-        ("views.shipments_view", "render"),
-
-    "tracking":
-        ("views.tracking_view", "render"),
-
-    "profit":
-        ("views.profit_view", "render"),
-
-    "billing":
-        ("views.billing_view", "render"),
-
-    "fx":
-        ("views.fx_view", "render"),
-
-    "reports":
-        ("views.reports_view", "render"),
-
-    "users":
-        ("views.users_view", "render"),
-
-    "settings":
-        ("views.settings_view", "render"),
-
-    "help":
-        ("views.help_view", "render"),
-}
-
-# =========================================================
-# PAGE RENDER
-# =========================================================
+PAGE_ROUTES = {p[0]: (f"views.{p[2]}_view", "render") for p in PAGES}
 
 try:
-
     if current_page not in PAGE_ROUTES:
-
-        st.warning(
-            "🚧 Page not found"
-        )
-
+        st.warning("🚧 Page not found")
     else:
-
-        module_path, fn_name = (
-            PAGE_ROUTES[current_page]
-        )
-
-        module = __import__(
-            module_path,
-            fromlist=[fn_name],
-        )
-
-        render_fn = getattr(
-            module,
-            fn_name,
-        )
-
-        render_fn()
-
-# =========================================================
-# ERROR HANDLER
-# =========================================================
+        module_path, fn_name = PAGE_ROUTES[current_page]
+        with st.spinner(f"Loading {current_page.title()}..."):
+            module = importlib.import_module(module_path)
+            render_fn = getattr(module, fn_name)
+            render_fn()
 
 except Exception as ex:
-
-    st.error(
-        f"❌ Error loading page "
-        f"`{current_page}`"
-    )
-
-    with st.expander(
-        "🐞 Debug Error",
-        expanded=False,
-    ):
-
-        st.code(
-            traceback.format_exc(),
-            language="python",
-        )
-
+    st.error(f"❌ Error loading page `{current_page}`")
+    with st.expander("🐞 Debug Error"):
+        st.code(traceback.format_exc(), language="python")
     st.exception(ex)

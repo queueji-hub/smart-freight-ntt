@@ -1,74 +1,8 @@
-"""Job Profitability & Approval Sheet management."""
-from datetime import datetime
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
 
-# ===== Cost categories =====
-AR_CATEGORIES = [
-    "Ocean Freight (Sell)", "Local Charges (Sell)", "Trucking (Sell)", 
-    "Customs (Sell)", "DOC Fee", "Handling Fee", "Other Revenue",
-]
-
-AP_CATEGORIES = [
-    "Ocean Freight (Liner)", "Co-loader Cost", "Overseas Agent", 
-    "Trucking Supplier", "Customs Broker", "Warehouse / CFS", 
-    "Documentation", "Other Cost",
-]
-
-def _ensure_tables():
-    """Ensure job_costs and profit_sheets tables exist for PostgreSQL."""
-    with get_connection() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS job_costs (
-                id SERIAL PRIMARY KEY,
-                shipment_id INTEGER NOT NULL,
-                cost_type TEXT NOT NULL CHECK(cost_type IN ('AR','AP')),
-                category TEXT,
-                description TEXT,
-                supplier TEXT,
-                quantity NUMERIC(15,2) DEFAULT 1,
-                unit_price NUMERIC(15,2) DEFAULT 0,
-                amount NUMERIC(15,2) DEFAULT 0,
-                currency TEXT DEFAULT 'THB',
-                amount_thb NUMERIC(15,2) DEFAULT 0,
-                remark TEXT,
-                created_by TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_jc_shipment ON job_costs(shipment_id)")
-        
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS profit_sheets (
-                id SERIAL PRIMARY KEY,
-                shipment_id INTEGER NOT NULL,
-                job_no TEXT NOT NULL,
-                sheet_no TEXT UNIQUE NOT NULL,
-                total_ar NUMERIC(15,2) DEFAULT 0,
-                total_ap NUMERIC(15,2) DEFAULT 0,
-                net_profit NUMERIC(15,2) DEFAULT 0,
-                profit_margin NUMERIC(5,2) DEFAULT 0,
-                prepared_by TEXT,
-                prepared_at TIMESTAMP,
-                reviewed_by TEXT,
-                reviewed_at TIMESTAMP,
-                approved_by TEXT,
-                approved_at TIMESTAMP,
-                pdf_path TEXT,
-                status TEXT DEFAULT 'Generated',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-def _convert_to_thb(amount: float, currency: str) -> float:
-    if not currency or currency.upper() == "THB": return float(amount)
-    try:
-        from managers.fx_manager import convert
-        return float(convert(amount, currency, "THB"))
-    except Exception: return float(amount)
-
 def add_cost_line(data: Dict[str, Any]) -> int:
-    _ensure_tables()
+    """Add a cost/revenue line to a shipment."""
     qty = float(data.get("quantity") or 1)
     unit_price = float(data.get("unit_price") or 0)
     amount = float(data.get("amount") or (qty * unit_price))
@@ -82,88 +16,52 @@ def add_cost_line(data: Dict[str, Any]) -> int:
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
         """, (data["shipment_id"], data["cost_type"], data.get("category"), data.get("description"), 
               data.get("supplier"), qty, unit_price, amount, currency, amount_thb, data.get("remark"), data.get("created_by")))
-        return cur.fetchone()[0]
+        conn.commit()
+        return cur.fetchone()['id']
 
 def update_cost_line(cost_id: int, data: Dict[str, Any]) -> bool:
-    _ensure_tables()
-    fields = ["category", "description", "supplier", "quantity", "unit_price", "amount", "currency", "remark"]
-    sets, params = [], []
-    for f in fields:
-        if f in data:
-            sets.append(f"{f}=%s")
-            params.append(data[f])
-    
-    if "amount" in data or "currency" in data:
-        with get_connection() as conn:
-            row = conn.execute("SELECT amount, currency FROM job_costs WHERE id=%s", (cost_id,)).fetchone()
-            if row:
-                new_amt = data.get("amount", row[0])
-                new_cur = data.get("currency", row[1])
-                sets.append("amount_thb=%s")
-                params.append(_convert_to_thb(float(new_amt or 0), new_cur or "THB"))
-    
-    if not sets: return False
-    params.append(cost_id)
+    """Update cost/revenue line with recalculation."""
     with get_connection() as conn:
-        conn.execute(f"UPDATE job_costs SET {', '.join(sets)} WHERE id=%s", params)
-    return True
-
-def delete_cost_line(cost_id: int) -> bool:
-    _ensure_tables()
-    with get_connection() as conn:
-        cur = conn.execute("DELETE FROM job_costs WHERE id=%s", (cost_id,))
-        return cur.rowcount > 0
-
-def get_cost_lines(shipment_id: int, cost_type: Optional[str] = None) -> List[Dict[str, Any]]:
-    _ensure_tables()
-    sql = "SELECT * FROM job_costs WHERE shipment_id=%s"
-    params = [shipment_id]
-    if cost_type:
-        sql += " AND cost_type=%s"
-        params.append(cost_type)
-    with get_connection() as conn:
-        return [dict(r) for r in conn.execute(sql + " ORDER BY cost_type, id", params).fetchall()]
+        # ดึงค่าเก่าเพื่อใช้คำนวณ
+        row = conn.execute("SELECT amount, currency FROM job_costs WHERE id=%s", (cost_id,)).fetchone()
+        if not row: return False
+        
+        # เตรียมค่าใหม่
+        new_amt = float(data.get("amount", row['amount']))
+        new_cur = data.get("currency", row['currency'])
+        amount_thb = _convert_to_thb(new_amt, new_cur)
+        
+        # ปรับปรุงข้อมูล
+        conn.execute("""
+            UPDATE job_costs SET 
+            category=%s, description=%s, supplier=%s, quantity=%s, unit_price=%s, 
+            amount=%s, currency=%s, amount_thb=%s, remark=%s 
+            WHERE id=%s
+        """, (data.get("category"), data.get("description"), data.get("supplier"), data.get("quantity"), 
+              data.get("unit_price"), new_amt, new_cur, amount_thb, data.get("remark"), cost_id))
+        conn.commit()
+        return True
 
 def get_profit_summary(shipment_id: int) -> Dict[str, Any]:
-    _ensure_tables()
+    """Calculate AR/AP totals and profitability."""
     with get_connection() as conn:
-        ar = conn.execute("SELECT COALESCE(SUM(amount_thb), 0) FROM job_costs WHERE shipment_id=%s AND cost_type='AR'", (shipment_id,)).fetchone()[0]
-        ap = conn.execute("SELECT COALESCE(SUM(amount_thb), 0) FROM job_costs WHERE shipment_id=%s AND cost_type='AP'", (shipment_id,)).fetchone()[0]
+        row = conn.execute("""
+            SELECT 
+                COALESCE(SUM(amount_thb) FILTER (WHERE cost_type='AR'), 0) as ar,
+                COALESCE(SUM(amount_thb) FILTER (WHERE cost_type='AP'), 0) as ap
+            FROM job_costs WHERE shipment_id=%s
+        """, (shipment_id,)).fetchone()
     
-    ar, ap = float(ar), float(ap)
+    ar, ap = float(row['ar']), float(row['ap'])
     net = ar - ap
     margin = (net / ar * 100) if ar > 0 else 0
     return {"total_ar": round(ar, 2), "total_ap": round(ap, 2), "net_profit": round(net, 2), "profit_margin": round(margin, 2)}
 
-def create_profit_sheet(shipment_id: int, prepared_by: str = None, pdf_path: str = None) -> Dict[str, Any]:
-    _ensure_tables()
-    summary = get_profit_summary(shipment_id)
-    with get_connection() as conn:
-        row = conn.execute("SELECT job_no FROM shipments WHERE id=%s", (shipment_id,)).fetchone()
-        job_no = row[0] if row else f"#{shipment_id}"
-        count = conn.execute("SELECT COUNT(*) FROM profit_sheets WHERE shipment_id=%s", (shipment_id,)).fetchone()[0]
-        sheet_no = f"PS-{job_no}-{count + 1:02d}"
-        
-        cur = conn.execute("""
-            INSERT INTO profit_sheets (shipment_id, job_no, sheet_no, total_ar, total_ap, net_profit, profit_margin, prepared_by, prepared_at, pdf_path, status)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP,%s,'Generated') RETURNING id
-        """, (shipment_id, job_no, sheet_no, summary["total_ar"], summary["total_ap"], summary["net_profit"], summary["profit_margin"], prepared_by, pdf_path))
-        return {**summary, "sheet_no": sheet_no, "id": cur.fetchone()[0]}
-
-def list_profit_sheets(shipment_id: int = None) -> List[Dict[str, Any]]:
-    sql = "SELECT * FROM profit_sheets"
-    params = []
-    if shipment_id: sql += " WHERE shipment_id=%s"; params.append(shipment_id)
-    with get_connection() as conn:
-        return [dict(r) for r in conn.execute(sql + " ORDER BY created_at DESC", params).fetchall()]
-
-def has_profit_sheet(shipment_id: int) -> bool:
-    with get_connection() as conn:
-        return bool(conn.execute("SELECT 1 FROM profit_sheets WHERE shipment_id=%s LIMIT 1", (shipment_id,)).fetchone())
-
 def update_signoff(sheet_id: int, role: str, signer_name: str) -> bool:
-    _ensure_tables()
+    """Update approval/review status."""
     col = "reviewed" if role == "review" else "approved"
     with get_connection() as conn:
-        conn.execute(f"UPDATE profit_sheets SET {col}_by=%s, {col}_at=CURRENT_TIMESTAMP WHERE id=%s", (signer_name, sheet_id))
+        conn.execute(f"UPDATE profit_sheets SET {col}_by=%s, {col}_at=CURRENT_TIMESTAMP WHERE id=%s", 
+                     (signer_name, sheet_id))
+        conn.commit()
     return True

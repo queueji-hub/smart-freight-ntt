@@ -1,8 +1,3 @@
-"""Session token management - persists login across full page reloads.
-
-Tokens are stored in DB and passed via URL query param.
-This allows HTML <a href> navigation while keeping users logged in.
-"""
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
@@ -10,22 +5,8 @@ from database.connection import get_connection
 
 SESSION_TIMEOUT_HOURS = 24
 
-def _ensure_sessions_table():
-    """Create sessions table if it doesn't exist."""
-    with get_connection() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                token TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                expires_at TIMESTAMP NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
-
 def create_session(user_id: int) -> str:
-    """Create a new session token. Returns the token string."""
-    _ensure_sessions_table()
+    """Create a new session token."""
     token = secrets.token_urlsafe(32)
     expires = datetime.now() + timedelta(hours=SESSION_TIMEOUT_HOURS)
     with get_connection() as conn:
@@ -33,18 +14,15 @@ def create_session(user_id: int) -> str:
             "INSERT INTO sessions (token, user_id, expires_at) VALUES (%s, %s, %s)",
             (token, user_id, expires)
         )
+        conn.commit()
     return token
 
 def get_user_by_token(token: str) -> Optional[Dict[str, Any]]:
-    """Validate token and return user info. None if invalid/expired."""
-    if not token:
-        return None
+    """Validate token and return user info."""
+    if not token: return None
     
-    _ensure_sessions_table()
     with get_connection() as conn:
-        # Clean up expired sessions
-        conn.execute("DELETE FROM sessions WHERE expires_at < %s", (datetime.now(),))
-        
+        # ดึงข้อมูล user และวันหมดอายุ
         row = conn.execute("""
             SELECT s.expires_at, u.id, u.username, u.full_name, u.email, u.role
             FROM sessions s
@@ -52,11 +30,7 @@ def get_user_by_token(token: str) -> Optional[Dict[str, Any]]:
             WHERE s.token = %s
         """, (token,)).fetchone()
         
-        if not row:
-            return None
-        
-        # Check expiry (PostgreSQL returns datetime object directly)
-        if row["expires_at"] < datetime.now():
+        if not row or row["expires_at"] < datetime.now():
             return None
         
         return {
@@ -69,15 +43,14 @@ def get_user_by_token(token: str) -> Optional[Dict[str, Any]]:
 
 def delete_session(token: str) -> None:
     """Invalidate a session token (logout)."""
-    if not token:
-        return
-    _ensure_sessions_table()
+    if not token: return
     with get_connection() as conn:
         conn.execute("DELETE FROM sessions WHERE token=%s", (token,))
+        conn.commit()
 
 def cleanup_expired_sessions() -> int:
-    """Remove all expired sessions. Returns number deleted."""
-    _ensure_sessions_table()
+    """Remove all expired sessions."""
     with get_connection() as conn:
         cur = conn.execute("DELETE FROM sessions WHERE expires_at < %s", (datetime.now(),))
+        conn.commit()
         return cur.rowcount

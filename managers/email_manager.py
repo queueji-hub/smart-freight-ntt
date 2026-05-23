@@ -1,4 +1,3 @@
-"""Email notification system - SMTP-based."""
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -9,32 +8,8 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from database.connection import get_connection
 
-try:
-    import streamlit as st
-except ImportError:
-    st = None
-
-def _ensure_email_table():
-    """Create email_log table if not exists."""
-    with get_connection() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS email_log (
-                id SERIAL PRIMARY KEY,
-                to_email TEXT NOT NULL,
-                cc TEXT,
-                subject TEXT,
-                body TEXT,
-                attachments TEXT,
-                status TEXT DEFAULT 'pending',
-                error TEXT,
-                sent_at TIMESTAMP,
-                created_by TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
 def _get_smtp_config() -> Optional[Dict[str, Any]]:
-    """Read SMTP config from Streamlit secrets."""
+    import streamlit as st
     if st is None or "smtp" not in st.secrets:
         return None
     return dict(st.secrets["smtp"])
@@ -43,7 +18,6 @@ def send_email(to: str, subject: str, body: str,
                cc: Optional[str] = None, attachments: Optional[List[str]] = None,
                from_user: Optional[str] = None) -> Dict[str, Any]:
     """Send email via SMTP and log the attempt."""
-    _ensure_email_table()
     cfg = _get_smtp_config()
     attach_str = ",".join(attachments) if attachments else None
     
@@ -53,6 +27,7 @@ def send_email(to: str, subject: str, body: str,
                 INSERT INTO email_log (to_email, cc, subject, body, attachments, status, error, created_by)
                 VALUES (%s, %s, %s, %s, %s, 'draft', 'SMTP not configured', %s)
             """, (to, cc, subject, body, attach_str, from_user))
+            conn.commit()
         return {"ok": False, "status": "draft", "message": "SMTP not configured."}
     
     try:
@@ -84,6 +59,7 @@ def send_email(to: str, subject: str, body: str,
                 INSERT INTO email_log (to_email, cc, subject, body, attachments, status, sent_at, created_by)
                 VALUES (%s, %s, %s, %s, %s, 'sent', %s, %s)
             """, (to, cc, subject, body, attach_str, datetime.now(), from_user))
+            conn.commit()
         return {"ok": True, "status": "sent", "message": "Email sent"}
     
     except Exception as ex:
@@ -92,15 +68,11 @@ def send_email(to: str, subject: str, body: str,
                 INSERT INTO email_log (to_email, cc, subject, body, attachments, status, error, created_by)
                 VALUES (%s, %s, %s, %s, %s, 'failed', %s, %s)
             """, (to, cc, subject, body, attach_str, str(ex), from_user))
+            conn.commit()
         return {"ok": False, "status": "failed", "message": str(ex)}
 
 def list_email_logs(limit: int = 100) -> List[Dict[str, Any]]:
-    """List recent email logs."""
-    _ensure_email_table()
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM email_log ORDER BY created_at DESC LIMIT %s",
-            (limit,)
-        ).fetchall()
-        # รองรับทั้งการคืนค่าเป็น List of Dict
-        return [dict(r) for r in rows]
+        return list(conn.execute(
+            "SELECT * FROM email_log ORDER BY created_at DESC LIMIT %s", (limit,)
+        ).fetchall())
