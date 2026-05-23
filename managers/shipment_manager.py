@@ -85,7 +85,7 @@ def get_dashboard_stats() -> Dict[str, Any]:
         # ดึงสถานะทั้งหมดจากตาราง
         rows = conn.execute("SELECT status, COUNT(*) as c FROM shipments GROUP BY status").fetchall()
         
-        # แปลงข้อมูลเป็น dict
+        # แปลงเป็น dict แบบปลอดภัย
         stats_data = {}
         for r in rows:
             if isinstance(r, dict):
@@ -95,15 +95,14 @@ def get_dashboard_stats() -> Dict[str, Any]:
                 status_key = str(r[0]).lower()
                 stats_data[status_key] = r[1]
 
-        # รวมค่าเพื่อป้องกัน KeyError ใน Dashboard
-        total = sum(stats_data.values())
-        return {
-            "total": total,
-            "proceed": stats_data.get('proceed', 0),
-            "pending": stats_data.get('pending', 0),
-            "finished": stats_data.get('finished', 0),
-            "completed": stats_data.get('completed', 0),
-            "closed": stats_data.get('closed', 0),  # เพิ่ม Key ที่ขาดไปให้แล้ว
-            "by_type": [dict(r) for r in conn.execute("SELECT job_type, COUNT(*) as c FROM shipments GROUP BY job_type").fetchall()],
-            "by_month": [dict(r) for r in conn.execute("SELECT TO_CHAR(etd, 'YYYY-MM') as ym, COUNT(*) as c FROM shipments WHERE etd IS NOT NULL GROUP BY ym ORDER BY ym").fetchall()]
-        }
+        # สร้างรายการ Key ที่ Dashboard อาจเรียกใช้ เพื่อเป็นค่าตั้งต้น
+        required_keys = ["proceed", "pending", "finished", "completed", "closed", "canceled", "draft"]
+        
+        result = {key: stats_data.get(key, 0) for key in required_keys}
+        
+        # เพิ่มข้อมูลสรุปอื่นๆ
+        result["total"] = sum(stats_data.values())
+        result["by_type"] = [dict(r) for r in conn.execute("SELECT job_type, COUNT(*) as c FROM shipments GROUP BY job_type").fetchall()]
+        result["by_month"] = [dict(r) for r in conn.execute("SELECT TO_CHAR(etd, 'YYYY-MM') as ym, COUNT(*) as c FROM shipments WHERE etd IS NOT NULL GROUP BY ym ORDER BY ym").fetchall()]
+        
+        return result
