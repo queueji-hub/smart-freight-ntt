@@ -15,7 +15,7 @@ def render():
     can_edit = can_write(role, "billing") or role == "admin"
     
     st.title("💱 Exchange Rates")
-    st.caption("Manage FX rates · All amounts displayed in THB-equivalent")
+    st.caption("Manage EX rates · All amounts displayed in THB-equivalent")
     
     # Seed defaults if empty
     seed_default_rates()

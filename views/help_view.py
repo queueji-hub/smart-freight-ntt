@@ -52,7 +52,7 @@ def render():
         - **Quotation → Booking → Shipment** workflow
         - **Profit Sheet** required before "Closed" status
         - **Billing:** Invoice, BN, CN, DN, SOA with VAT/WHT
-        - **FX Rates:** Multi-currency conversion to THB
+        - **EX Rates:** Multi-currency conversion to THB
         """)
     
     st.markdown("---")

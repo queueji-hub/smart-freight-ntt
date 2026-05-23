@@ -66,7 +66,7 @@ PAGES = [
     ("quotation", "📄 Quotation", "quotation"), ("booking", "📑 Booking", "booking"),
     ("shipments", "📦 Shipment", "shipment"), ("tracking", "📍 Tracking", "shipment"),
     ("profit", "📊 Profit Sheet", "billing"), ("billing", "💰 Billing", "billing"),
-    ("fx", "💱 FX Rates", "billing"), ("reports", "📈 Reports", "reports"),
+    ("fx", "💱 EX Rates", "billing"), ("reports", "📈 Reports", "reports"),
     ("users", "👤 Users", "users"), ("settings", "⚙️ Settings", "users"),
     ("help", "📘 Help / Manual", "dashboard"),
 ]
