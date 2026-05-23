@@ -56,14 +56,21 @@ def calculate_summary(items: List[Dict[str, Any]]) -> Dict[str, float]:
     grand_total = total_before_vat + total_vat - wht_total
 
     return {
-        "total_before_vat": round(total_before_vat, 2),
-        "total_vat": round(total_vat, 2),
-        "total_advance": round(total_advance, 2),
-        "wht_1_amount": round(wht_1_amount, 2),
-        "wht_3_amount": round(wht_3_amount, 2),
-        "wht_total": round(wht_total, 2),
-        "grand_total": round(grand_total, 2),
+    from contracts.invoice_contract import validate_invoice_summary
+
     }
+    
+result = {
+    "billed": total_before_vat,
+    "subtotal": total_before_vat,
+    "vat": total_vat,
+    "wht": wht_total,
+    "grand_total": grand_total,
+    "outstanding": grand_total,
+}
+
+return validate_invoice_summary(result)
+
 
 # =========================================================
 # INVOICE CREATE
