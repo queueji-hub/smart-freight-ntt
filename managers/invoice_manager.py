@@ -145,30 +145,34 @@ def get_invoice_by_no(doc_no: str) -> Optional[Dict[str, Any]]:
         invoice["summary"] = calculate_summary(invoice["items"])
         return invoice
 
+def list_invoices(doc_type: str = None, payment_status: str = None, limit: int = None) -> List[Dict[str, Any]]:
+    """Retrieve list of invoices with optional filters."""
+    _ensure_tables()
+    sql = "SELECT * FROM invoices WHERE 1=1"
+    params = []
+    if doc_type: sql += " AND doc_type = %s"; params.append(doc_type)
+    if payment_status: sql += " AND payment_status = %s"; params.append(payment_status)
+    sql += " ORDER BY issue_date DESC, id DESC"
+    if limit: sql += f" LIMIT {int(limit)}"
+    
+    with get_connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
 def get_outstanding_summary() -> Dict[str, Any]:
     """Calculate total outstanding invoices for Dashboard."""
     _ensure_tables()
     with get_connection() as conn:
-        # ใช้ Alias 'outstanding' โดยตรง เพื่อป้องกัน KeyError
-        query = """
+        row = conn.execute("""
             SELECT COUNT(*) as cnt, COALESCE(SUM(outstanding), 0) as outstanding
             FROM invoices 
             WHERE payment_status != 'Paid'
-        """
-        row = conn.execute(query).fetchone()
+        """).fetchone()
         
         if not row:
             return {"total_invoices": 0, "outstanding": 0.0}
             
-        # รองรับการดึงข้อมูลทั้งแบบ dict และ tuple เพื่อความยืดหยุ่น
         if isinstance(row, dict):
-            return {
-                "total_invoices": row.get('cnt', 0), 
-                "outstanding": float(row.get('outstanding', 0))
-            }
+            return {"total_invoices": row.get('cnt', 0), "outstanding": float(row.get('outstanding', 0))}
         
-        # กรณีเป็น tuple เข้าถึงด้วย index
-        return {
-            "total_invoices": row[0], 
-            "outstanding": float(row[1])
-        }
+        return {"total_invoices": row[0], "outstanding": float(row[1])}
