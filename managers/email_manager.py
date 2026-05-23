@@ -1,16 +1,4 @@
-"""Email notification system - SMTP-based.
-
-Configure SMTP via .streamlit/secrets.toml:
-    [smtp]
-    host = "smtp.gmail.com"
-    port = 587
-    username = "you@example.com"
-    password = "your-app-password"
-    from_email = "you@example.com"
-    from_name = "Smart Freight NTT"
-
-If secrets are missing, emails are saved as drafts in DB instead.
-"""
+"""Email notification system - SMTP-based."""
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -28,10 +16,12 @@ except ImportError:
 
 
 def _ensure_email_table():
+    """Create email_log table."""
     with get_connection() as conn:
+        # 🟢 แก้ไข: ใช้ SERIAL แทน AUTOINCREMENT
         conn.execute("""
             CREATE TABLE IF NOT EXISTS email_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 to_email TEXT NOT NULL,
                 cc TEXT,
                 subject TEXT,
@@ -65,27 +55,21 @@ def send_email(to: str,
                cc: Optional[str] = None,
                attachments: Optional[List[str]] = None,
                from_user: Optional[str] = None) -> Dict[str, Any]:
-    """Send email via SMTP. Returns dict with status.
-    
-    If SMTP is not configured, log as draft.
-    """
+    """Send email via SMTP. If SMTP is not configured, log as draft."""
     _ensure_email_table()
     cfg = _get_smtp_config()
-    
     attach_str = ",".join(attachments) if attachments else None
     
     if not cfg:
-        # No SMTP config — save as draft
         with get_connection() as conn:
+            # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
             conn.execute(
                 "INSERT INTO email_log (to_email, cc, subject, body, "
                 "attachments, status, error, created_by) "
-                "VALUES (?,?,?,?,?,?,?,?)",
-                (to, cc, subject, body, attach_str, "draft",
-                 "SMTP not configured", from_user)
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                (to, cc, subject, body, attach_str, "draft", "SMTP not configured", from_user)
             )
-        return {"ok": False, "status": "draft",
-                "message": "SMTP not configured. Email saved as draft."}
+        return {"ok": False, "status": "draft", "message": "SMTP not configured."}
     
     try:
         msg = MIMEMultipart()
@@ -96,7 +80,6 @@ def send_email(to: str,
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "html", "utf-8"))
         
-        # Attachments
         if attachments:
             for fp in attachments:
                 if not Path(fp).exists():
@@ -105,8 +88,7 @@ def send_email(to: str,
                     part = MIMEBase("application", "octet-stream")
                     part.set_payload(f.read())
                 encoders.encode_base64(part)
-                part.add_header("Content-Disposition",
-                                 f"attachment; filename={Path(fp).name}")
+                part.add_header("Content-Disposition", f"attachment; filename={Path(fp).name}")
                 msg.attach(part)
         
         recipients = [to] + ([c.strip() for c in cc.split(",")] if cc else [])
@@ -117,32 +99,34 @@ def send_email(to: str,
             server.send_message(msg, to_addrs=recipients)
         
         with get_connection() as conn:
+            # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
             conn.execute(
                 "INSERT INTO email_log (to_email, cc, subject, body, "
                 "attachments, status, sent_at, created_by) "
-                "VALUES (?,?,?,?,?,?,?,?)",
-                (to, cc, subject, body, attach_str, "sent",
-                 datetime.now().isoformat(), from_user)
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                (to, cc, subject, body, attach_str, "sent", datetime.now(), from_user)
             )
         return {"ok": True, "status": "sent", "message": "Email sent"}
     
     except Exception as ex:
         with get_connection() as conn:
+            # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
             conn.execute(
                 "INSERT INTO email_log (to_email, cc, subject, body, "
                 "attachments, status, error, created_by) "
-                "VALUES (?,?,?,?,?,?,?,?)",
-                (to, cc, subject, body, attach_str, "failed",
-                 str(ex), from_user)
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                (to, cc, subject, body, attach_str, "failed", str(ex), from_user)
             )
         return {"ok": False, "status": "failed", "message": str(ex)}
 
 
 def list_email_logs(limit: int = 100) -> List[Dict[str, Any]]:
+    """List email logs."""
     _ensure_email_table()
     with get_connection() as conn:
+        # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
         rows = conn.execute(
-            "SELECT * FROM email_log ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM email_log ORDER BY created_at DESC LIMIT %s",
             (limit,)
         ).fetchall()
     return [dict(r) for r in rows]
