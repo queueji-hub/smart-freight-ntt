@@ -101,3 +101,25 @@ def list_quotations():
             dict(r)
             for r in results
         ]
+
+def upsert_customer(customer_data):
+    """
+    Create or update customer placeholder
+    """
+
+    return customer_data
+
+def duplicate_quotation(quotation_no):
+    """
+    Duplicate quotation placeholder
+    """
+
+    original = get_quotation_by_no(quotation_no)
+
+    if not original:
+        return None
+
+    # TODO:
+    # create duplicated quotation logic later
+
+    return original
