@@ -34,10 +34,8 @@ except Exception:
     pass
 
 # ===== AUTHENTICATION FLOW =====
-# 1. เช็ค Session State เป็นหลัก
 user = st.session_state.get("user")
 
-# 2. ถ้าหลุด ให้ดึงจาก Token ใน URL
 if not user:
     token = st.query_params.get("token")
     if token:
@@ -50,13 +48,12 @@ if not user:
             if "token" in st.query_params:
                 del st.query_params["token"]
 
-# 3. ถ้ายังไม่มี user ให้ไปหน้า Login ทันที
 if not user:
     from views import login_view
     login_view.render()
     st.stop()
 
-# ===== App State (Logged In) =====
+# ===== App State =====
 role = user.get("role", "")
 session_token = st.session_state.get("session_token")
 
@@ -71,7 +68,6 @@ PAGES = [
     ("help", "📘 Help / Manual", "dashboard"),
 ]
 
-# กรองเฉพาะหน้าที่ user มีสิทธิ์เข้าถึง
 allowed_pages = [p for p in PAGES if can_read(role, p[2])]
 allowed_page_ids = [p[0] for p in allowed_pages]
 
@@ -79,9 +75,8 @@ current_page = st.query_params.get("page", "dashboard")
 if current_page not in allowed_page_ids:
     current_page = allowed_page_ids[0] if allowed_page_ids else "dashboard"
 
-# ===== Sidebar & Navigation =====
+# ===== Sidebar =====
 setup_sidebar()
-
 with st.sidebar:
     st.markdown(f"""
     <div style='padding:0.5rem 0; margin-bottom:1rem;'>
@@ -92,9 +87,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     
-    # ใช้ Native Button ของ Streamlit แทน HTML <a> tag ป้องกันการ Hard Reload
     for page_id, label, module in allowed_pages:
-        # ทำให้ปุ่มหน้าที่กำลังเปิดอยู่เป็นสีเด่น (primary)
         btn_type = "primary" if current_page == page_id else "secondary"
         if st.button(label, key=f"nav_{page_id}", use_container_width=True, type=btn_type):
             st.query_params["page"] = page_id
@@ -103,59 +96,37 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🚪 Sign Out", use_container_width=True):
         if session_token:
-            try:
-                delete_session(session_token)
-            except:
-                pass
+            try: delete_session(session_token)
+            except: pass
         st.session_state.clear()
         st.query_params.clear()
         st.rerun()
 
 # ===== Render Page Content =====
+PAGE_MAP = {
+    "dashboard": "views.dashboard_view",
+    "crm": "views.crm_view",
+    "quotation": "views.quotation_view",
+    "booking": "views.booking_view",
+    "shipments": "views.shipments_view",
+    "tracking": "views.tracking_view",
+    "profit": "views.profit_view",
+    "billing": "views.billing_view",
+    "fx": "views.fx_view",
+    "reports": "views.reports_view",
+    "users": "views.users_view",
+    "settings": "views.settings_view",
+    "help": "views.help_view",
+}
+
 try:
-    if current_page == "dashboard":
-        from views import dashboard_view
-        dashboard_view.render()
-    elif current_page == "crm":
-        from views import crm_view
-        crm_view.render()
-    elif current_page == "quotation":
-        from views import quotation_view
-        quotation_view.render()
-    elif current_page == "booking":
-        from views import booking_view
-        booking_view.render()
-    elif current_page == "shipments":
-        from views import shipments_view
-        shipments_view.render()
-    elif current_page == "tracking":
-        from views import tracking_view
-        tracking_view.render()
-    elif current_page == "profit":
-        from views import profit_view
-        profit_view.render()
-    elif current_page == "billing":
-        from views import billing_view
-        billing_view.render()
-    elif current_page == "fx":
-        from views import fx_view
-        fx_view.render()
-    elif current_page == "reports":
-        from views import reports_view
-        reports_view.render()
-    elif current_page == "users":
-        from views import users_view
-        users_view.render()
-    elif current_page == "settings":
-        from views import settings_view
-        settings_view.render()
-    elif current_page == "help":
-        from views import help_view
-        help_view.render()
+    if current_page in PAGE_MAP:
+        # ใช้ importlib เพื่อให้โหลด Dynamic ตามหน้า
+        import importlib
+        module = importlib.import_module(PAGE_MAP[current_page])
+        module.render()
     else:
         st.warning("🚧 Page under construction or access denied.")
-
 except Exception as e:
-    st.error(f"❌ Error loading **{current_page}** page: {e}")
-    # แสดง Error แบบละเอียดเพื่อการ Debug 
+    st.error(f"❌ Error loading **{current_page}** page.")
     st.code(traceback.format_exc(), language="python")
