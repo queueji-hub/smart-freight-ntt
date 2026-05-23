@@ -53,19 +53,24 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
     
     pwd_hash = hash_password(password)
     with get_connection() as conn:
-        # Try with is_active filter first; fall back if column missing
-        try:
-            row = conn.execute(
-                "SELECT id, username, full_name, email, role FROM users "
-                "WHERE username=? AND password_hash=? AND is_active=1",
-                (username.strip().lower(), pwd_hash)
-            ).fetchone()
-        except Exception:
-            row = conn.execute(
-                "SELECT id, username, full_name, email, role FROM users "
-                "WHERE username=? AND password_hash=?",
-                (username.strip().lower(), pwd_hash)
-            ).fetchone()
+        with conn.cursor() as cursor:  # 👈 ใช้ cursor เสมอ
+            # Try with is_active filter first; fall back if column missing
+            try:
+                # 👈 ปรับเครื่องหมายเงื่อนไขเป็น %s สำหรับ PostgreSQL
+                cursor.execute(
+                    "SELECT id, username, full_name, email, role FROM users "
+                    "WHERE username=%s AND password_hash=%s AND is_active=1",
+                    (username.strip().lower(), pwd_hash)
+                )
+                row = cursor.fetchone()
+            except Exception:
+                # 👈 ปรับเครื่องหมายเงื่อนไขเป็น %s สำหรับ PostgreSQL
+                cursor.execute(
+                    "SELECT id, username, full_name, email, role FROM users "
+                    "WHERE username=%s AND password_hash=%s",
+                    (username.strip().lower(), pwd_hash)
+                )
+                row = cursor.fetchone()
     
     return dict(row) if row else None
 
@@ -93,10 +98,12 @@ def can_write(role: str, module: str) -> bool:
 def list_users() -> list:
     """Return all users."""
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT id, username, full_name, email, role, is_active, created_at "
-            "FROM users ORDER BY username"
-        ).fetchall()
+        with conn.cursor() as cursor:  # 👈 यूज़ cursor
+            cursor.execute(
+                "SELECT id, username, full_name, email, role, is_active, created_at "
+                "FROM users ORDER BY username"
+            )
+            rows = cursor.fetchall()
     return [dict(r) for r in rows]
 
 
@@ -108,20 +115,26 @@ def create_user(username: str, password: str, full_name: str,
     
     pwd_hash = hash_password(password)
     with get_connection() as conn:
-        cur = conn.execute(
-            "INSERT INTO users (username, password_hash, full_name, email, role) "
-            "VALUES (?,?,?,?,?)",
-            (username.strip().lower(), pwd_hash, full_name, email, role)
-        )
-        return cur.lastrowid
+        with conn.cursor() as cursor:  # 👈 ใช้ cursor และเปลี่ยน ? เป็น %s
+            cursor.execute(
+                "INSERT INTO users (username, password_hash, full_name, email, role) "
+                "VALUES (%s,%s,%s,%s,%s) RETURNING id", # 👈 ใช้ RETURNING id สไตล์ PostgreSQL
+                (username.strip().lower(), pwd_hash, full_name, email, role)
+            )
+            # ดึงค่า id ที่เพิ่ง Insert สำเร็จออกมา
+            new_id = cursor.fetchone()["id"] if hasattr(cursor, "fetchone") else cursor.fetchone()[0]
+            conn.commit() # บันทึกการเปลี่ยนแปลงลงฐานข้อมูลหลัก
+            return new_id
 
 
 def update_user_password(user_id: int, new_password: str) -> bool:
     """Change user password."""
     pwd_hash = hash_password(new_password)
     with get_connection() as conn:
-        conn.execute("UPDATE users SET password_hash=? WHERE id=?",
-                     (pwd_hash, user_id))
+        with conn.cursor() as cursor:  # 👈 ใช้ cursor และเปลี่ยน ? เป็น %s
+            cursor.execute("UPDATE users SET password_hash=%s WHERE id=%s",
+                           (pwd_hash, user_id))
+            conn.commit()
     return True
 
 
@@ -130,8 +143,10 @@ def log_activity(user_id: int, username: str, action: str,
                  details: str = None) -> None:
     """Record user activity."""
     with get_connection() as conn:
-        conn.execute(
-            "INSERT INTO activity_logs (user_id, username, action, "
-            "entity_type, entity_id, details) VALUES (?,?,?,?,?,?)",
-            (user_id, username, action, entity_type, entity_id, details)
-        )
+        with conn.cursor() as cursor:  # 👈 ใช้ cursor และเปลี่ยน ? เป็น %s
+            cursor.execute(
+                "INSERT INTO activity_logs (user_id, username, action, "
+                "entity_type, entity_id, details) VALUES (%s,%s,%s,%s,%s,%s)",
+                (user_id, username, action, entity_type, entity_id, details)
+            )
+            conn.commit()
