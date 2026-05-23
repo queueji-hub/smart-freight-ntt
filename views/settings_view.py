@@ -118,35 +118,58 @@ From: {cfg.get('from_email')}
     # ==== DATABASE BACKUP (Auto-persist to GitHub) ====
     with tab_b:
         from managers.db_persistence import (
-            get_backup_status, force_push, is_github_configured,
+            get_backup_status, force_push, pull_db_from_github,
+            is_github_configured,
         )
         
         status = get_backup_status()
         
         if status["configured"]:
-            st.success(f"✅ Auto-backup configured · Repo: `{status['repo']}`")
+            st.success(f"✅ Auto-backup configured · "
+                       f"Repo: `{status['repo']}` · Branch: `{status['branch']}`")
             
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             with c1:
                 st.metric("Last Push", status["last_push_str"])
             with c2:
-                st.metric("Initial Pull",
-                    "✅ Done" if status["initial_pull_done"] else "Pending")
+                size_kb = status['db_size_bytes'] / 1024
+                st.metric("DB Size", f"{size_kb:.1f} KB")
+            with c3:
+                dirty = "🔴 Yes" if status["is_dirty"] else "🟢 No"
+                st.metric("Pending Save", dirty)
             
-            st.markdown("##### 🔄 Manual Backup")
-            st.markdown(
-                "ระบบจะ auto-backup ทุก 30 วินาทีหลังบันทึกข้อมูล "
-                "(หากต้องการ backup ทันที ให้กดปุ่มด้านล่าง)"
+            st.markdown("##### 🔄 Manual Actions")
+            
+            ac1, ac2 = st.columns(2)
+            with ac1:
+                if st.button("💾 Push to GitHub NOW",
+                              type="primary", use_container_width=True,
+                              help="Force-push DB to GitHub immediately"):
+                    with st.spinner("Pushing to GitHub..."):
+                        ok, msg = force_push()
+                    if ok:
+                        st.success(f"✅ {msg}")
+                    else:
+                        st.error(f"❌ {msg}")
+            
+            with ac2:
+                if st.button("📥 Pull from GitHub",
+                              use_container_width=True,
+                              help="Re-download DB from GitHub (overwrites local)"):
+                    with st.spinner("Pulling from GitHub..."):
+                        ok, msg = pull_db_from_github(force=True)
+                    if ok:
+                        st.success(f"✅ {msg}")
+                        st.rerun()
+                    else:
+                        st.warning(f"⚠️ {msg}")
+            
+            st.info(
+                "💡 ระบบจะ auto-backup เมื่อมีการบันทึกข้อมูล "
+                "(บันทึก batch ทุก 3 วินาทีหลังบันทึกครั้งสุดท้าย) "
+                "หากต้องการ backup ทันทีก่อน reboot ให้กดปุ่ม 'Push to GitHub NOW' "
+                "ด้านบน"
             )
-            if st.button("💾 Backup Now (Push to GitHub)",
-                          type="primary", use_container_width=True):
-                with st.spinner("Pushing to GitHub..."):
-                    ok = force_push()
-                if ok:
-                    st.success("✅ Database pushed to GitHub")
-                    st.rerun()
-                else:
-                    st.error("❌ Push failed - check secrets config")
         else:
             st.warning("⚠️ Auto-backup NOT configured")
             st.markdown("""
@@ -178,14 +201,6 @@ From: {cfg.get('from_email')}
             
             หลังจากนั้น:
             - 📥 ทุกครั้งที่เปิด app ระบบจะ pull DB ล่าสุดจาก GitHub
-            - 📤 ทุกครั้งที่บันทึกข้อมูลในระบบ ระบบจะ auto-push DB ขึ้น GitHub (debounce 30 วินาที)
+            - 📤 ทุกครั้งที่บันทึกข้อมูลในระบบ ระบบจะ auto-push DB ขึ้น GitHub
             - ✅ ข้อมูลจะคงอยู่แม้ Reboot/Redeploy
             """)
-            
-            with st.expander("⚠️ ข้อจำกัดที่ควรทราบ"):
-                st.markdown("""
-                - **อย่าใช้ระบบพร้อมกันหลายคนบันทึกในเวลาเดียวกัน** อาจเกิด race condition
-                - การ push บ่อยๆ อาจถูก GitHub rate limit (ปกติไม่เกิน 5,000 ครั้ง/ชม.)
-                - DB file ควรไม่เกิน 100MB (limit ของ GitHub)
-                - ทุกการเปลี่ยนแปลงจะปรากฏใน GitHub commit history
-                """)

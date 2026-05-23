@@ -1,11 +1,26 @@
-"""Billing / Financial module view."""
+"""Billing / Financial module view.
+
+Per-row tax control:
+- VAT 7% / Non-VAT / Advance (เงินทดรองจ่าย)
+- WHT None / 1% / 3%
+
+Summary structure (7 lines):
+1. Total Before VAT
+2. Total VAT 7%
+3. Total Advance
+4. Total Before WHT
+5. WHT 1% Amount
+6. WHT 3% Amount
+7. Grand Total
+"""
 import streamlit as st
 import pandas as pd
+import uuid
 from datetime import date, timedelta
 from managers.invoice_manager import (
     create_invoice, get_invoice_by_no, list_invoices,
     record_payment, cancel_invoice, get_outstanding_summary,
-    calculate_totals,
+    calculate_summary, TAX_TYPES, WHT_TYPES,
 )
 from managers.customer_manager import list_customers, get_customer
 from managers.shipment_manager import list_shipments, get_shipment
@@ -27,7 +42,7 @@ def render():
     can_edit = can_write(role, "billing")
     
     st.title("💰 Billing & Financial")
-    st.caption("Invoice · Billing Note · Credit/Debit Note · SOA · Payment Tracking")
+    st.caption("Per-row VAT/Advance/WHT · Auto financial breakdown")
     
     # ===== KPI Strip =====
     summary = get_outstanding_summary()
@@ -62,6 +77,18 @@ def render():
             st.info("⚠️ You have read-only access to billing.")
 
 
+def _empty_inv_row():
+    return {
+        "id": str(uuid.uuid4())[:8],
+        "description": "",
+        "quantity": 1.0,
+        "unit_price": 0.0,
+        "amount": 0.0,
+        "tax_type": "VAT 7%",
+        "wht_type": "None",
+    }
+
+
 def _create_form(user):
     st.subheader("Create New Financial Document")
     
@@ -71,7 +98,6 @@ def _create_form(user):
     
     col1, col2 = st.columns(2)
     with col1:
-        # Customer selection
         customers = list_customers()
         cust_options = [(0, "-- Select customer --")] + \
                        [(c["id"], c["company_name"]) for c in customers]
@@ -82,11 +108,9 @@ def _create_form(user):
         cust_id = cust_options[cust_idx][0]
         cust_name = cust_options[cust_idx][1] if cust_idx > 0 else ""
         
-        # Auto-fill from customer
         cust_data = get_customer(cust_id) if cust_id else None
         credit_terms = cust_data.get("credit_terms_days", 30) if cust_data else 30
         
-        # Pull from shipment
         ships = list_shipments()
         ship_options = [("", "-- No linked shipment --")] + \
                        [(s["job_no"], f"{s['job_no']} — {s.get('customer_name','')}")
@@ -108,75 +132,132 @@ def _create_form(user):
         ref_doc = st.text_input("Reference Doc No. (for CN/DN)",
                                   key="bill_ref")
     
-    # Items editor
+    # ===== ITEMS EDITOR with per-row VAT/WHT =====
     st.markdown("##### 📝 Line Items")
+    st.caption("เลือก VAT/Advance และ WHT แยกแต่ละบรรทัด · Advance = เงินทดรองจ่าย ไม่คิด VAT/WHT")
+    
     items_key = "bill_items_list"
     if items_key not in st.session_state:
-        st.session_state[items_key] = [
-            {"description": "", "quantity": 1.0, "unit_price": 0.0, "amount": 0.0}
-        ]
+        st.session_state[items_key] = [_empty_inv_row()]
     
     items = st.session_state[items_key]
-    h = st.columns([3, 1, 1.2, 1.2, 0.5])
+    for it in items:
+        if not it.get("id"):
+            it["id"] = str(uuid.uuid4())[:8]
+    
+    def _sync_inv_widgets():
+        for row in st.session_state[items_key]:
+            rid = row["id"]
+            for field, suffix in [
+                ("description", "d"), ("quantity", "q"),
+                ("unit_price", "u"), ("tax_type", "tax"),
+                ("wht_type", "wht"),
+            ]:
+                wkey = f"bi_{suffix}_{rid}"
+                if wkey in st.session_state:
+                    row[field] = st.session_state[wkey]
+            # Recalc amount = qty * unit_price
+            row["amount"] = float(row["quantity"]) * float(row["unit_price"])
+    
+    # Header
+    h = st.columns([3, 0.8, 1.1, 1.1, 1.3, 1.1, 0.4])
     h[0].markdown("**Description**")
-    h[1].markdown("**Qty**")
-    h[2].markdown("**Unit Price**")
-    h[3].markdown("**Amount**")
-    h[4].markdown("**🗑**")
+    h[1].markdown("<div style='text-align:center'><b>Qty</b></div>",
+                  unsafe_allow_html=True)
+    h[2].markdown("<div style='text-align:center'><b>Unit Price</b></div>",
+                  unsafe_allow_html=True)
+    h[3].markdown("<div style='text-align:center'><b>Amount</b></div>",
+                  unsafe_allow_html=True)
+    h[4].markdown("<div style='text-align:center'><b>VAT/Advance</b></div>",
+                  unsafe_allow_html=True)
+    h[5].markdown("<div style='text-align:center'><b>WHT</b></div>",
+                  unsafe_allow_html=True)
+    h[6].markdown("**🗑**")
     
-    for i in range(len(items)):
-        c = st.columns([3, 1, 1.2, 1.2, 0.5])
-        items[i]["description"] = c[0].text_input("d",
-            value=items[i]["description"], key=f"bi_d_{i}",
-            label_visibility="collapsed")
-        items[i]["quantity"] = c[1].number_input("q",
-            value=float(items[i]["quantity"]), min_value=0.0, step=1.0,
-            key=f"bi_q_{i}", label_visibility="collapsed")
-        items[i]["unit_price"] = c[2].number_input("u",
-            value=float(items[i]["unit_price"]), min_value=0.0,
-            format="%.2f", key=f"bi_u_{i}", label_visibility="collapsed")
-        # Auto-calc amount
-        amt = items[i]["quantity"] * items[i]["unit_price"]
-        items[i]["amount"] = amt
-        c[3].markdown(f"<div style='padding:0.4rem'>฿{amt:,.2f}</div>",
-                      unsafe_allow_html=True)
-        if c[4].button("🗑", key=f"bi_del_{i}", disabled=(len(items) <= 1)):
-            items.pop(i)
-            st.rerun()
+    delete_id = None
     
-    if st.button("➕ Add line item"):
-        items.append({"description": "", "quantity": 1.0,
-                      "unit_price": 0.0, "amount": 0.0})
+    for row in items:
+        rid = row["id"]
+        c = st.columns([3, 0.8, 1.1, 1.1, 1.3, 1.1, 0.4])
+        c[0].text_input("d", value=row["description"], key=f"bi_d_{rid}",
+                          label_visibility="collapsed")
+        c[1].number_input("q", value=float(row["quantity"]),
+                            min_value=0.0, step=1.0, key=f"bi_q_{rid}",
+                            label_visibility="collapsed")
+        c[2].number_input("u", value=float(row["unit_price"]),
+                            min_value=0.0, format="%.2f", key=f"bi_u_{rid}",
+                            label_visibility="collapsed")
+        # Live amount preview
+        amt = float(st.session_state.get(f"bi_q_{rid}", row["quantity"])) * \
+              float(st.session_state.get(f"bi_u_{rid}", row["unit_price"]))
+        c[3].markdown(
+            f"<div style='padding:0.4rem;text-align:right;font-family:monospace'>"
+            f"฿{amt:,.2f}</div>",
+            unsafe_allow_html=True)
+        c[4].selectbox("tax", TAX_TYPES,
+            index=TAX_TYPES.index(row.get("tax_type", "VAT 7%"))
+                if row.get("tax_type") in TAX_TYPES else 0,
+            key=f"bi_tax_{rid}", label_visibility="collapsed")
+        c[5].selectbox("wht", WHT_TYPES,
+            index=WHT_TYPES.index(row.get("wht_type", "None"))
+                if row.get("wht_type") in WHT_TYPES else 0,
+            key=f"bi_wht_{rid}", label_visibility="collapsed")
+        if c[6].button("🗑", key=f"bi_del_{rid}",
+                        disabled=(len(items) <= 1), help="ลบรายการ"):
+            delete_id = rid
+    
+    if delete_id:
+        _sync_inv_widgets()
+        st.session_state[items_key] = [
+            r for r in st.session_state[items_key] if r["id"] != delete_id
+        ]
         st.rerun()
     
-    # Tax settings
-    st.markdown("##### 💸 Tax")
-    t1, t2 = st.columns(2)
-    with t1:
-        vat_rate = st.number_input("VAT Rate (%)", min_value=0.0,
-            max_value=20.0, value=7.0, step=0.5, key="bill_vat")
-    with t2:
-        wht_rate = st.selectbox("WHT Rate (%)",
-            [0.0, 1.0, 3.0, 5.0], index=0, key="bill_wht")
+    if st.button("➕ Add line item", key="bi_add"):
+        _sync_inv_widgets()
+        st.session_state[items_key].append(_empty_inv_row())
+        st.rerun()
     
-    # Live totals preview
-    totals = calculate_totals(items, vat_rate=vat_rate, wht_rate=wht_rate)
+    # Sync before computing summary
+    _sync_inv_widgets()
+    items = st.session_state[items_key]
+    summary = calculate_summary(items)
+    
+    sym = "฿" if currency == "THB" else (currency + " ")
+    
+    # ===== 7-LINE FINANCIAL BREAKDOWN =====
+    st.markdown("##### 💸 Financial Summary")
     st.markdown(f"""
     <div style="background:#101113;border:1px solid #23252B;border-radius:8px;
-                padding:1rem;margin:1rem 0">
+                padding:1rem;margin:0.5rem 0;font-family:monospace">
         <div style="display:flex;justify-content:space-between;margin:0.25rem 0">
-            <span>Subtotal</span><span>฿{totals['subtotal']:,.2f}</span></div>
+            <span>1. Total Before VAT</span>
+            <span>{sym}{summary['total_before_vat']:,.2f}</span></div>
         <div style="display:flex;justify-content:space-between;margin:0.25rem 0">
-            <span>VAT ({vat_rate}%)</span>
-            <span>฿{totals['vat_amount']:,.2f}</span></div>
+            <span>2. Total VAT 7%</span>
+            <span>{sym}{summary['total_vat_7']:,.2f}</span></div>
+        <div style="display:flex;justify-content:space-between;margin:0.25rem 0;
+                    color:#A855F7">
+            <span>3. Total Advance (เงินทดรองจ่าย)</span>
+            <span>{sym}{summary['total_advance']:,.2f}</span></div>
+        <hr style="border-color:#23252B;margin:6px 0">
+        <div style="display:flex;justify-content:space-between;margin:0.25rem 0;
+                    color:#9CA0A8">
+            <span>4. Total Before WHT</span>
+            <span>{sym}{summary['total_before_wht']:,.2f}</span></div>
         <div style="display:flex;justify-content:space-between;margin:0.25rem 0;
                     color:#E5484D">
-            <span>WHT ({wht_rate}%)</span>
-            <span>-฿{totals['wht_amount']:,.2f}</span></div>
-        <hr style="border-color:#23252B">
+            <span>5. WHT 1% Amount</span>
+            <span>-{sym}{summary['wht_1_amount']:,.2f}</span></div>
+        <div style="display:flex;justify-content:space-between;margin:0.25rem 0;
+                    color:#E5484D">
+            <span>6. WHT 3% Amount</span>
+            <span>-{sym}{summary['wht_3_amount']:,.2f}</span></div>
+        <hr style="border-color:#23252B;margin:6px 0">
         <div style="display:flex;justify-content:space-between;
-                    font-size:1.2rem;font-weight:600">
-            <span>Net Total</span><span>฿{totals['total_amount']:,.2f}</span></div>
+                    font-size:1.2rem;font-weight:600;color:#26B574">
+            <span>7. GRAND TOTAL</span>
+            <span>{sym}{summary['grand_total']:,.2f}</span></div>
     </div>
     """, unsafe_allow_html=True)
     
@@ -200,8 +281,6 @@ def _create_form(user):
                         "issue_date": issue_date.isoformat(),
                         "due_date": due_date.isoformat(),
                         "currency": currency,
-                        "vat_rate": vat_rate,
-                        "wht_rate": wht_rate,
                         "ref_doc_no": ref_doc,
                         "remark": remark,
                         "credit_terms_days": int(credit_terms),
@@ -211,7 +290,8 @@ def _create_form(user):
                 )
                 st.success(f"✅ Created **{doc_no}**")
                 # Clear items
-                del st.session_state[items_key]
+                if items_key in st.session_state:
+                    del st.session_state[items_key]
                 st.rerun()
             except Exception as ex:
                 st.error(f"Failed: {ex}")
@@ -272,7 +352,6 @@ def _list_view():
             file_name="financial_documents.csv", mime="text/csv",
             use_container_width=True, key="bill_csv")
     
-    # PDF generation
     st.markdown("---")
     st.markdown("##### 📄 Generate Document PDF")
     options = [r["doc_no"] for r in rows]

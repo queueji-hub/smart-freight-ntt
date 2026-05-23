@@ -29,6 +29,14 @@ def _init_db():
 _init_db()
 
 
+# Auto-push DB to GitHub if dirty (run on every rerun)
+try:
+    from managers.db_persistence import push_if_dirty
+    push_if_dirty()
+except Exception:
+    pass
+
+
 # ===== Pages config =====
 PAGES = [
     ("dashboard", "📊 Dashboard", "dashboard"),

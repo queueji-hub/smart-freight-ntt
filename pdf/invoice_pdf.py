@@ -150,24 +150,36 @@ def _items_table(items: List[Dict[str, Any]], currency, styles):
         Paragraph("<b>DESCRIPTION</b>", styles["label"]),
         Paragraph("<b>QTY</b>", styles["label"]),
         Paragraph("<b>UNIT PRICE</b>", styles["label"]),
+        Paragraph("<b>VAT</b>", styles["label"]),
+        Paragraph("<b>WHT</b>", styles["label"]),
         Paragraph("<b>AMOUNT</b>", styles["label"]),
     ]]
     
     for i, item in enumerate(items, 1):
+        # Shorten tax/wht labels for table
+        tax = item.get("tax_type", "VAT 7%")
+        tax_short = {"VAT 7%": "7%", "Non-VAT": "—", "Advance": "ADV"}.get(tax, tax)
+        wht = item.get("wht_type", "None")
+        wht_short = {"None": "—", "WHT 1%": "1%", "WHT 3%": "3%"}.get(wht, wht)
+        
         data.append([
             Paragraph(str(i), styles["value"]),
             Paragraph(item.get("description", ""), styles["value"]),
             Paragraph(_money(item.get("quantity", 0)), styles["right"]),
             Paragraph(_money(item.get("unit_price", 0)), styles["right"]),
+            Paragraph(tax_short, styles["value"]),
+            Paragraph(wht_short, styles["value"]),
             Paragraph(_money(item.get("amount", 0)), styles["right"]),
         ])
     
-    tbl = Table(data, colWidths=[12*mm, 90*mm, 20*mm, 28*mm, 30*mm])
+    tbl = Table(data, colWidths=[10*mm, 70*mm, 18*mm, 25*mm, 14*mm, 13*mm, 30*mm])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), BRAND_BLUE),
         ("TEXTCOLOR", (0,0), (-1,0), colors.white),
         ("ALIGN", (0,0), (-1,0), "CENTER"),
-        ("ALIGN", (2,1), (-1,-1), "RIGHT"),
+        ("ALIGN", (2,1), (3,-1), "RIGHT"),
+        ("ALIGN", (4,1), (5,-1), "CENTER"),
+        ("ALIGN", (6,1), (6,-1), "RIGHT"),
         ("ALIGN", (0,1), (0,-1), "CENTER"),
         ("VALIGN", (0,0), (-1,-1), "TOP"),
         ("LEFTPADDING", (0,0), (-1,-1), 4),
@@ -184,19 +196,42 @@ def _totals_block(invoice, styles):
     cur = invoice.get("currency", "THB")
     sym = "฿" if cur == "THB" else (cur + " ")
     
+    # Use the recomputed summary if available, otherwise build from old fields
+    summary = invoice.get("summary") or {
+        "total_before_vat": invoice.get("subtotal", 0) or 0,
+        "total_vat_7": invoice.get("vat_amount", 0) or 0,
+        "total_advance": invoice.get("advance_amount", 0) or 0,
+        "wht_1_amount": invoice.get("wht_1_amount", 0) or 0,
+        "wht_3_amount": invoice.get("wht_3_amount", 0) or 0,
+        "grand_total": invoice.get("total_amount", 0) or 0,
+    }
+    summary["total_before_wht"] = summary.get("total_before_wht",
+        summary["total_before_vat"] + summary["total_vat_7"] + summary["total_advance"])
+    
     rows = [
-        ["Subtotal", f"{sym}{_money(invoice.get('subtotal', 0))}"],
-        [f"VAT ({invoice.get('vat_rate', 7)}%)",
-         f"{sym}{_money(invoice.get('vat_amount', 0))}"],
+        ["1. Total Before VAT",
+         f"{sym}{_money(summary['total_before_vat'])}"],
+        ["2. Total VAT 7%",
+         f"{sym}{_money(summary['total_vat_7'])}"],
     ]
     
-    if (invoice.get("wht_amount") or 0) > 0:
-        rows.append([f"WHT ({invoice.get('wht_rate', 0)}%)",
-                     f"-{sym}{_money(invoice.get('wht_amount', 0))}"])
+    if summary.get("total_advance", 0) > 0:
+        rows.append(["3. Total Advance (เงินทดรองจ่าย)",
+                     f"{sym}{_money(summary['total_advance'])}"])
+    
+    rows.append(["4. Total Before WHT",
+                 f"{sym}{_money(summary['total_before_wht'])}"])
+    
+    if summary.get("wht_1_amount", 0) > 0:
+        rows.append(["5. WHT 1%",
+                     f"-{sym}{_money(summary['wht_1_amount'])}"])
+    if summary.get("wht_3_amount", 0) > 0:
+        rows.append(["6. WHT 3%",
+                     f"-{sym}{_money(summary['wht_3_amount'])}"])
     
     rows.append(["", ""])
-    rows.append(["TOTAL DUE",
-                 f"{sym}{_money(invoice.get('total_amount', 0))}"])
+    rows.append(["GRAND TOTAL",
+                 f"{sym}{_money(summary.get('grand_total', invoice.get('total_amount',0)))}"])
     
     if (invoice.get("paid_amount") or 0) > 0:
         rows.append(["Paid", f"{sym}{_money(invoice.get('paid_amount', 0))}"])
@@ -207,17 +242,26 @@ def _totals_block(invoice, styles):
              Paragraph(r[1], styles["right"])] for r in rows]
     
     tbl = Table(data, colWidths=[60*mm, 40*mm])
-    tbl.setStyle(TableStyle([
+    
+    # Find index of "GRAND TOTAL" row to highlight
+    grand_idx = next((i for i, r in enumerate(rows) if r[0] == "GRAND TOTAL"), -1)
+    
+    style_cmds = [
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
         ("LEFTPADDING", (0,0), (-1,-1), 4),
         ("RIGHTPADDING", (0,0), (-1,-1), 4),
         ("TOPPADDING", (0,0), (-1,-1), 3),
         ("BOTTOMPADDING", (0,0), (-1,-1), 3),
-        ("BACKGROUND", (0,3), (-1,3), BRAND_BLUE),
-        ("TEXTCOLOR", (0,3), (-1,3), colors.white),
-        ("FONTNAME", (0,3), (-1,3), THAI_FONT_BOLD),
-        ("LINEABOVE", (0,3), (-1,3), 1, colors.black),
-    ]))
+    ]
+    if grand_idx >= 0:
+        style_cmds += [
+            ("BACKGROUND", (0, grand_idx), (-1, grand_idx), BRAND_BLUE),
+            ("TEXTCOLOR", (0, grand_idx), (-1, grand_idx), colors.white),
+            ("FONTNAME", (0, grand_idx), (-1, grand_idx), THAI_FONT_BOLD),
+            ("LINEABOVE", (0, grand_idx), (-1, grand_idx), 1, colors.black),
+        ]
+    
+    tbl.setStyle(TableStyle(style_cmds))
     return tbl
 
 

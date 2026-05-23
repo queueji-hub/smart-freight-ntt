@@ -192,6 +192,8 @@ CREATE TABLE IF NOT EXISTS invoice_items (
     quantity REAL DEFAULT 1,
     unit_price REAL DEFAULT 0,
     amount REAL DEFAULT 0,
+    tax_type TEXT DEFAULT 'VAT 7%',
+    wht_type TEXT DEFAULT 'None',
     sort_order INTEGER DEFAULT 0
 );
 
@@ -248,6 +250,16 @@ MIGRATIONS = {
         "container_size": "TEXT",
         "estimated_cost": "REAL DEFAULT 0",
         "selling_price": "REAL DEFAULT 0",
+    },
+    "invoices": {
+        "advance_amount": "REAL DEFAULT 0",
+        "non_vat_amount": "REAL DEFAULT 0",
+        "wht_1_amount": "REAL DEFAULT 0",
+        "wht_3_amount": "REAL DEFAULT 0",
+    },
+    "invoice_items": {
+        "tax_type": "TEXT DEFAULT 'VAT 7%'",
+        "wht_type": "TEXT DEFAULT 'None'",
     },
     "shipments": {
         "shipper": "TEXT",
