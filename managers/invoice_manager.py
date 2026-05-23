@@ -1,5 +1,4 @@
 """Invoice / Billing Note / CN / DN / SOA management."""
-from datetime import date, datetime, timedelta
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
 from managers.doc_number import generate_doc_number
@@ -25,7 +24,6 @@ def _ensure_tables():
                 subtotal NUMERIC(15,2),
                 vat_rate NUMERIC(5,2),
                 vat_amount NUMERIC(15,2),
-                wht_rate NUMERIC(5,2),
                 wht_amount NUMERIC(15,2),
                 total_amount NUMERIC(15,2),
                 paid_amount NUMERIC(15,2) DEFAULT 0,
@@ -58,7 +56,7 @@ def _ensure_tables():
         """)
 
 def calculate_summary(items: List[Dict[str, Any]]) -> Dict[str, float]:
-    """Calculate all financial breakdown."""
+    """Calculate financial breakdown."""
     total_before_vat = 0.0
     total_vat_7 = 0.0
     total_advance = 0.0
@@ -66,17 +64,16 @@ def calculate_summary(items: List[Dict[str, Any]]) -> Dict[str, float]:
     wht_3_amount = 0.0
     
     for item in items:
-        amount = float(item.get("amount", 0) or 0)
+        amount = float(item.get("amount") or 0)
         tax_type = item.get("tax_type") or "VAT 7%"
         wht_type = item.get("wht_type") or "None"
         
         if tax_type == "Advance":
             total_advance += amount
-            continue
-        
-        total_before_vat += amount
-        if tax_type == "VAT 7%":
-            total_vat_7 += amount * 0.07
+        else:
+            total_before_vat += amount
+            if tax_type == "VAT 7%":
+                total_vat_7 += amount * 0.07
         
         if wht_type == "WHT 1%":
             wht_1_amount += amount * 0.01
@@ -146,7 +143,6 @@ def get_invoice_by_no(doc_no: str) -> Optional[Dict[str, Any]]:
         return invoice
 
 def list_invoices(doc_type: str = None, payment_status: str = None, limit: int = None) -> List[Dict[str, Any]]:
-    """Retrieve list of invoices with optional filters."""
     _ensure_tables()
     sql = "SELECT * FROM invoices WHERE 1=1"
     params = []
@@ -156,11 +152,9 @@ def list_invoices(doc_type: str = None, payment_status: str = None, limit: int =
     if limit: sql += f" LIMIT {int(limit)}"
     
     with get_connection() as conn:
-        rows = conn.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 def get_outstanding_summary() -> Dict[str, Any]:
-    """Calculate total outstanding invoices for Dashboard."""
     _ensure_tables()
     with get_connection() as conn:
         row = conn.execute("""
@@ -169,10 +163,8 @@ def get_outstanding_summary() -> Dict[str, Any]:
             WHERE payment_status != 'Paid'
         """).fetchone()
         
-        if not row:
-            return {"total_invoices": 0, "outstanding": 0.0}
-            
-        if isinstance(row, dict):
-            return {"total_invoices": row.get('cnt', 0), "outstanding": float(row.get('outstanding', 0))}
+        # ปรับให้รองรับทั้ง row แบบ tuple และ dict จาก cursor
+        cnt = row[0] if hasattr(row, '__getitem__') and not isinstance(row, dict) else row.get('cnt', 0)
+        out = row[1] if hasattr(row, '__getitem__') and not isinstance(row, dict) else row.get('outstanding', 0)
         
-        return {"total_invoices": row[0], "outstanding": float(row[1])}
+        return {"total_invoices": int(cnt), "outstanding": float(out)}

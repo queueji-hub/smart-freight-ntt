@@ -8,9 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from database.connection import get_connection
 
-
 SESSION_TIMEOUT_HOURS = 24
-
 
 def _ensure_sessions_table():
     """Create sessions table if it doesn't exist."""
@@ -25,7 +23,6 @@ def _ensure_sessions_table():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
 
-
 def create_session(user_id: int) -> str:
     """Create a new session token. Returns the token string."""
     _ensure_sessions_table()
@@ -33,11 +30,10 @@ def create_session(user_id: int) -> str:
     expires = datetime.now() + timedelta(hours=SESSION_TIMEOUT_HOURS)
     with get_connection() as conn:
         conn.execute(
-            "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
-            (token, user_id, expires.isoformat())
+            "INSERT INTO sessions (token, user_id, expires_at) VALUES (%s, %s, %s)",
+            (token, user_id, expires)
         )
     return token
-
 
 def get_user_by_token(token: str) -> Optional[Dict[str, Any]]:
     """Validate token and return user info. None if invalid/expired."""
@@ -46,34 +42,21 @@ def get_user_by_token(token: str) -> Optional[Dict[str, Any]]:
     
     _ensure_sessions_table()
     with get_connection() as conn:
-        # Clean up expired sessions occasionally
-        try:
-            conn.execute(
-                "DELETE FROM sessions WHERE expires_at < ?",
-                (datetime.now().isoformat(),)
-            )
-        except Exception:
-            pass
+        # Clean up expired sessions
+        conn.execute("DELETE FROM sessions WHERE expires_at < %s", (datetime.now(),))
         
-        try:
-            row = conn.execute("""
-                SELECT s.expires_at, u.id, u.username, u.full_name, u.email, u.role
-                FROM sessions s
-                JOIN users u ON u.id = s.user_id
-                WHERE s.token = ?
-            """, (token,)).fetchone()
-        except Exception:
-            return None
+        row = conn.execute("""
+            SELECT s.expires_at, u.id, u.username, u.full_name, u.email, u.role
+            FROM sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.token = %s
+        """, (token,)).fetchone()
         
         if not row:
             return None
         
-        # Check expiry
-        try:
-            exp = datetime.fromisoformat(row["expires_at"])
-            if exp < datetime.now():
-                return None
-        except Exception:
+        # Check expiry (PostgreSQL returns datetime object directly)
+        if row["expires_at"] < datetime.now():
             return None
         
         return {
@@ -84,22 +67,17 @@ def get_user_by_token(token: str) -> Optional[Dict[str, Any]]:
             "role": row["role"],
         }
 
-
 def delete_session(token: str) -> None:
     """Invalidate a session token (logout)."""
     if not token:
         return
     _ensure_sessions_table()
     with get_connection() as conn:
-        conn.execute("DELETE FROM sessions WHERE token=?", (token,))
-
+        conn.execute("DELETE FROM sessions WHERE token=%s", (token,))
 
 def cleanup_expired_sessions() -> int:
     """Remove all expired sessions. Returns number deleted."""
     _ensure_sessions_table()
     with get_connection() as conn:
-        cur = conn.execute(
-            "DELETE FROM sessions WHERE expires_at < ?",
-            (datetime.now().isoformat(),)
-        )
+        cur = conn.execute("DELETE FROM sessions WHERE expires_at < %s", (datetime.now(),))
         return cur.rowcount

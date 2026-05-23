@@ -1,5 +1,6 @@
 """Document number generator for financial docs."""
 from datetime import date, datetime
+from typing import Optional
 from database.connection import get_connection
 
 VALID_DOC_TYPES = ("INV", "BN", "CN", "DN", "SOA")
@@ -17,11 +18,12 @@ def _ensure_table():
         """)
 
 def generate_doc_number(doc_type: str, ref_date=None, digits: int = 4) -> str:
-    """Generate next sequential document number."""
+    """Generate next sequential document number using atomic updates."""
     _ensure_table()
     if doc_type not in VALID_DOC_TYPES:
         raise ValueError(f"Invalid doc_type: {doc_type}")
     
+    # Resolve Date
     if ref_date is None:
         ref = date.today()
     elif isinstance(ref_date, str):
@@ -33,22 +35,17 @@ def generate_doc_number(doc_type: str, ref_date=None, digits: int = 4) -> str:
     
     yymm = f"{ref.year % 100:02d}{ref.month:02d}"
     
+    # Atomic generation with RETURNING
     with get_connection() as conn:
-        # 🟢 แก้ไข: ใช้ %s และ ON CONFLICT ของ PostgreSQL
-        conn.execute("""
+        row = conn.execute("""
             INSERT INTO doc_counters (doc_type, yymm, last_running)
             VALUES (%s, %s, 1)
             ON CONFLICT (doc_type, yymm) 
             DO UPDATE SET last_running = doc_counters.last_running + 1
-        """, (doc_type, yymm))
-        
-        # 🟢 แก้ไข: ใช้ %s
-        row = conn.execute(
-            "SELECT last_running FROM doc_counters WHERE doc_type=%s AND yymm=%s",
-            (doc_type, yymm)
-        ).fetchone()
+            RETURNING last_running
+        """, (doc_type, yymm)).fetchone()
     
-    # ดึงค่าจาก row (อ้างอิงตาม index หรือชื่อคอลัมน์ ขึ้นอยู่กับการ config ของ connection)
-    running_number = row[0] if isinstance(row, (list, tuple)) else row['last_running']
+    # Safe retrieval of running number (supports tuple and dict results)
+    running_number = row[0] if hasattr(row, '__getitem__') and not isinstance(row, dict) else row['last_running']
     
     return f"{doc_type}{yymm}{running_number:0{digits}d}"

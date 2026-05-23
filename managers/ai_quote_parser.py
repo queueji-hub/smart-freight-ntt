@@ -1,9 +1,6 @@
-"""AI-powered quotation extractor.
-Reads customer emails/text and produces structured quotation drafts.
-"""
+"""AI-powered quotation extractor."""
 import json
 import os
-import re
 from typing import Dict, Any, Optional
 
 try:
@@ -11,8 +8,21 @@ try:
 except ImportError:
     OpenAI = None
 
-# ใช้ environment variable หรือ Streamlit secrets
+# ปรับปรุง System Prompt ให้เป็นมาตรฐานเดียวกัน
+SYSTEM_PROMPT = """You are an expert freight forwarding quotation assistant.
+Extract the following information from customer emails into a structured JSON format:
+- job_type: (SE, SI, AE, AI)
+- customer_name, shipper_cnee, attention, tel
+- pol, pod, incoterm, commodity
+- weight, quantity_desc
+- items: list of items (description, estimated_amount)
+- missing_info: list of fields that could not be found
+
+Always return a valid JSON object.
+"""
+
 def _get_openai_client() -> Optional[Any]:
+    """Retrieve OpenAI client using environment or Streamlit secrets."""
     if OpenAI is None:
         return None
     
@@ -26,28 +36,20 @@ def _get_openai_client() -> Optional[Any]:
             
     return OpenAI(api_key=api_key) if api_key else None
 
-SYSTEM_PROMPT = """You are an expert freight forwarding quotation assistant.
-Extract shipment details from customer emails and output JSON.
-... (คงเนื้อหาเดิมไว้) ...
-"""
-
 def _heuristic_parse(text: str) -> Dict[str, Any]:
-    """Fallback parser using regex + keywords."""
-    result = {
-        "job_type": None, "customer_name": None, "shipper_cnee": None,
-        "carrier": None, "pol": None, "pod": None, "service_type": None,
-        "attention": None, "tel": None, "incoterm": None, "commodity": None,
-        "weight": None, "quantity_desc": None, "subject": None,
-        "items": [], "confidence": "low", "missing_info": [], "_method": "heuristic"
-    }
-    
+    """Fallback parser using simple keyword matching."""
     t = text.lower()
+    # ตรวจสอบเบื้องต้น
+    job_type = "SE" if any(x in t for x in ["sea export", "se "]) else "SI"
     
-    # Logic เดิมสำหรับดึงข้อมูล...
-    if any(x in t for x in ["sea export", "se "]): result["job_type"] = "SE"
-    # ... (สามารถคง Logic เดิมของคุณไว้ได้เลยครับ)
-    
-    return result
+    return {
+        "job_type": job_type,
+        "customer_name": None,
+        "items": [],
+        "confidence": "low",
+        "missing_info": ["All detailed fields"],
+        "_method": "heuristic"
+    }
 
 def parse_email_to_quotation(text: str, model: str = "gpt-4o-mini") -> Dict[str, Any]:
     """Parse customer email/text into a quotation draft."""
@@ -55,7 +57,6 @@ def parse_email_to_quotation(text: str, model: str = "gpt-4o-mini") -> Dict[str,
         return {"error": "Empty input", "items": []}
     
     client = _get_openai_client()
-    
     if client is None:
         return _heuristic_parse(text)
     
@@ -67,17 +68,19 @@ def parse_email_to_quotation(text: str, model: str = "gpt-4o-mini") -> Dict[str,
                 {"role": "user", "content": text},
             ],
             response_format={"type": "json_object"},
-            temperature=0.1,
+            temperature=0,
         )
-        parsed = json.loads(response.choices[0].message.content)
-        parsed["_method"] = "ai"
-        parsed["_model"] = model
-        return parsed
+        data = json.loads(response.choices[0].message.content)
+        data["_method"] = "ai"
+        data["_model"] = model
+        return data
     except Exception as ex:
-        # Fallback to heuristic if AI fails
+        # หาก AI มีปัญหา ให้ใช้ heuristic และแนบ Error ไปด้วย
         result = _heuristic_parse(text)
         result["_error"] = str(ex)
+        result["_method"] = "heuristic_fallback"
         return result
 
 def is_ai_available() -> bool:
+    """Check if OpenAI is properly configured."""
     return _get_openai_client() is not None

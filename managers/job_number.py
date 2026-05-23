@@ -21,7 +21,10 @@ def _resolve_date(ref_date) -> date:
     if ref_date is None:
         return date.today()
     if isinstance(ref_date, str):
-        return datetime.strptime(ref_date, "%Y-%m-%d").date()
+        try:
+            return datetime.strptime(ref_date, "%Y-%m-%d").date()
+        except ValueError:
+            return date.today()
     if isinstance(ref_date, datetime):
         return ref_date.date()
     return ref_date
@@ -39,30 +42,32 @@ def generate_job_number(job_type: str,
     yymm = f"{ref.year % 100:02d}{ref.month:02d}"
     
     with get_connection() as conn:
-        # 🟢 แก้ไข: ใช้ %s และปรับ syntax สำหรับ Postgres
-        conn.execute("""
+        # Atomic increment using RETURNING
+        row = conn.execute("""
             INSERT INTO job_counters (job_type, yymm, last_running)
             VALUES (%s, %s, 1)
             ON CONFLICT (job_type, yymm) 
             DO UPDATE SET last_running = job_counters.last_running + 1
-        """, (job_type, yymm))
-        
-        row = conn.execute(
-            "SELECT last_running FROM job_counters WHERE job_type=%s AND yymm=%s",
-            (job_type, yymm)
-        ).fetchone()
+            RETURNING last_running
+        """, (job_type, yymm)).fetchone()
     
-    # ดึงค่าที่ถูกต้องโดยตรวจสอบว่าเป็น tuple หรือ dict
-    running_val = row[0] if isinstance(row, (tuple, list)) else row['last_running']
+    # Handle Row result (supports both tuple and dict-like cursor results)
+    running_val = row[0] if row and hasattr(row, '__getitem__') and not isinstance(row, dict) else row['last_running']
+    
     running = f"{running_val:0{digits}d}"
     base = f"{job_type}{yymm}{running}"
     
     if company_prefix:
-        return f"{company_prefix.strip().rstrip('-')}-{base}"
+        prefix = company_prefix.strip().rstrip('-')
+        return f"{prefix}-{base}"
     return base
 
 def generate_booking_number(job_type: str, ref_date=None,
                              company_prefix: Optional[str] = None) -> str:
     """Generate booking number."""
     base = generate_job_number(job_type, ref_date, company_prefix)
-    return f"B-{base}" if not company_prefix else base.replace("-", "-B-", 1)
+    # logic: if has prefix, insert B, else prepend B-
+    if company_prefix:
+        parts = base.split('-', 1)
+        return f"{parts[0]}-B-{parts[1]}"
+    return f"B-{base}"

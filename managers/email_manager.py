@@ -47,7 +47,6 @@ def send_email(to: str, subject: str, body: str,
     cfg = _get_smtp_config()
     attach_str = ",".join(attachments) if attachments else None
     
-    # ถ้าไม่ได้ตั้งค่า SMTP ให้บันทึกเป็น draft
     if not cfg:
         with get_connection() as conn:
             conn.execute("""
@@ -66,12 +65,13 @@ def send_email(to: str, subject: str, body: str,
         
         if attachments:
             for fp in attachments:
-                if Path(fp).exists():
-                    with open(fp, "rb") as f:
+                path = Path(fp)
+                if path.exists():
+                    with open(path, "rb") as f:
                         part = MIMEBase("application", "octet-stream")
                         part.set_payload(f.read())
                         encoders.encode_base64(part)
-                        part.add_header("Content-Disposition", f"attachment; filename={Path(fp).name}")
+                        part.add_header("Content-Disposition", f"attachment; filename={path.name}")
                         msg.attach(part)
         
         with smtplib.SMTP(cfg["host"], int(cfg.get("port", 587))) as server:
@@ -102,4 +102,5 @@ def list_email_logs(limit: int = 100) -> List[Dict[str, Any]]:
             "SELECT * FROM email_log ORDER BY created_at DESC LIMIT %s",
             (limit,)
         ).fetchall()
-    return [dict(r) for r in rows]
+        # รองรับทั้งการคืนค่าเป็น List of Dict
+        return [dict(r) for r in rows]

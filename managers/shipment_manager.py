@@ -3,7 +3,6 @@ from typing import List, Dict, Any, Optional
 from database.connection import get_connection
 from managers.job_number import generate_job_number
 
-
 # All editable fields (excluding auto-generated id, job_no, job_type, timestamps)
 SHIPMENT_FIELDS = [
     "booking_id", "booking_no",
@@ -24,7 +23,6 @@ SHIPMENT_FIELDS = [
 
 VALID_STATUS = ("Proceed", "Finished", "Closed", "Canceled")
 
-
 def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
     """Create a shipment record. Auto-generates job_no."""
     job_type = data["job_type"]
@@ -36,7 +34,8 @@ def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
     
     cols = ["job_no", "job_type"] + SHIPMENT_FIELDS
     values = [job_no, job_type] + [data.get(f) for f in SHIPMENT_FIELDS]
-    placeholders = ",".join("?" * len(cols))
+    # เปลี่ยน ? เป็น %s สำหรับ PostgreSQL
+    placeholders = ",".join(["%s"] * len(cols))
     
     with get_connection() as conn:
         conn.execute(
@@ -45,38 +44,35 @@ def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
         )
     return job_no
 
-
 def update_shipment(job_no: str, updates: Dict[str, Any]) -> bool:
     """Update fields of a shipment by job_no."""
     allowed = [f for f in updates.keys() if f in SHIPMENT_FIELDS]
     if not allowed:
         return False
     
-    set_clause = ", ".join(f"{f}=?" for f in allowed)
+    # เปลี่ยน ? เป็น %s สำหรับ PostgreSQL
+    set_clause = ", ".join(f"{f}=%s" for f in allowed)
     set_clause += ", updated_at=CURRENT_TIMESTAMP"
     values = [updates[f] for f in allowed] + [job_no]
     
     with get_connection() as conn:
         cur = conn.execute(
-            f"UPDATE shipments SET {set_clause} WHERE job_no=?", values
+            f"UPDATE shipments SET {set_clause} WHERE job_no=%s", values
         )
         return cur.rowcount > 0
-
 
 def delete_shipment(job_no: str) -> bool:
     """Delete a shipment by job_no."""
     with get_connection() as conn:
-        cur = conn.execute("DELETE FROM shipments WHERE job_no=?", (job_no,))
+        cur = conn.execute("DELETE FROM shipments WHERE job_no=%s", (job_no,))
         return cur.rowcount > 0
-
 
 def get_shipment(job_no: str) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM shipments WHERE job_no=?", (job_no,)
+            "SELECT * FROM shipments WHERE job_no=%s", (job_no,)
         ).fetchone()
         return dict(row) if row else None
-
 
 def list_shipments(
     job_type: Optional[str] = None,
@@ -89,13 +85,13 @@ def list_shipments(
     sql = "SELECT * FROM shipments WHERE 1=1"
     params = []
     if job_type:
-        sql += " AND job_type=?"; params.append(job_type)
+        sql += " AND job_type=%s"; params.append(job_type)
     if status:
-        sql += " AND status=?"; params.append(status)
+        sql += " AND status=%s"; params.append(status)
     if carrier:
-        sql += " AND carrier=?"; params.append(carrier)
+        sql += " AND carrier=%s"; params.append(carrier)
     if customer_id:
-        sql += " AND customer_id=?"; params.append(customer_id)
+        sql += " AND customer_id=%s"; params.append(customer_id)
     sql += " ORDER BY etd DESC, id DESC"
     if limit:
         sql += f" LIMIT {int(limit)}"
@@ -104,13 +100,11 @@ def list_shipments(
         rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
-
 def clone_shipment(source_job_no: str) -> Optional[str]:
     """Duplicate an existing shipment as a new draft."""
     src = get_shipment(source_job_no)
     if not src:
         return None
-    # Strip identifiers, mark as new draft
     clone_data = {k: v for k, v in src.items()
                   if k not in ("id", "job_no", "created_at", "updated_at",
                                "invoice_no", "customer_paid")}
@@ -118,43 +112,6 @@ def clone_shipment(source_job_no: str) -> Optional[str]:
     clone_data["remark"] = f"Cloned from {source_job_no}\n" + (src.get("remark") or "")
     return create_shipment(clone_data)
 
-
 def get_dashboard_stats() -> Dict[str, Any]:
     """Aggregated stats for dashboard KPIs."""
-    with get_connection() as conn:
-        def fetch_count(query: str) -> int:
-            row = conn.execute(query).fetchone()
-            return dict(row).get("cnt", 0) if row else 0
-
-        total = fetch_count("SELECT COUNT(*) AS cnt FROM shipments")
-        proceed = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Proceed'")
-        finished = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Finished'")
-        closed = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Closed'")
-        canceled = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Canceled'")
-        
-        by_type = conn.execute(
-            "SELECT job_type, COUNT(*) as c FROM shipments GROUP BY job_type"
-        ).fetchall()
-        
-        by_carrier = conn.execute(
-            "SELECT carrier, COUNT(*) as c FROM shipments "
-            "WHERE carrier IS NOT NULL AND carrier!='' "
-            "GROUP BY carrier ORDER BY c DESC LIMIT 10"
-        ).fetchall()
-        
-        # 🟢 แก้ไขตรงนี้: เปลี่ยน strftime เป็น TO_CHAR สำหรับ PostgreSQL
-        by_month = conn.execute(
-            "SELECT TO_CHAR(etd, 'YYYY-MM') as ym, COUNT(*) as c FROM shipments "
-            "WHERE etd IS NOT NULL GROUP BY ym ORDER BY ym"
-        ).fetchall()
-    
-    return {
-        "total": total,
-        "proceed": proceed,
-        "finished": finished,
-        "closed": closed,
-        "canceled": canceled,
-        "by_type": [dict(r) for r in by_type],
-        "by_carrier": [dict(r) for r in by_carrier],
-        "by_month": [dict(r) for r in by_month],
-    }
+    with get

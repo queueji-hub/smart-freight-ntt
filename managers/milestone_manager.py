@@ -2,7 +2,7 @@
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
 
-# Standard milestones (remains same)
+# Standard milestones
 STANDARD_MILESTONES_SE = [
     ("BKD", "Booking Confirmed", "การจองยืนยันแล้ว"),
     ("PUC", "Pick-up Container", "รับตู้"),
@@ -83,11 +83,12 @@ def init_milestones_for_shipment(shipment_id: int, job_type: str) -> None:
         existing = conn.execute("SELECT COUNT(*) FROM shipment_milestones WHERE shipment_id=%s", (shipment_id,)).fetchone()[0]
         if existing > 0: return
         
-        for code, name_en, _name_th in get_standard_milestones(job_type):
+        # ปรับให้ใช้ชื่อภาษาไทยร่วมกับภาษาอังกฤษเพื่อให้ยืดหยุ่นในการแสดงผล
+        for code, name_en, name_th in get_standard_milestones(job_type):
             conn.execute("""
                 INSERT INTO shipment_milestones (shipment_id, milestone_code, milestone_name, occurred_at)
                 VALUES (%s, %s, %s, NULL)
-            """, (shipment_id, code, name_en))
+            """, (shipment_id, code, f"{name_en} ({name_th})"))
 
 def get_progress_percentage(shipment_id: int) -> int:
     _ensure_table()

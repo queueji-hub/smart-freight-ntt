@@ -5,24 +5,14 @@ from database.connection import get_connection
 
 # ===== Cost categories =====
 AR_CATEGORIES = [
-    "Ocean Freight (Sell)",
-    "Local Charges (Sell)",
-    "Trucking (Sell)",
-    "Customs (Sell)",
-    "DOC Fee",
-    "Handling Fee",
-    "Other Revenue",
+    "Ocean Freight (Sell)", "Local Charges (Sell)", "Trucking (Sell)", 
+    "Customs (Sell)", "DOC Fee", "Handling Fee", "Other Revenue",
 ]
 
 AP_CATEGORIES = [
-    "Ocean Freight (Liner)",
-    "Co-loader Cost",
-    "Overseas Agent",
-    "Trucking Supplier",
-    "Customs Broker",
-    "Warehouse / CFS",
-    "Documentation",
-    "Other Cost",
+    "Ocean Freight (Liner)", "Co-loader Cost", "Overseas Agent", 
+    "Trucking Supplier", "Customs Broker", "Warehouse / CFS", 
+    "Documentation", "Other Cost",
 ]
 
 def _ensure_tables():
@@ -71,18 +61,18 @@ def _ensure_tables():
         """)
 
 def _convert_to_thb(amount: float, currency: str) -> float:
-    if not currency or currency.upper() == "THB": return amount
+    if not currency or currency.upper() == "THB": return float(amount)
     try:
         from managers.fx_manager import convert
-        return convert(amount, currency, "THB")
-    except Exception: return amount
+        return float(convert(amount, currency, "THB"))
+    except Exception: return float(amount)
 
 def add_cost_line(data: Dict[str, Any]) -> int:
     _ensure_tables()
-    qty = float(data.get("quantity", 1) or 1)
-    unit_price = float(data.get("unit_price", 0) or 0)
-    amount = float(data.get("amount", qty * unit_price) or 0)
-    currency = data.get("currency", "THB")
+    qty = float(data.get("quantity") or 1)
+    unit_price = float(data.get("unit_price") or 0)
+    amount = float(data.get("amount") or (qty * unit_price))
+    currency = data.get("currency") or "THB"
     amount_thb = _convert_to_thb(amount, currency)
     
     with get_connection() as conn:
@@ -140,9 +130,10 @@ def get_profit_summary(shipment_id: int) -> Dict[str, Any]:
         ar = conn.execute("SELECT COALESCE(SUM(amount_thb), 0) FROM job_costs WHERE shipment_id=%s AND cost_type='AR'", (shipment_id,)).fetchone()[0]
         ap = conn.execute("SELECT COALESCE(SUM(amount_thb), 0) FROM job_costs WHERE shipment_id=%s AND cost_type='AP'", (shipment_id,)).fetchone()[0]
     
-    net = float(ar) - float(ap)
-    margin = (net / float(ar) * 100) if float(ar) > 0 else 0
-    return {"total_ar": round(float(ar), 2), "total_ap": round(float(ap), 2), "net_profit": round(net, 2), "profit_margin": round(margin, 2)}
+    ar, ap = float(ar), float(ap)
+    net = ar - ap
+    margin = (net / ar * 100) if ar > 0 else 0
+    return {"total_ar": round(ar, 2), "total_ap": round(ap, 2), "net_profit": round(net, 2), "profit_margin": round(margin, 2)}
 
 def create_profit_sheet(shipment_id: int, prepared_by: str = None, pdf_path: str = None) -> Dict[str, Any]:
     _ensure_tables()

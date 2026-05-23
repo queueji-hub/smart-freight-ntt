@@ -1,3 +1,4 @@
+"""User authentication and authorization management."""
 import hashlib
 from typing import Optional, Dict, Any, List
 from database.connection import get_connection
@@ -70,14 +71,16 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         query = "SELECT id, username, full_name, email, role FROM users WHERE username=%s AND password_hash=%s"
         result = conn.execute(query, (username.strip().lower(), pwd_hash)).fetchone()
-        return dict(result) if result else None
+        
+    if not result: return None
+    return dict(result) if hasattr(result, 'keys') else {k: v for k, v in zip(['id', 'username', 'full_name', 'email', 'role'], result)}
 
 # --- User Management Functions ---
 def list_users() -> List[Dict]:
     _ensure_users_table()
     with get_connection() as conn:
         rows = conn.execute("SELECT id, username, full_name, email, role FROM users").fetchall()
-        return [dict(row) for row in rows]
+        return [dict(r) if hasattr(r, 'keys') else {k: v for k, v in zip(['id', 'username', 'full_name', 'email', 'role'], r)} for r in rows]
 
 def create_user(username, password, role, full_name, email):
     _ensure_users_table()
