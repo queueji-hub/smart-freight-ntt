@@ -21,28 +21,22 @@ def list_customers() -> List[Dict[str, Any]]:
 # GET CUSTOMER BY ID (MAIN FUNCTION - FIXED)
 # =========================================================
 
-def get_customer(customer_id: int) -> Optional[Dict[str, Any]]:
+def get_customer(customer_id: int):
     with get_connection() as conn:
         row = conn.execute("""
-            SELECT *
-            FROM customers
-            WHERE id = %s
+            SELECT * FROM customers WHERE id=%s
         """, (customer_id,)).fetchone()
 
         if not row:
             return None
 
-        row = dict(row)
-
-        # 🔥 normalize field (แก้ CRM error 'name')
-        return enforce(CUSTOMER_SCHEMA, {
-    "id": row["id"],
-    "name": row["company_name"],
-    "company_name": row["company_name"],
-    "email": row.get("email"),
-    "tel": row.get("tel"),
-    "is_active": row.get("is_active", 1)
-}, "customer")
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "company_name": row.get("company_name"),
+            "email": row.get("email"),
+            "tel": row.get("tel"),
+        }
 
 # =========================================================
 # SEARCH
