@@ -3,6 +3,28 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
 
+# ===== Cost categories =====
+AR_CATEGORIES = [
+    "Ocean Freight (Sell)",
+    "Local Charges (Sell)",
+    "Trucking (Sell)",
+    "Customs (Sell)",
+    "DOC Fee",
+    "Handling Fee",
+    "Other Revenue",
+]
+
+AP_CATEGORIES = [
+    "Ocean Freight (Liner)",
+    "Co-loader Cost",
+    "Overseas Agent",
+    "Trucking Supplier",
+    "Customs Broker",
+    "Warehouse / CFS",
+    "Documentation",
+    "Other Cost",
+]
+
 def _ensure_tables():
     """Ensure job_costs and profit_sheets tables exist for PostgreSQL."""
     with get_connection() as conn:
@@ -72,6 +94,46 @@ def add_cost_line(data: Dict[str, Any]) -> int:
               data.get("supplier"), qty, unit_price, amount, currency, amount_thb, data.get("remark"), data.get("created_by")))
         return cur.fetchone()[0]
 
+def update_cost_line(cost_id: int, data: Dict[str, Any]) -> bool:
+    _ensure_tables()
+    fields = ["category", "description", "supplier", "quantity", "unit_price", "amount", "currency", "remark"]
+    sets, params = [], []
+    for f in fields:
+        if f in data:
+            sets.append(f"{f}=%s")
+            params.append(data[f])
+    
+    if "amount" in data or "currency" in data:
+        with get_connection() as conn:
+            row = conn.execute("SELECT amount, currency FROM job_costs WHERE id=%s", (cost_id,)).fetchone()
+            if row:
+                new_amt = data.get("amount", row[0])
+                new_cur = data.get("currency", row[1])
+                sets.append("amount_thb=%s")
+                params.append(_convert_to_thb(float(new_amt or 0), new_cur or "THB"))
+    
+    if not sets: return False
+    params.append(cost_id)
+    with get_connection() as conn:
+        conn.execute(f"UPDATE job_costs SET {', '.join(sets)} WHERE id=%s", params)
+    return True
+
+def delete_cost_line(cost_id: int) -> bool:
+    _ensure_tables()
+    with get_connection() as conn:
+        cur = conn.execute("DELETE FROM job_costs WHERE id=%s", (cost_id,))
+        return cur.rowcount > 0
+
+def get_cost_lines(shipment_id: int, cost_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    _ensure_tables()
+    sql = "SELECT * FROM job_costs WHERE shipment_id=%s"
+    params = [shipment_id]
+    if cost_type:
+        sql += " AND cost_type=%s"
+        params.append(cost_type)
+    with get_connection() as conn:
+        return [dict(r) for r in conn.execute(sql + " ORDER BY cost_type, id", params).fetchall()]
+
 def get_profit_summary(shipment_id: int) -> Dict[str, Any]:
     _ensure_tables()
     with get_connection() as conn:
@@ -79,14 +141,15 @@ def get_profit_summary(shipment_id: int) -> Dict[str, Any]:
         ap = conn.execute("SELECT COALESCE(SUM(amount_thb), 0) FROM job_costs WHERE shipment_id=%s AND cost_type='AP'", (shipment_id,)).fetchone()[0]
     
     net = float(ar) - float(ap)
-    margin = (net / float(ar) * 100) if ar > 0 else 0
+    margin = (net / float(ar) * 100) if float(ar) > 0 else 0
     return {"total_ar": round(float(ar), 2), "total_ap": round(float(ap), 2), "net_profit": round(net, 2), "profit_margin": round(margin, 2)}
 
 def create_profit_sheet(shipment_id: int, prepared_by: str = None, pdf_path: str = None) -> Dict[str, Any]:
     _ensure_tables()
     summary = get_profit_summary(shipment_id)
     with get_connection() as conn:
-        job_no = conn.execute("SELECT job_no FROM shipments WHERE id=%s", (shipment_id,)).fetchone()[0]
+        row = conn.execute("SELECT job_no FROM shipments WHERE id=%s", (shipment_id,)).fetchone()
+        job_no = row[0] if row else f"#{shipment_id}"
         count = conn.execute("SELECT COUNT(*) FROM profit_sheets WHERE shipment_id=%s", (shipment_id,)).fetchone()[0]
         sheet_no = f"PS-{job_no}-{count + 1:02d}"
         
@@ -95,13 +158,6 @@ def create_profit_sheet(shipment_id: int, prepared_by: str = None, pdf_path: str
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP,%s,'Generated') RETURNING id
         """, (shipment_id, job_no, sheet_no, summary["total_ar"], summary["total_ap"], summary["net_profit"], summary["profit_margin"], prepared_by, pdf_path))
         return {**summary, "sheet_no": sheet_no, "id": cur.fetchone()[0]}
-
-def update_signoff(sheet_id: int, role: str, signer_name: str) -> bool:
-    _ensure_tables()
-    col = "reviewed" if role == "review" else "approved"
-    with get_connection() as conn:
-        conn.execute(f"UPDATE profit_sheets SET {col}_by=%s, {col}_at=CURRENT_TIMESTAMP WHERE id=%s", (signer_name, sheet_id))
-    return True
 
 def list_profit_sheets(shipment_id: int = None) -> List[Dict[str, Any]]:
     sql = "SELECT * FROM profit_sheets"
@@ -113,3 +169,10 @@ def list_profit_sheets(shipment_id: int = None) -> List[Dict[str, Any]]:
 def has_profit_sheet(shipment_id: int) -> bool:
     with get_connection() as conn:
         return bool(conn.execute("SELECT 1 FROM profit_sheets WHERE shipment_id=%s LIMIT 1", (shipment_id,)).fetchone())
+
+def update_signoff(sheet_id: int, role: str, signer_name: str) -> bool:
+    _ensure_tables()
+    col = "reviewed" if role == "review" else "approved"
+    with get_connection() as conn:
+        conn.execute(f"UPDATE profit_sheets SET {col}_by=%s, {col}_at=CURRENT_TIMESTAMP WHERE id=%s", (signer_name, sheet_id))
+    return True
