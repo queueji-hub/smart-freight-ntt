@@ -7,7 +7,6 @@ from managers.customer_manager import upsert_customer
 def _ensure_table():
     """Ensure quotations, quotation_items, and job_counters tables exist."""
     with get_connection() as conn:
-        # ตารางหลัก Quotations
         conn.execute("""
             CREATE TABLE IF NOT EXISTS quotations (
                 id SERIAL PRIMARY KEY,
@@ -35,7 +34,6 @@ def _ensure_table():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # ตาราง Items
         conn.execute("""
             CREATE TABLE IF NOT EXISTS quotation_items (
                 id SERIAL PRIMARY KEY,
@@ -48,7 +46,6 @@ def _ensure_table():
                 sort_order INTEGER
             )
         """)
-        # ตาราง Counter สำหรับเลขที่เอกสาร
         conn.execute("""
             CREATE TABLE IF NOT EXISTS job_counters (
                 job_type TEXT,
@@ -133,6 +130,25 @@ def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
         items = conn.execute("SELECT * FROM quotation_items WHERE quotation_id = %s ORDER BY sort_order", (quotation["id"],)).fetchall()
         quotation["items"] = [dict(i) for i in items]
         return quotation
+
+def duplicate_quotation(quotation_no: str) -> Optional[str]:
+    """Duplicate an existing quotation and return the new quotation number."""
+    original = get_quotation_by_no(quotation_no)
+    if not original:
+        return None
+    
+    # แยกส่วน items ออกมา
+    items = original.pop("items", [])
+    
+    # ลบ field ที่ไม่ต้องการให้ซ้ำ (เช่น id, created_at)
+    original.pop("id", None)
+    original.pop("created_at", None)
+    original.pop("quotation_no", None)
+    
+    # อัปเดตวันที่เป็นวันนี้
+    original["quotation_date"] = date.today()
+    
+    return create_quotation(original, items)
 
 def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[str, Any]], new_quotation_no: str = None) -> bool:
     """Update quotation header and items."""
