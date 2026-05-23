@@ -115,4 +115,47 @@ with st.sidebar:
 try:
     if current_page == "dashboard":
         from views import dashboard_view
-        dashboard_view.render
+        dashboard_view.render()
+    elif current_page == "crm":
+        from views import crm_view
+        crm_view.render()
+    elif current_page == "quotation":
+        from views import quotation_view
+        quotation_view.render()
+    elif current_page == "booking":
+        from views import booking_view
+        booking_view.render()
+    elif current_page == "shipments":
+        from views import shipments_view
+        shipments_view.render()
+    elif current_page == "tracking":
+        from views import tracking_view
+        tracking_view.render()
+    elif current_page == "profit":
+        from views import profit_view
+        profit_view.render()
+    elif current_page == "billing":
+        from views import billing_view
+        billing_view.render()
+    elif current_page == "fx":
+        from views import fx_view
+        fx_view.render()
+    elif current_page == "reports":
+        from views import reports_view
+        reports_view.render()
+    elif current_page == "users":
+        from views import users_view
+        users_view.render()
+    elif current_page == "settings":
+        from views import settings_view
+        settings_view.render()
+    elif current_page == "help":
+        from views import help_view
+        help_view.render()
+    else:
+        st.warning("🚧 Page under construction or access denied.")
+
+except Exception as e:
+    st.error(f"❌ Error loading **{current_page}** page: {e}")
+    # แสดง Error แบบละเอียดเพื่อการ Debug 
+    st.code(traceback.format_exc(), language="python")
