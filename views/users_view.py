@@ -22,8 +22,7 @@ def render():
             st.info("No users found.")
             return
 
-        df = pd.DataFrame(users)
-        st.dataframe(df[["username", "full_name", "role", "is_active"]], use_container_width=True)
+    st.dataframe(df[["username", "full_name", "role"]],use_container_width=True)
         
         st.divider()
         
@@ -48,8 +47,7 @@ def render():
             new_active = st.checkbox("Active Account", value=bool(target.get("is_active")))
             if st.button("Save Role/Status"):
                 with get_connection() as conn:
-                    conn.execute("UPDATE users SET role=?, is_active=? WHERE id=?", (new_role, int(new_active), target["id"]))
-                    conn.commit()
+                    conn.execute("UPDATE users SET role=%s WHERE id=%s",(new_role, target["id"]))
                 st.success("Updated!")
                 st.rerun()
 
@@ -67,7 +65,7 @@ def render():
                     st.error("Fill in required fields")
                 else:
                     try:
-                        create_user(u, p, fn, em, rl)
+                        create_user(u, p, rl, fn, em)
                         st.success(f"User {u} created!")
                     except Exception as e:
                         st.error(f"Error: {e}")
