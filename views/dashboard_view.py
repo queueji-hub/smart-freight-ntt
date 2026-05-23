@@ -9,59 +9,53 @@ from managers.kpi_manager import (
     get_port_monthly_volume
 )
 
-# =========================
-# KPI CORE
-# =========================
-
-kpi = get_kpi_summary()
-
-st.metric("Total Jobs", kpi["total_shipments"])
-st.metric("Active Jobs", kpi["active_jobs"])
-st.metric("Finished", kpi["finished_jobs"])
-st.metric("Closed", kpi["closed_jobs"])
-
 
 # =========================
-# MONTHLY FLOW
+# MAIN RENDER FUNCTION
 # =========================
+def render():
+    st.title("📊 Freight Dashboard (CargoWise Style)")
 
-def get_monthly_flow():
-    with get_connection() as conn:
-        return conn.execute("""
-            SELECT
-                COUNT(*) FILTER (WHERE DATE_TRUNC('month', etd) = DATE_TRUNC('month', CURRENT_DATE)) AS etd_this_month,
-                COUNT(*) FILTER (WHERE DATE_TRUNC('month', eta) = DATE_TRUNC('month', CURRENT_DATE)) AS eta_this_month
-            FROM shipments
-        """).fetchone()
+    # ================= KPI =================
+    kpi = get_kpi_summary()
+    fin = get_finance_kpi()
 
+    col1, col2, col3, col4 = st.columns(4)
 
-# =========================
-# FINANCE KPI
-# =========================
+    col1.metric("Total Jobs", kpi.get("total_shipments", 0))
+    col2.metric("Active Jobs", kpi.get("active_jobs", 0))
+    col3.metric("Finished", kpi.get("finished_jobs", 0))
+    col4.metric("Closed", kpi.get("closed_jobs", 0))
 
-def get_finance_kpi():
-    with get_connection() as conn:
-        return conn.execute("""
-            SELECT
-                COALESCE(SUM(total_amount),0) AS revenue,
-                COALESCE(SUM(outstanding),0) AS ar
-            FROM invoices
-        """).fetchone()
+    st.divider()
 
+    # ================= FINANCE =================
+    st.subheader("💰 Finance Overview")
 
-# =========================
-# TOP ROUTES
-# =========================
+    c1, c2 = st.columns(2)
+    c1.metric("Revenue", fin.get("revenue", 0))
+    c2.metric("AR (Outstanding)", fin.get("ar", 0))
 
-def get_top_routes():
-    with get_connection() as conn:
-        return conn.execute("""
-            SELECT
-                pol,
-                pod,
-                COUNT(*) AS volume
-            FROM shipments
-            GROUP BY pol, pod
-            ORDER BY volume DESC
-            LIMIT 10
-        """).fetchall()
+    st.divider()
+
+    # ================= TOP ROUTES =================
+    st.subheader("📦 Top Trade Routes")
+
+    routes = get_top_routes()
+    if routes:
+        df = pd.DataFrame(routes)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info("No route data")
+
+    st.divider()
+
+    # ================= PORT ANALYTICS =================
+    st.subheader("🗺️ Port Intelligence")
+
+    ports = get_port_monthly_volume()
+    if ports:
+        df2 = pd.DataFrame(ports)
+        st.dataframe(df2, use_container_width=True)
+    else:
+        st.info("No port data")
