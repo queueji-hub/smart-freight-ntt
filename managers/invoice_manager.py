@@ -193,3 +193,29 @@ def get_outstanding_summary():
         "due_today": 0,
         "upcoming": 0
     }
+
+def record_payment(invoice_id: int, amount: float, method: str, paid_date=None):
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO invoice_payments (
+                invoice_id,
+                amount,
+                method,
+                paid_date
+            )
+            VALUES (%s, %s, %s, COALESCE(%s, CURRENT_DATE))
+        """, (
+            invoice_id,
+            amount,
+            method,
+            paid_date
+        ))
+
+        conn.execute("""
+            UPDATE invoices
+            SET payment_status = 'Paid',
+                outstanding = outstanding - %s
+            WHERE id = %s
+        """, (amount, invoice_id))
+
+        conn.commit()
