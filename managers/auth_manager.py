@@ -22,7 +22,7 @@ def can_write(role: str, module: str) -> bool:
 
 def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
     # Clear the logic to ensure it's not crashing here
-    pwd_hash = password
+    pwd_hash = hash_password(password)
     with get_connection() as conn:
         with conn.cursor() as cursor:
             # Note: Ensure your database table is "users"
