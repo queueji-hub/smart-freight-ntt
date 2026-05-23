@@ -3,19 +3,23 @@ import psycopg2.pool
 import psycopg2.extras
 import logging
 
-# ลบ @st.cache_resource ออก เพื่อบังคับให้ระบบอ่านค่าใหม่เสมอ
+@st.cache_resource
 def get_db_pool():
     try:
-        # ตรวจสอบว่า secrets มีอยู่จริง
-        if "connections" not in st.secrets or "postgresql" not in st.secrets["connections"]:
-            logging.error("❌ Secrets 'connections.postgresql' missing!")
+        # เช็คทุกขั้นตอนและ Print ออก Log โดยตรง
+        if "connections" not in st.secrets:
+            print("❌ DEBUG: ไม่พบหัวข้อ 'connections' ใน Secrets")
+            return None
+        if "postgresql" not in st.secrets["connections"]:
+            print("❌ DEBUG: ไม่พบหัวข้อ 'postgresql' ภายใต้ 'connections'")
             return None
             
         db_secrets = st.secrets["connections"]["postgresql"]
-        # สร้าง pool
+        print(f"DEBUG: กำลังเชื่อมต่อด้วย user={db_secrets.get('user')}, host={db_secrets.get('host')}")
+        
         return psycopg2.pool.SimpleConnectionPool(1, 20, **db_secrets)
     except Exception as e:
-        logging.error(f"❌ Connection Pool Error: {e}")
+        print(f"❌ DEBUG: เกิดข้อผิดพลาดร้ายแรง: {e}")
         return None
 
 class PostgresConnectionWrapper:
