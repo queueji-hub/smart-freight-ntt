@@ -149,24 +149,26 @@ def get_outstanding_summary() -> Dict[str, Any]:
     """Calculate total outstanding invoices for Dashboard."""
     _ensure_tables()
     with get_connection() as conn:
-        # ใช้ Alias เพื่อให้เข้าถึงข้อมูลได้ผ่านชื่อ Key ป้องกัน KeyError
+        # ใช้ Alias 'cnt' และ 'outstanding' ให้ตรงกับความต้องการของ Dashboard
         row = conn.execute("""
-            SELECT COUNT(*) as cnt, COALESCE(SUM(outstanding), 0) as total_amt
+            SELECT COUNT(*) as cnt, COALESCE(SUM(outstanding), 0) as outstanding
             FROM invoices 
             WHERE payment_status != 'Paid'
         """).fetchone()
         
+        # กรณีไม่มีข้อมูลในตารางเลย
         if not row:
-            return {"total_invoices": 0, "total_outstanding": 0.0}
+            return {"total_invoices": 0, "outstanding": 0.0}
             
-        # ถ้าเป็น dict ให้ดึงผ่าน Key ถ้าเป็น tuple ให้ดึงผ่าน Index
+        # ตรวจสอบรูปแบบ: ถ้าเป็น dict (จาก Driver) หรือ tuple (จาก DB แบบดั้งเดิม)
         if isinstance(row, dict):
             return {
                 "total_invoices": row.get('cnt', 0), 
-                "total_outstanding": float(row.get('total_amt', 0))
+                "outstanding": float(row.get('outstanding', 0))
             }
         
+        # กรณีเป็น tuple เข้าถึงด้วย index
         return {
             "total_invoices": row[0], 
-            "total_outstanding": float(row[1])
+            "outstanding": float(row[1])
         }
