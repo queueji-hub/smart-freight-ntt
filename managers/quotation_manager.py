@@ -2,6 +2,7 @@ from datetime import date
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
 from managers.customer_manager import upsert_customer
+from utils.quotation_number import _generate_quotation_no
 
 def create_quotation(quotation: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
     """Create a new quotation with transaction safety."""
@@ -101,13 +102,6 @@ def list_quotations():
             dict(r)
             for r in results
         ]
-
-def upsert_customer(customer_data):
-    """
-    Create or update customer placeholder
-    """
-
-    return customer_data
 
 def duplicate_quotation(quotation_no):
     """
