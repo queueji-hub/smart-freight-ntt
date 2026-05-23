@@ -21,20 +21,19 @@ def list_customers() -> List[Dict[str, Any]]:
 # GET CUSTOMER BY ID
 # =========================================================
 
-def get_customer(customer_id: int):
+def get_customer(customer_id: int) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         row = conn.execute("""
-            SELECT * FROM customers WHERE id=%s
+            SELECT *
+            FROM customers
+            WHERE id = %s
         """, (customer_id,)).fetchone()
 
-        if not row:
-            return None
-
-        return dict(row)
+        return dict(row) if row else None
 
 
 # =========================================================
-# SEARCH
+# SEARCH BY NAME
 # =========================================================
 
 def get_customer_by_name(name: str) -> Optional[Dict[str, Any]]:
@@ -43,6 +42,7 @@ def get_customer_by_name(name: str) -> Optional[Dict[str, Any]]:
             SELECT *
             FROM customers
             WHERE company_name ILIKE %s
+            LIMIT 1
         """, (name,)).fetchone()
 
         return dict(row) if row else None
@@ -54,6 +54,7 @@ def search_customers(query: str) -> List[Dict[str, Any]]:
             SELECT *
             FROM customers
             WHERE company_name ILIKE %s
+            ORDER BY company_name
             LIMIT 10
         """, (f"%{query}%",)).fetchall()
 
@@ -61,7 +62,7 @@ def search_customers(query: str) -> List[Dict[str, Any]]:
 
 
 # =========================================================
-# CREATE
+# CREATE CUSTOMER
 # =========================================================
 
 def create_customer(data: Dict[str, Any]) -> None:
@@ -94,7 +95,7 @@ def create_customer(data: Dict[str, Any]) -> None:
 
 
 # =========================================================
-# UPDATE
+# UPDATE CUSTOMER
 # =========================================================
 
 def update_customer(company_name: str, data: Dict[str, Any]) -> bool:
@@ -122,12 +123,13 @@ def update_customer(company_name: str, data: Dict[str, Any]) -> bool:
             data.get("notes"),
             company_name
         ))
+
         conn.commit()
         return cur.rowcount > 0
 
 
 # =========================================================
-# UPSERT (FIXED - PRODUCTION SAFE)
+# UPSERT (FIXED - SAFE WITHOUT DB CONSTRAINT ERROR)
 # =========================================================
 
 def upsert_customer(company_name: str, contact_person: str = None, tel: str = None) -> None:
@@ -135,24 +137,40 @@ def upsert_customer(company_name: str, contact_person: str = None, tel: str = No
         return
 
     with get_connection() as conn:
-        conn.execute("""
-            INSERT INTO customers (
-                company_name,
-                contact_person,
-                tel
-            )
-            VALUES (%s, %s, %s)
-            ON CONFLICT (company_name)
-            DO UPDATE SET
-                contact_person = EXCLUDED.contact_person,
-                tel = EXCLUDED.tel,
-                updated_at = CURRENT_TIMESTAMP
-        """, (company_name, contact_person, tel))
+
+        # STEP 1: check existing
+        row = conn.execute("""
+            SELECT id
+            FROM customers
+            WHERE company_name = %s
+        """, (company_name,)).fetchone()
+
+        if row:
+            # UPDATE
+            conn.execute("""
+                UPDATE customers
+                SET contact_person = %s,
+                    tel = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE company_name = %s
+            """, (contact_person, tel, company_name))
+        else:
+            # INSERT
+            conn.execute("""
+                INSERT INTO customers (
+                    company_name,
+                    contact_person,
+                    tel,
+                    is_active
+                )
+                VALUES (%s, %s, %s, 1)
+            """, (company_name, contact_person, tel))
+
         conn.commit()
 
 
 # =========================================================
-# DELETE
+# DELETE CUSTOMER
 # =========================================================
 
 def delete_customer(customer_id: int) -> bool:
