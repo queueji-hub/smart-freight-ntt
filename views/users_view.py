@@ -54,7 +54,7 @@ def render():
                     st.error("Enter new password")
                 else:
                     target = next(u for u in users if u["username"] == sel_user)
-                    update_user_password(target["id"], new_pwd)
+                    update_user_password(target["username"], new_pwd)
                     st.success(f"✅ Password reset for {sel_user}")
             
             st.markdown("---")
