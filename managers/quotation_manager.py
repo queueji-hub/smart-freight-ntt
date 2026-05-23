@@ -1,8 +1,13 @@
 from datetime import date
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from database.connection import get_connection
 from managers.customer_manager import upsert_customer
-from utils.quotation_number import _generate_quotation_no
+from datetime import datetime
+
+def _generate_quotation_no(job_type: str, quotation_date=None):
+    dt = quotation_date or datetime.today().date()
+    prefix = (job_type or "QTN")[:3].upper()
+    return f"{prefix}-{dt.strftime('%Y%m%d')}-{int(datetime.now().timestamp())%10000}"
 
 def create_quotation(quotation: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
     """Create a new quotation with transaction safety."""
