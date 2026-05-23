@@ -58,7 +58,7 @@ def _ensure_tables():
         """)
 
 def calculate_summary(items: List[Dict[str, Any]]) -> Dict[str, float]:
-    """Calculate all financial breakdown from per-row tax/wht selections."""
+    """Calculate all financial breakdown."""
     total_before_vat = 0.0
     total_vat_7 = 0.0
     total_advance = 0.0
@@ -98,14 +98,12 @@ def calculate_summary(items: List[Dict[str, Any]]) -> Dict[str, float]:
     }
 
 def create_invoice(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
-    """Create new invoice and associated items."""
     _ensure_tables()
     doc_type = data.get("doc_type", "INV")
     doc_no = generate_doc_number(doc_type, data.get("issue_date"))
     summary = calculate_summary(items)
     
     with get_connection() as conn:
-        # ใช้ RETURNING id เพื่อความแม่นยำใน Postgres
         cur = conn.execute("""
             INSERT INTO invoices (
                 doc_no, doc_type, shipment_id, job_no, customer_id, customer_name, 
@@ -137,7 +135,7 @@ def create_invoice(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
     return doc_no
 
 def get_invoice_by_no(doc_no: str) -> Optional[Dict[str, Any]]:
-    """Retrieve invoice with items and recomputed summary."""
+    _ensure_tables()
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM invoices WHERE doc_no=%s", (doc_no,)).fetchone()
         if not row: return None
@@ -146,3 +144,14 @@ def get_invoice_by_no(doc_no: str) -> Optional[Dict[str, Any]]:
         invoice["items"] = [dict(i) for i in items]
         invoice["summary"] = calculate_summary(invoice["items"])
         return invoice
+
+def get_outstanding_summary() -> Dict[str, Any]:
+    """Calculate total outstanding invoices for Dashboard."""
+    _ensure_tables()
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT COUNT(*), COALESCE(SUM(outstanding), 0) 
+            FROM invoices 
+            WHERE payment_status != 'Paid'
+        """).fetchone()
+        return {"total_invoices": row[0], "total_outstanding": float(row[1])}
