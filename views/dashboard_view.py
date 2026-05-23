@@ -1,68 +1,74 @@
-from database.connection import get_connection
+import streamlit as st
+import pandas as pd
+
+from managers.dashboard_manager import (
+    get_kpi_summary,
+    get_monthly_flow,
+    get_finance_kpi,
+    get_top_routes
+)
 
 
-# =========================
-# KPI CORE
-# =========================
+def render():
 
-def get_kpi_summary():
-    with get_connection() as conn:
-        return conn.execute("""
-            SELECT
-                COUNT(*) AS total_shipments,
+    st.title("📊 Freight SaaS Dashboard (CargoWise Style)")
 
-                SUM(CASE WHEN status='Proceed' THEN 1 ELSE 0 END) AS active_jobs,
-                SUM(CASE WHEN status='Finished' THEN 1 ELSE 0 END) AS finished_jobs,
-                SUM(CASE WHEN status='Closed' THEN 1 ELSE 0 END) AS closed_jobs,
+    # =========================
+    # KPI ROW 1
+    # =========================
+    kpi = get_kpi_summary()
+    fin = get_finance_kpi()
+    flow = get_monthly_flow()
 
-                SUM(CASE WHEN DATE(etd) = CURRENT_DATE THEN 1 ELSE 0 END) AS etd_today,
-                SUM(CASE WHEN DATE(eta) = CURRENT_DATE THEN 1 ELSE 0 END) AS eta_today
+    c1, c2, c3, c4 = st.columns(4)
 
-            FROM shipments
-        """).fetchone()
+    c1.metric("Total Shipments", kpi["total_shipments"])
+    c2.metric("Active Jobs", kpi["active_jobs"])
+    c3.metric("Finished", kpi["finished_jobs"])
+    c4.metric("Closed", kpi["closed_jobs"])
 
+    st.divider()
 
-# =========================
-# MONTHLY FLOW
-# =========================
+    # =========================
+    # ETD / ETA
+    # =========================
+    c1, c2 = st.columns(2)
 
-def get_monthly_flow():
-    with get_connection() as conn:
-        return conn.execute("""
-            SELECT
-                COUNT(*) FILTER (WHERE DATE_TRUNC('month', etd) = DATE_TRUNC('month', CURRENT_DATE)) AS etd_this_month,
-                COUNT(*) FILTER (WHERE DATE_TRUNC('month', eta) = DATE_TRUNC('month', CURRENT_DATE)) AS eta_this_month
-            FROM shipments
-        """).fetchone()
+    c1.metric("ETD Today", kpi["etd_today"])
+    c2.metric("ETA Today", kpi["eta_today"])
 
+    st.divider()
 
-# =========================
-# FINANCE KPI
-# =========================
+    # =========================
+    # FINANCE
+    # =========================
+    c1, c2 = st.columns(2)
 
-def get_finance_kpi():
-    with get_connection() as conn:
-        return conn.execute("""
-            SELECT
-                COALESCE(SUM(total_amount),0) AS revenue,
-                COALESCE(SUM(outstanding),0) AS ar
-            FROM invoices
-        """).fetchone()
+    c1.metric("Revenue (Invoice)", f"{fin['revenue']:,.2f}")
+    c2.metric("Outstanding AR", f"{fin['ar']:,.2f}")
 
+    st.divider()
 
-# =========================
-# TOP ROUTES
-# =========================
+    # =========================
+    # MONTH FLOW
+    # =========================
+    c1, c2 = st.columns(2)
 
-def get_top_routes():
-    with get_connection() as conn:
-        return conn.execute("""
-            SELECT
-                pol,
-                pod,
-                COUNT(*) AS volume
-            FROM shipments
-            GROUP BY pol, pod
-            ORDER BY volume DESC
-            LIMIT 10
-        """).fetchall()
+    c1.metric("ETD This Month", flow["etd_this_month"])
+    c2.metric("ETA This Month", flow["eta_this_month"])
+
+    st.divider()
+
+    # =========================
+    # TOP ROUTES
+    # =========================
+    st.subheader("🌍 Top Routes (POL → POD)")
+
+    routes = get_top_routes()
+    df = pd.DataFrame(routes)
+
+    if not df.empty:
+        df.columns = ["POL", "POD", "Volume"]
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info("No data yet")
