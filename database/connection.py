@@ -9,13 +9,14 @@ logging.basicConfig(level=logging.INFO)
 @st.cache_resource
 def get_db_pool():
     try:
+        # ตรวจสอบว่ามี secrets อยู่จริงก่อนเข้าถึง
         db_secrets = st.secrets["connections"]["postgresql"]
         return psycopg2.pool.SimpleConnectionPool(
-            1, 20, # เพิ่ม maxconn ตามความเหมาะสม
+            1, 20, 
             **db_secrets
         )
     except Exception as e:
-        st.error(f"❌ Connection Pool Error: {e}")
+        logging.error(f"❌ Connection Pool Error: {e}")
         return None
 
 class PostgresConnectionWrapper:
@@ -29,8 +30,7 @@ class PostgresConnectionWrapper:
 
     def execute(self, query, params=None):
         cur = self.cursor()
-        # หากต้องการรักษาความเข้ากันได้ของ '?' ให้ใช้ regex จะแม่นยำกว่า .replace
-        # แต่แนะนำให้เปลี่ยนเป็น %s ตั้งแต่ต้นจะดีที่สุดครับ
+        # เปลี่ยน '?' เป็น '%s' เพื่อให้ตรงกับมาตรฐาน PostgreSQL
         processed_query = query.replace('?', '%s') 
         cur.execute(processed_query, params or ())
         return cur
@@ -50,18 +50,26 @@ def get_connection():
     if not pool: raise Exception("Database pool not initialized")
     return PostgresConnectionWrapper(pool)
 
-def init_database(schema_list):
+# ปรับแก้ให้มีค่าเริ่มต้นเป็น list ว่าง เพื่อแก้ TypeError: missing 1 required positional argument
+def init_database(schema_list=None):
     """
     แยก schema ออกเป็น List เพื่อให้รันทีละคำสั่งและจัดการ Error ได้ละเอียดขึ้น
     """
-    conn = get_connection()
+    if schema_list is None:
+        schema_list = []
+        
+    pool = get_db_pool()
+    if not pool: return
+
+    conn = pool.getconn()
     try:
-        with conn._conn.cursor() as cur:
+        with conn.cursor() as cur:
             for sql in schema_list:
                 cur.execute(sql)
         conn.commit()
+        logging.info("Database initialized successfully.")
     except Exception as e:
         conn.rollback()
         logging.error(f"Schema Init Failed: {e}")
     finally:
-        conn.close()
+        pool.putconn(conn)

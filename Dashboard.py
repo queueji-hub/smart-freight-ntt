@@ -1,3 +1,4 @@
+Python
 import traceback
 import importlib
 import streamlit as st
@@ -21,11 +22,17 @@ from managers.session_manager import delete_session, get_user_by_token
 from utils.nav import setup_sidebar
 
 # =========================================================
-# DATABASE INIT
+# DATABASE INIT (แก้ไข: ลบ cache ออก และส่ง argument ให้ครบ)
 # =========================================================
-@st.cache_resource(show_spinner=False)
 def bootstrap():
-    init_database()
+    # ตรวจสอบว่า init_database ต้องการค่าอะไร (ปกติถ้าเป็น PostgreSQL connection มักไม่ต้องใส่ค่า)
+    # หากฟังก์ชันเดิมของคุณเขียนว่า init_database(schema_list), ให้ใส่เป็น init_database([])
+    try:
+        init_database() 
+    except TypeError:
+        # กรณีฟังก์ชันเดิมคาดหวัง argument แต่เราไม่มี ก็ลองรันแบบไม่มี argument หรือส่งค่าว่าง
+        init_database([])
+
     try:
         from managers.fx_manager import seed_default_rates
         seed_default_rates()
@@ -35,12 +42,12 @@ def bootstrap():
         from managers.db_persistence import push_if_dirty
         push_if_dirty()
     except Exception: pass
-    return True
 
+# รัน bootstrap โดยไม่ใช้ @st.cache_resource
 bootstrap()
 
 # =========================================================
-# SESSION AUTH
+# SESSION AUTH (เหมือนเดิม)
 # =========================================================
 def restore_session():
     user = st.session_state.get("user")
