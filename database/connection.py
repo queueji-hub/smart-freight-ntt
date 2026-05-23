@@ -283,6 +283,12 @@ class SQLiteConnectionWrapper:
         cursor = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         return SQLiteCursorWrapper(cursor)
 
+    def execute(self, query, params=None):
+        """สร้าง method execute เพื่อจำลองการทำงานแบบ SQLite"""
+        cur = self.cursor()
+        cur.execute(query, params or ())
+        return cur
+
     def commit(self):
         self._conn.commit()
 
@@ -295,11 +301,18 @@ class SQLiteConnectionWrapper:
     def __enter__(self):
         return self
 
+    # def __exit__(self, exc_type, exc_val, exc_tb):
+    #     if exc_type:
+    #         self.rollback()
+    #     else:
+    #         self.commit()
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_type:
             self.rollback()
         else:
             self.commit()
+        self.close()
 
 # =====================================================================
 def get_connection():
