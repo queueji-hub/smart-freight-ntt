@@ -69,9 +69,10 @@ DEFAULT_TEMPLATES = {
 
 def _ensure_table():
     with get_connection() as conn:
+        # 🟢 แก้ไข: เปลี่ยน INTEGER PRIMARY KEY AUTOINCREMENT เป็น SERIAL PRIMARY KEY
         conn.execute("""
             CREATE TABLE IF NOT EXISTS email_templates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 code TEXT UNIQUE NOT NULL,
                 name TEXT NOT NULL,
                 subject TEXT,
@@ -86,13 +87,15 @@ def seed_default_templates():
     _ensure_table()
     with get_connection() as conn:
         for code, tpl in DEFAULT_TEMPLATES.items():
+            # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
             existing = conn.execute(
-                "SELECT id FROM email_templates WHERE code=?", (code,)
+                "SELECT id FROM email_templates WHERE code=%s", (code,)
             ).fetchone()
             if not existing:
+                # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
                 conn.execute(
                     "INSERT INTO email_templates (code, name, subject, body, is_default) "
-                    "VALUES (?,?,?,?,1)",
+                    "VALUES (%s,%s,%s,%s,1)",
                     (code, tpl["name"], tpl["subject"], tpl["body"])
                 )
 
@@ -101,8 +104,9 @@ def get_template(code: str) -> Optional[Dict[str, Any]]:
     _ensure_table()
     seed_default_templates()
     with get_connection() as conn:
+        # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
         row = conn.execute(
-            "SELECT * FROM email_templates WHERE code=?", (code,)
+            "SELECT * FROM email_templates WHERE code=%s", (code,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -119,9 +123,10 @@ def list_templates() -> List[Dict[str, Any]]:
 def update_template(code: str, subject: str, body: str) -> bool:
     _ensure_table()
     with get_connection() as conn:
+        # 🟢 แก้ไข: เปลี่ยน ? เป็น %s
         conn.execute(
-            "UPDATE email_templates SET subject=?, body=?, "
-            "updated_at=CURRENT_TIMESTAMP WHERE code=?",
+            "UPDATE email_templates SET subject=%s, body=%s, "
+            "updated_at=CURRENT_TIMESTAMP WHERE code=%s",
             (subject, body, code)
         )
     return True
