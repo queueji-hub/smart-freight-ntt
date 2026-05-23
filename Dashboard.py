@@ -90,7 +90,7 @@ PAGES = [
     ("fx", "💱 FX Rates", "fx"),
     ("reports", "📈 Reports", "reports"),
     ("users", "👤 Users", "users"),
-    ("settings", "⚙️ Settings", "email"),
+    ("settings", "⚙️ Settings", "template"),
     ("help", "📘 Help / Manual", "session"),
 ]
 
