@@ -1,6 +1,5 @@
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
-from contracts.core_contract import enforce, CUSTOMER_SCHEMA
 
 # =========================================================
 # LIST CUSTOMERS
@@ -17,8 +16,9 @@ def list_customers() -> List[Dict[str, Any]]:
 
         return [dict(r) for r in rows]
 
+
 # =========================================================
-# GET CUSTOMER BY ID (MAIN FUNCTION - FIXED)
+# GET CUSTOMER BY ID
 # =========================================================
 
 def get_customer(customer_id: int):
@@ -30,13 +30,8 @@ def get_customer(customer_id: int):
         if not row:
             return None
 
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "company_name": row.get("company_name"),
-            "email": row.get("email"),
-            "tel": row.get("tel"),
-        }
+        return dict(row)
+
 
 # =========================================================
 # SEARCH
@@ -64,6 +59,7 @@ def search_customers(query: str) -> List[Dict[str, Any]]:
 
         return [dict(r) for r in rows]
 
+
 # =========================================================
 # CREATE
 # =========================================================
@@ -71,15 +67,89 @@ def search_customers(query: str) -> List[Dict[str, Any]]:
 def create_customer(data: Dict[str, Any]) -> None:
     with get_connection() as conn:
         conn.execute("""
-            INSERT INTO customers (name, company_name, attention, tel)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO customers (
+                company_name,
+                contact_person,
+                tel,
+                email,
+                address,
+                tax_id,
+                credit_terms_days,
+                notes,
+                is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
-            data.get("name"),
             data.get("company_name"),
-            data.get("attention"),
-            data.get("tel")
+            data.get("contact_person"),
+            data.get("tel"),
+            data.get("email"),
+            data.get("address"),
+            data.get("tax_id"),
+            data.get("credit_terms_days", 30),
+            data.get("notes"),
+            data.get("is_active", 1)
         ))
         conn.commit()
+
+
+# =========================================================
+# UPDATE
+# =========================================================
+
+def update_customer(company_name: str, data: Dict[str, Any]) -> bool:
+    with get_connection() as conn:
+        cur = conn.execute("""
+            UPDATE customers
+            SET company_name=%s,
+                contact_person=%s,
+                tel=%s,
+                email=%s,
+                address=%s,
+                tax_id=%s,
+                credit_terms_days=%s,
+                notes=%s,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE company_name=%s
+        """, (
+            data.get("company_name"),
+            data.get("contact_person"),
+            data.get("tel"),
+            data.get("email"),
+            data.get("address"),
+            data.get("tax_id"),
+            data.get("credit_terms_days"),
+            data.get("notes"),
+            company_name
+        ))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+# =========================================================
+# UPSERT (FIXED - PRODUCTION SAFE)
+# =========================================================
+
+def upsert_customer(company_name: str, contact_person: str = None, tel: str = None) -> None:
+    if not company_name:
+        return
+
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO customers (
+                company_name,
+                contact_person,
+                tel
+            )
+            VALUES (%s, %s, %s)
+            ON CONFLICT (company_name)
+            DO UPDATE SET
+                contact_person = EXCLUDED.contact_person,
+                tel = EXCLUDED.tel,
+                updated_at = CURRENT_TIMESTAMP
+        """, (company_name, contact_person, tel))
+        conn.commit()
+
 
 # =========================================================
 # DELETE
@@ -93,43 +163,3 @@ def delete_customer(customer_id: int) -> bool:
         """, (customer_id,))
         conn.commit()
         return True
-
-# =========================================================
-# UPDATE
-# =========================================================
-
-def update_customer(name: str, data: Dict[str, Any]) -> bool:
-    with get_connection() as conn:
-        cur = conn.execute("""
-            UPDATE customers
-            SET company_name=%s,
-                attention=%s,
-                tel=%s
-            WHERE company_name=%s
-        """, (
-            data.get("company_name"),
-            data.get("attention"),
-            data.get("tel"),
-            name
-        ))
-        conn.commit()
-        return cur.rowcount > 0
-
-# =========================================================
-# UPSERT
-# =========================================================
-
-def upsert_customer(name: str, attention: str = None, tel: str = None) -> None:
-    if not name:
-        return
-
-    with get_connection() as conn:
-        conn.execute("""
-            INSERT INTO customers (name, attention, tel)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (name)
-            DO UPDATE SET
-                attention = EXCLUDED.attention,
-                tel = EXCLUDED.tel
-        """, (name, attention, tel))
-        conn.commit()
