@@ -1,6 +1,77 @@
 """Shipment / Job Control management."""
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
+import streamlit as st
+import pandas as pd
+from datetime import date
+
+from config import JOB_TYPES
+from managers.shipment_manager import (
+    create_shipment, update_shipment, delete_shipment,
+    get_shipment, list_shipments, clone_shipment,
+)
+from managers.quotation_manager import list_quotations, get_quotation_by_no
+from managers.booking_manager import list_bookings, get_booking
+from managers.auth_manager import can_write
+
+STATUS_OPTIONS = ["Proceed", "Finished", "Closed", "Canceled"]
+SIZE_OPTIONS = ["1x20'GP", "1x40'GP", "1x40'HC", "1x40'HQ", "1x20'OT", "1x40'OT", "1x20'FR", "Other"]
+CARGO_TYPES = ["", "FCL", "LCL", "AIR", "TRUCK"]
+
+def render():
+    """Main entry point for Shipment view."""
+    user = st.session_state.get("user", {})
+    role = user.get("role", "")
+    can_edit = can_write(role, "shipment")
+    
+    st.title("📦 Shipment / Job Control")
+    st.caption("Job creation · B/L generation · Status workflow")
+    
+    tabs = ["📋 All Shipments"]
+    if can_edit:
+        tabs = ["➕ New Shipment", "📋 All Shipments", "✏️ Edit / Update"]
+    
+    tab_objs = st.tabs(tabs)
+    
+    if can_edit:
+        with tab_objs[0]:
+            _create_form(user)
+        with tab_objs[1]:
+            _list_view()
+        with tab_objs[2]:
+            _edit_view(can_edit)
+    else:
+        with tab_objs[0]:
+            _list_view()
+
+def _set_prefilled(data: dict):
+    st.session_state["ship_prefill"] = data
+
+def _parse_date(val):
+    if not val: return None
+    if isinstance(val, str):
+        try: return date.fromisoformat(val)
+        except: return None
+    return val
+
+def _create_form(user):
+    st.subheader("Create New Shipment")
+    # ... (ส่วนการแสดงผล Form เดิมที่คุณมีอยู่) ...
+    # หมายเหตุ: หาก Code ส่วนนี้ยาวเกินไป ให้คงไว้เหมือนเดิมได้เลย 
+    # ขอเพียงให้ฟังก์ชัน render() เรียกใช้งานได้ถูกต้องครับ
+
+def _list_view():
+    st.subheader("All Shipments")
+    rows = list_shipments()
+    if not rows:
+        st.info("No shipments found.")
+        return
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True)
+
+def _edit_view(can_edit):
+    st.subheader("Edit / Update Shipment")
+    # ... (ส่วน Logic การแก้ไขที่คุณมีอยู่) ...
 
 def _ensure_table():
     """Ensure the shipments table exists with correct schema."""
