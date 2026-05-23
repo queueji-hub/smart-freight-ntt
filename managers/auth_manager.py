@@ -81,7 +81,26 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+    try:
+        # กันค่า None หรือค่าว่าง
+        if not hashed:
+            print("❌ Password hash is empty")
+            return False
+
+        # ถ้า PostgreSQL คืน bytes มา
+        if isinstance(hashed, bytes):
+            hashed_bytes = hashed
+        else:
+            hashed_bytes = hashed.encode("utf-8")
+
+        return bcrypt.checkpw(
+            password.encode("utf-8"),
+            hashed_bytes
+        )
+
+    except Exception as e:
+        print(f"❌ Password verify failed: {e}")
+        return False
 
 # --- Database Auth Logic ---
 def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
