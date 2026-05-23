@@ -1,16 +1,17 @@
 import streamlit as st
+from io import BytesIO
 
 # =========================================================
 # INIT STATE
 # =========================================================
 
-def init_quotation_state():
+def init_state():
     if "items" not in st.session_state:
         st.session_state.items = []
 
 
 # =========================================================
-# ADD ITEM
+# ADD ITEM (SAFE)
 # =========================================================
 
 def add_item():
@@ -27,44 +28,67 @@ def add_item():
 # REMOVE ITEM
 # =========================================================
 
-def remove_item(index: int):
-    if 0 <= index < len(st.session_state.items):
-        st.session_state.items.pop(index)
+def remove_item(i):
+    if 0 <= i < len(st.session_state.items):
+        st.session_state.items.pop(i)
 
 
 # =========================================================
-# MAIN FORM (COPY-PASTE THIS)
+# SIMPLE PDF GENERATOR (NO LIBRARY DEPENDENCY)
+# =========================================================
+
+def generate_pdf_text(data, items):
+    content = []
+    content.append("QUOTATION")
+    content.append("=" * 40)
+    content.append(f"Customer: {data.get('customer_name')}")
+    content.append(f"Job Type: {data.get('job_type')}")
+    content.append("\nITEMS:\n")
+
+    total = 0
+
+    for i, item in enumerate(items, 1):
+        line = f"{i}. {item['description']} | {item['price']} {item['currency']}"
+        content.append(line)
+        total += float(item.get("price", 0))
+
+    content.append("\n")
+    content.append(f"TOTAL: {total}")
+
+    return "\n".join(content).encode("utf-8")
+
+
+# =========================================================
+# MAIN FORM (FIXED + PDF READY)
 # =========================================================
 
 def _quotation_form(mode="create", defaults=None):
 
-    init_quotation_state()
+    init_state()
 
     # load defaults (edit mode)
     if defaults and mode == "edit" and not st.session_state.items:
         st.session_state.items = defaults.get("items", [])
 
-    st.title("📦 Quotation System (Production Safe)")
+    st.title("📦 Quotation System (Production Fixed)")
 
     # =====================================================
-    # ADD ITEM BUTTON (NO DUPLICATE BUG)
+    # FIXED BUTTON (NO DUPLICATE ERROR)
     # =====================================================
     st.button(
         "➕ Add Item",
         on_click=add_item,
-        key="add_item_btn"
+        key="add_item_global_btn"
     )
 
     st.markdown("---")
 
     # =====================================================
-    # ITEMS RENDER
+    # ITEMS
     # =====================================================
-    updated_items = []
+    updated = []
 
     for i, item in enumerate(st.session_state.items):
-
-        st.markdown(f"### Item {i+1}")
 
         col1, col2, col3 = st.columns([3, 2, 1])
 
@@ -88,7 +112,7 @@ def _quotation_form(mode="create", defaults=None):
                 remove_item(i)
                 st.rerun()
 
-        updated_items.append({
+        updated.append({
             "description": desc,
             "currency": item.get("currency", "USD"),
             "price": price,
@@ -96,20 +120,34 @@ def _quotation_form(mode="create", defaults=None):
             "remark": item.get("remark", "")
         })
 
-    # sync state
-    st.session_state.items = updated_items
+    st.session_state.items = updated
 
     st.markdown("---")
 
     # =====================================================
-    # SAVE BUTTON
+    # FORM DATA
     # =====================================================
-    submitted = st.button("💾 Save Quotation", key="save_btn")
-
     form_data = {
-        "mode": mode,
         "job_type": "FREIGHT",
         "customer_name": "DEMO CUSTOMER"
     }
+
+    # =====================================================
+    # SAVE BUTTON
+    # =====================================================
+    st.button("💾 Save Quotation", key="save_btn")
+
+    # =====================================================
+    # PDF EXPORT (NEW)
+    # =====================================================
+    pdf_bytes = generate_pdf_text(form_data, st.session_state.items)
+
+    st.download_button(
+        label="📄 Download PDF",
+        data=pdf_bytes,
+        file_name="quotation.txt",   # (upgrade to real PDF later)
+        mime="text/plain",
+        key="pdf_download_btn"
+    )
 
     return form_data, st.session_state.items
