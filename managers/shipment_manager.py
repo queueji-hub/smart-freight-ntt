@@ -122,30 +122,29 @@ def clone_shipment(source_job_no: str) -> Optional[str]:
 def get_dashboard_stats() -> Dict[str, Any]:
     """Aggregated stats for dashboard KPIs."""
     with get_connection() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM shipments").fetchone()[0]
-        proceed = conn.execute(
-            "SELECT COUNT(*) FROM shipments WHERE status='Proceed'"
-        ).fetchone()[0]
-        finished = conn.execute(
-            "SELECT COUNT(*) FROM shipments WHERE status='Finished'"
-        ).fetchone()[0]
-        closed = conn.execute(
-            "SELECT COUNT(*) FROM shipments WHERE status='Closed'"
-        ).fetchone()[0]
-        canceled = conn.execute(
-            "SELECT COUNT(*) FROM shipments WHERE status='Canceled'"
-        ).fetchone()[0]
+        # แก้ไขการดึงข้อมูลโดยใช้ Alias (AS cnt) และแปลงเป็น dict เพื่อกัน KeyError
+        def fetch_count(query: str) -> int:
+            row = conn.execute(query).fetchone()
+            return dict(row).get("cnt", 0) if row else 0
+
+        total = fetch_count("SELECT COUNT(*) AS cnt FROM shipments")
+        proceed = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Proceed'")
+        finished = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Finished'")
+        closed = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Closed'")
+        canceled = fetch_count("SELECT COUNT(*) AS cnt FROM shipments WHERE status='Canceled'")
         
         by_type = conn.execute(
-            "SELECT job_type, COUNT(*) c FROM shipments GROUP BY job_type"
+            "SELECT job_type, COUNT(*) as c FROM shipments GROUP BY job_type"
         ).fetchall()
+        
         by_carrier = conn.execute(
-            "SELECT carrier, COUNT(*) c FROM shipments "
+            "SELECT carrier, COUNT(*) as c FROM shipments "
             "WHERE carrier IS NOT NULL AND carrier!='' "
             "GROUP BY carrier ORDER BY c DESC LIMIT 10"
         ).fetchall()
+        
         by_month = conn.execute(
-            "SELECT strftime('%Y-%m', etd) ym, COUNT(*) c FROM shipments "
+            "SELECT strftime('%Y-%m', etd) as ym, COUNT(*) as c FROM shipments "
             "WHERE etd IS NOT NULL GROUP BY ym ORDER BY ym"
         ).fetchall()
     
