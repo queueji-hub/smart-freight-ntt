@@ -1,4 +1,3 @@
-Python
 import traceback
 import importlib
 import streamlit as st
