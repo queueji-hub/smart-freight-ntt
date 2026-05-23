@@ -309,11 +309,11 @@ def get_connection():
         db_secrets = st.secrets["connections"]["postgresql"]
         
         pg_conn = psycopg2.connect(
-            host=db_secrets["host"],
-            database=db_secrets["database"],
-            user=db_secrets["user"],
-            password=db_secrets["password"],
-            port=db_secrets["port"]
+            host=db_secrets["aws-1-ap-southeast-1.pooler.supabase.com"],
+            database=db_secrets["postgres"],
+            user=db_secrets["postgres.mziinbzvgphrqafxityk"],
+            password=db_secrets["E+tA.5@-_FZLMt7"],
+            port=db_secrets["5432"]
         )
         # ส่งกลับในรูปแบบ Wrapper เพื่อให้ใช้งานร่วมกับโค้ด SQLite เดิมได้
         return SQLiteConnectionWrapper(pg_conn)
