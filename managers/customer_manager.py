@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
+from contracts.core_contract import enforce, CUSTOMER_SCHEMA
 
 # =========================================================
 # LIST CUSTOMERS
@@ -34,14 +35,14 @@ def get_customer(customer_id: int) -> Optional[Dict[str, Any]]:
         row = dict(row)
 
         # 🔥 normalize field (แก้ CRM error 'name')
-        return {
-            "id": row.get("id"),
-            "name": row.get("company_name"),   # 👈 FIX: unify UI field
-            "company_name": row.get("company_name"),
-            "attention": row.get("attention"),
-            "tel": row.get("tel"),
-            "email": row.get("email", "")
-        }
+        return enforce(CUSTOMER_SCHEMA, {
+    "id": row["id"],
+    "name": row["company_name"],
+    "company_name": row["company_name"],
+    "email": row.get("email"),
+    "tel": row.get("tel"),
+    "is_active": row.get("is_active", 1)
+}, "customer")
 
 # =========================================================
 # SEARCH
