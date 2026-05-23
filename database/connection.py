@@ -236,52 +236,7 @@ CREATE INDEX IF NOT EXISTS idx_logs_user ON activity_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_logs_created ON activity_logs(created_at);
 """
 
-MIGRATIONS = {
-    "customers": {
-        "credit_terms_days": "INTEGER DEFAULT 30",
-        "notes": "TEXT",
-        "is_active": "INTEGER DEFAULT 1",
-        "updated_at": "TIMESTAMP",
-    },
-    "quotations": {
-        "status": "TEXT DEFAULT 'Draft'",
-        "cargo_type": "TEXT",
-        "container_size": "TEXT",
-        "estimated_cost": "REAL DEFAULT 0",
-        "selling_price": "REAL DEFAULT 0",
-    },
-    "invoices": {
-        "advance_amount": "REAL DEFAULT 0",
-        "non_vat_amount": "REAL DEFAULT 0",
-        "wht_1_amount": "REAL DEFAULT 0",
-        "wht_3_amount": "REAL DEFAULT 0",
-    },
-    "invoice_items": {
-        "tax_type": "TEXT DEFAULT 'VAT 7%'",
-        "wht_type": "TEXT DEFAULT 'None'",
-    },
-    "shipments": {
-        "shipper": "TEXT",
-        "consignee": "TEXT",
-        "notify_party": "TEXT",
-        "cargo_type": "TEXT",
-        "m_vessel": "TEXT",
-        "feeder": "TEXT",
-        "por": "TEXT",
-        "final_destination": "TEXT",
-        "transhipment_port": "TEXT",
-        "bl_no": "TEXT",
-        "closing_time": "TEXT",
-        "booking_id": "INTEGER",
-        "customer_id": "INTEGER",
-        "created_by": "TEXT",
-    },
-    "users": {
-        "is_active": "INTEGER DEFAULT 1",
-        "email": "TEXT",
-        "full_name": "TEXT",
-    },
-}
+MIGRATIONS = {}
 
 # =====================================================================
 #  SQLite to PostgreSQL Compatibility Layers (ฉนวนแปลงคำสั่งเพื่อความปลอดภัย)
@@ -292,8 +247,46 @@ class SQLiteCursorWrapper:
         self._cursor = pg_cursor
 
     def execute(self, query, params=None):
-        # 1. แปลงตัวแปรคำถามจาก ? เป็น %s ให้เข้ากับ PostgreSQL 
+        # แปลงตัวแปรคำถามจาก ? เป็น %s ให้เข้ากับ PostgreSQL 
         if "?" in query:
             query = query.replace("?", "%s")
-        
-        #
+        self._cursor.execute(query, params)
+        return self
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+class SQLiteConnectionWrapper:
+    def __init__(self, pg_conn):
+        self._conn = pg_conn
+
+    def cursor(self):
+        # ใช้ RealDictCursor เพื่อส่งค่ากลับไปเป็น Dict คล้าย Row Factory ของ SQLite
+        cursor = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        return SQLiteCursorWrapper(cursor)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            self.rollback()
+        else:
+            self.commit()
+
+# =====================================================================
