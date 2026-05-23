@@ -1,135 +1,115 @@
-from datetime import date
-from typing import List, Dict, Any
-from database.connection import get_connection
-from managers.customer_manager import upsert_customer
-from datetime import datetime, date
+import streamlit as st
 
-def _generate_quotation_no(job_type: str, quotation_date=None):
-    # normalize date input
-    if isinstance(quotation_date, str):
-        try:
-            dt = datetime.strptime(quotation_date, "%Y-%m-%d").date()
-        except ValueError:
-            dt = date.today()
-    elif isinstance(quotation_date, date):
-        dt = quotation_date
-    else:
-        dt = date.today()
+# =========================================================
+# INIT STATE
+# =========================================================
 
-    prefix = (job_type or "QTN")[:3].upper()
+def init_quotation_state():
+    if "items" not in st.session_state:
+        st.session_state.items = []
 
-    return f"{prefix}-{dt.strftime('%Y%m%d')}-{int(datetime.now().timestamp())%10000}"
 
-def create_quotation(quotation: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
-    """Create a new quotation with transaction safety."""
-    quotation_no = _generate_quotation_no(quotation["job_type"], quotation.get("quotation_date"))
-    upsert_customer(quotation.get("customer_name"), quotation.get("attention"), quotation.get("tel"))
-    
-    with get_connection() as conn:
-        # Create Header
-        cur = conn.execute("""
-            INSERT INTO quotations (quotation_no, job_type, customer_id, customer_name, shipper_cnee, carrier, pol, pod, 
-                                    service_type, attention, tel, incoterm, commodity, weight, quantity_desc, 
-                                    payment_term, quotation_date, validity_date, subject, terms_conditions, prepared_by) 
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
-        """, (
-            quotation_no, quotation["job_type"], quotation.get("customer_id"), quotation.get("customer_name"), 
-            quotation.get("shipper_cnee"), quotation.get("carrier"), quotation.get("pol"), quotation.get("pod"), 
-            quotation.get("service_type"), quotation.get("attention"), quotation.get("tel"), quotation.get("incoterm"), 
-            quotation.get("commodity"), quotation.get("weight"), quotation.get("quantity_desc"), quotation.get("payment_term", "30 Days"), 
-            quotation.get("quotation_date"), quotation.get("validity_date"), quotation.get("subject"), quotation.get("terms_conditions"), 
-            quotation.get("prepared_by")
-        ))
-        qid = cur.fetchone()['id']
-        
-        # Create Items
-        for idx, item in enumerate(items):
-            conn.execute("""
-                INSERT INTO quotation_items (quotation_id, description, currency, price, unit, remark, sort_order) 
-                VALUES (%s,%s,%s,%s,%s,%s,%s)
-            """, (qid, item["description"], item.get("currency", "USD"), item["price"], item.get("unit"), item.get("remark"), idx))
-        
-        conn.commit()
-    return quotation_no
+# =========================================================
+# ADD ITEM
+# =========================================================
 
-def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[str, Any]], new_quotation_no: str = None) -> bool:
-    """Update quotation details and replace all items."""
-    final_no = new_quotation_no or quotation_no
-    with get_connection() as conn:
-        row = conn.execute("SELECT id FROM quotations WHERE quotation_no=%s", (quotation_no,)).fetchone()
-        if not row: return False
-        qid = row['id']
-        
-        conn.execute("""
-            UPDATE quotations SET quotation_no=%s, customer_name=%s, shipper_cnee=%s, carrier=%s, pol=%s, pod=%s, 
-            service_type=%s, attention=%s, tel=%s, incoterm=%s, commodity=%s, weight=%s, quantity_desc=%s, 
-            payment_term=%s, quotation_date=%s, validity_date=%s, subject=%s, terms_conditions=%s 
-            WHERE id=%s
-        """, (final_no, data.get("customer_name"), data.get("shipper_cnee"), data.get("carrier"), data.get("pol"), 
-              data.get("pod"), data.get("service_type"), data.get("attention"), data.get("tel"), data.get("incoterm"), 
-              data.get("commodity"), data.get("weight"), data.get("quantity_desc"), data.get("payment_term"), 
-              data.get("quotation_date"), data.get("validity_date"), data.get("subject"), data.get("terms_conditions"), qid))
-        
-        # Update items (Delete & Insert strategy is safest for lists)
-        conn.execute("DELETE FROM quotation_items WHERE quotation_id=%s", (qid,))
-        for idx, item in enumerate(items):
-            conn.execute("""
-                INSERT INTO quotation_items (quotation_id, description, currency, price, unit, remark, sort_order) 
-                VALUES (%s,%s,%s,%s,%s,%s,%s)
-            """, (qid, item["description"], item.get("currency", "USD"), item["price"], item.get("unit"), item.get("remark"), idx))
-        
-        conn.commit()
-    return True
+def add_item():
+    st.session_state.items.append({
+        "description": "",
+        "currency": "USD",
+        "price": 0.0,
+        "unit": "",
+        "remark": ""
+    })
 
-def get_quotation_by_no(quotation_no):
-    """
-    Get quotation by quotation number
-    """
 
-    with get_connection() as conn:
+# =========================================================
+# REMOVE ITEM
+# =========================================================
 
-        result = conn.execute(
-            """
-            SELECT *
-            FROM quotations
-            WHERE quotation_no = %s
-            """,
-            (quotation_no,)
-        ).fetchone()
+def remove_item(index: int):
+    if 0 <= index < len(st.session_state.items):
+        st.session_state.items.pop(index)
 
-        return dict(result) if result else None
 
-def list_quotations():
-    """
-    Return all quotations
-    """
+# =========================================================
+# MAIN FORM (COPY-PASTE THIS)
+# =========================================================
 
-    with get_connection() as conn:
+def _quotation_form(mode="create", defaults=None):
 
-        results = conn.execute(
-            """
-            SELECT *
-            FROM quotations
-            ORDER BY id DESC
-            """
-        ).fetchall()
+    init_quotation_state()
 
-        return [
-            dict(r)
-            for r in results
-        ]
+    # load defaults (edit mode)
+    if defaults and mode == "edit" and not st.session_state.items:
+        st.session_state.items = defaults.get("items", [])
 
-def duplicate_quotation(quotation_no):
-    """
-    Duplicate quotation placeholder
-    """
+    st.title("📦 Quotation System (Production Safe)")
 
-    original = get_quotation_by_no(quotation_no)
+    # =====================================================
+    # ADD ITEM BUTTON (NO DUPLICATE BUG)
+    # =====================================================
+    st.button(
+        "➕ Add Item",
+        on_click=add_item,
+        key="add_item_btn"
+    )
 
-    if not original:
-        return None
+    st.markdown("---")
 
-    # TODO:
-    # create duplicated quotation logic later
+    # =====================================================
+    # ITEMS RENDER
+    # =====================================================
+    updated_items = []
 
-    return original
+    for i, item in enumerate(st.session_state.items):
+
+        st.markdown(f"### Item {i+1}")
+
+        col1, col2, col3 = st.columns([3, 2, 1])
+
+        with col1:
+            desc = st.text_input(
+                "Description",
+                value=item.get("description", ""),
+                key=f"desc_{i}"
+            )
+
+        with col2:
+            price = st.number_input(
+                "Price",
+                value=float(item.get("price", 0)),
+                key=f"price_{i}"
+            )
+
+        with col3:
+            st.write("")
+            if st.button("🗑️", key=f"del_{i}"):
+                remove_item(i)
+                st.rerun()
+
+        updated_items.append({
+            "description": desc,
+            "currency": item.get("currency", "USD"),
+            "price": price,
+            "unit": item.get("unit", ""),
+            "remark": item.get("remark", "")
+        })
+
+    # sync state
+    st.session_state.items = updated_items
+
+    st.markdown("---")
+
+    # =====================================================
+    # SAVE BUTTON
+    # =====================================================
+    submitted = st.button("💾 Save Quotation", key="save_btn")
+
+    form_data = {
+        "mode": mode,
+        "job_type": "FREIGHT",
+        "customer_name": "DEMO CUSTOMER"
+    }
+
+    return form_data, st.session_state.items
