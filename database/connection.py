@@ -243,24 +243,26 @@ MIGRATIONS = {}
 # =====================================================================
 
 class SQLiteCursorWrapper:
-    def __init__(self, pg_cursor):
-        self._cursor = pg_cursor
+    def __init__(self, cursor):
+        self._cursor = cursor
 
-    def execute(self, query, params=None):
-        # แปลงตัวแปรคำถามจาก ? เป็น %s ให้เข้ากับ PostgreSQL 
-        if "?" in query:
-            query = query.replace("?", "%s")
-        self._cursor.execute(query, params)
+    # 1. ⚠️ เพิ่มฟังก์ชันนี้เพื่อให้รองรับคำสั่ง with ... as cursor:
+    def __enter__(self):
         return self
 
-    def fetchall(self):
-        return self._cursor.fetchall()
+    # 2. ⚠️ เพิ่มฟังก์ชันนี้เพื่อใช้ปิดระบบเมื่อทำงานเสร็จหลังสิ้นสุด block with
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
-    def fetchone(self):
-        return self._cursor.fetchone()
+    # --- โค้ดฟังก์ชันเดิมๆ ด้านล่างที่มีอยู่แล้ว (เช่น execute, fetchone) ปล่อยไว้เหมือนเดิมครับ ---
+    def execute(self, query, params=None):
+        # โค้ดเดิมของคุณ...
+        if params is not None:
+            return self._cursor.execute(query, params)
+        return self._cursor.execute(query)
 
-    def __getattr__(self, name):
-        return getattr(self._cursor, name)
+    def close(self):
+        self._cursor.close()
 
 class SQLiteConnectionWrapper:
     def __init__(self, pg_conn):
