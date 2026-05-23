@@ -29,8 +29,8 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
             query = "SELECT id, username, full_name, email, role FROM users WHERE username=%s AND password_hash=%s"
             cursor.execute(query, (username.strip().lower(), pwd_hash))
             user = cursor.fetchone()
+            print(query)
             return dict(user) if user else None
-
             # เพิ่มส่วนนี้เข้าไปในไฟล์ managers/auth_manager.py
 PERMISSIONS = {
     "admin": {
