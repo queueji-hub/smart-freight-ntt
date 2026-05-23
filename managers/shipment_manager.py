@@ -112,6 +112,20 @@ def clone_shipment(source_job_no: str) -> Optional[str]:
     clone_data["remark"] = f"Cloned from {source_job_no}\n" + (src.get("remark") or "")
     return create_shipment(clone_data)
 
+def _ensure_table():
+    """Ensure the shipments table exists."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS shipments (
+                id SERIAL PRIMARY KEY,
+                job_no TEXT UNIQUE NOT NULL,
+                status TEXT,
+                -- ... เพิ่มคอลัมน์อื่นๆ ของคุณที่นี่ ...
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
 def get_dashboard_stats() -> Dict[str, Any]:
     """Aggregated stats for dashboard KPIs."""
     _ensure_table()
