@@ -127,4 +127,4 @@ def get_port_monthly_volume():
             ORDER BY export_volume DESC
         """).fetchall()
 
-    return _rows_to_list(rows)
+    return [dict(r) for r in rows]
