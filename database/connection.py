@@ -1,17 +1,14 @@
 import psycopg2
-from psycopg2.extras import RealDictCursor
+import os
 
 DB_CONFIG = {
-    "host": "localhost",
-    "database": "smart_freight",
-    "user": "postgres",
-    "password": "postgres",
-    "port": 5432,
+    "host": os.getenv("DB_HOST"),
+    "database": os.getenv("DB_NAME"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "port": os.getenv("DB_PORT", 5432),
 }
 
-# =========================================================
-# CORE CONNECTION
-# =========================================================
 def get_connection():
     return psycopg2.connect(**DB_CONFIG)
 
