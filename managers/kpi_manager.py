@@ -117,14 +117,17 @@ def get_eta_etd_overview():
 # =========================
 def get_port_monthly_volume():
     with get_connection() as conn:
-        rows = conn.execute("""
+        cur = conn.execute("""
             SELECT
-                pol,
+                COALESCE(pol, 'UNKNOWN') AS pol,
                 COUNT(*) AS export_volume,
                 COUNT(CASE WHEN pod ILIKE '%TH%' THEN 1 END) AS import_volume
             FROM shipments
+            WHERE pol IS NOT NULL
             GROUP BY pol
-            ORDER BY export_volume DESC
-        """).fetchall()
+            ORDER BY COUNT(*) DESC
+        """)
 
-    return [dict(r) for r in rows]
+        rows = cur.fetchall()
+
+    return [dict(r) for r in rows] if rows else []
