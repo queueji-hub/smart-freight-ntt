@@ -84,18 +84,29 @@ if not user:
 # =========================================================
 PAGES = [
     ("dashboard", "📊 Dashboard", "dashboard"),
+    
     ("crm", "👥 CRM", "crm"),
+
+    # =========================
+    # CORE FREIGHT FLOW
+    # =========================
     ("quotation", "📄 Quotation", "quotation"),
     ("booking", "📑 Booking", "booking"),
-    ("shipments", "📦 Shipment", "shipment"),
+    ("job", "🚢 Job", "shipment"),   # job = shipment backend
+    ("finance", "💰 Finance", "billing"),
+
+    # =========================
+    # OPTIONAL MODULES
+    # =========================
     ("tracking", "📍 Tracking", "milestone"),
     ("profit", "📊 Profit Sheet", "profit"),
-    ("billing", "💰 Billing", "billing"),
-    ("fx", "💱 FX Rates", "fx"),
     ("reports", "📈 Reports", "reports"),
+
+    # =========================
+    # ADMIN
+    # =========================
     ("users", "👤 Users", "users"),
     ("settings", "⚙️ Settings", "template"),
-    ("help", "📘 Help / Manual", "session"),
 ]
 
 role = user.get("role", "")
