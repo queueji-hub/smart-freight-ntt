@@ -58,3 +58,15 @@ def get_invoice_by_no(doc_no: str) -> Optional[Dict[str, Any]]:
         invoice["items"] = [dict(i) for i in items]
         invoice["summary"] = calculate_summary(invoice["items"])
         return invoice
+
+def get_outstanding_summary():
+    """
+    Dashboard outstanding summary placeholder
+    """
+
+    return {
+        "total_outstanding": 0,
+        "overdue": 0,
+        "due_today": 0,
+        "upcoming": 0
+    }       
