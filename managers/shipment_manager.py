@@ -114,4 +114,24 @@ def clone_shipment(source_job_no: str) -> Optional[str]:
 
 def get_dashboard_stats() -> Dict[str, Any]:
     """Aggregated stats for dashboard KPIs."""
-    with get
+    _ensure_table()
+    with get_connection() as conn:
+        # ดึงสถานะสรุปแบบเร็วๆ
+        query = """
+            SELECT 
+                COUNT(*) as total_shipments,
+                SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending_count,
+                SUM(CASE WHEN status = 'Proceed' THEN 1 ELSE 0 END) as active_count,
+                SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as completed_count
+            FROM shipments
+        """
+        result = conn.execute(query).fetchone()
+        
+    # แปลงผลลัพธ์เป็น Dictionary อย่างปลอดภัย
+    stats = dict(result) if hasattr(result, 'keys') else {
+        'total_shipments': result[0],
+        'pending_count': result[1],
+        'active_count': result[2],
+        'completed_count': result[3]
+    }
+    return stats
