@@ -2,11 +2,22 @@ from datetime import date
 from typing import List, Dict, Any
 from database.connection import get_connection
 from managers.customer_manager import upsert_customer
-from datetime import datetime
+from datetime import datetime, date
 
 def _generate_quotation_no(job_type: str, quotation_date=None):
-    dt = quotation_date or datetime.today().date()
+    # normalize date input
+    if isinstance(quotation_date, str):
+        try:
+            dt = datetime.strptime(quotation_date, "%Y-%m-%d").date()
+        except ValueError:
+            dt = date.today()
+    elif isinstance(quotation_date, date):
+        dt = quotation_date
+    else:
+        dt = date.today()
+
     prefix = (job_type or "QTN")[:3].upper()
+
     return f"{prefix}-{dt.strftime('%Y%m%d')}-{int(datetime.now().timestamp())%10000}"
 
 def create_quotation(quotation: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
