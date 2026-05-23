@@ -1,25 +1,22 @@
 from database.connection import get_connection
 
+from managers.kpi_manager import (
+    get_kpi_summary,
+    get_finance_kpi,
+    get_top_routes,
+    get_port_monthly_volume
+)
 
 # =========================
 # KPI CORE
 # =========================
 
-def get_kpi_summary():
-    with get_connection() as conn:
-        return conn.execute("""
-            SELECT
-                COUNT(*) AS total_shipments,
+kpi = get_kpi_summary()
 
-                SUM(CASE WHEN status='Proceed' THEN 1 ELSE 0 END) AS active_jobs,
-                SUM(CASE WHEN status='Finished' THEN 1 ELSE 0 END) AS finished_jobs,
-                SUM(CASE WHEN status='Closed' THEN 1 ELSE 0 END) AS closed_jobs,
-
-                SUM(CASE WHEN DATE(etd) = CURRENT_DATE THEN 1 ELSE 0 END) AS etd_today,
-                SUM(CASE WHEN DATE(eta) = CURRENT_DATE THEN 1 ELSE 0 END) AS eta_today
-
-            FROM shipments
-        """).fetchone()
+st.metric("Total Jobs", kpi["total_shipments"])
+st.metric("Active Jobs", kpi["active_jobs"])
+st.metric("Finished", kpi["finished_jobs"])
+st.metric("Closed", kpi["closed_jobs"])
 
 
 # =========================
