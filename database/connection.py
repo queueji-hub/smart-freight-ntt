@@ -1,32 +1,25 @@
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import streamlit as st
 
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST"),
-    "database": os.getenv("DB_NAME"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "port": os.getenv("DB_PORT", 5432),
-}
+def _get_env(key, default=None):
+    return st.secrets.get(key, os.getenv(key, default))
 
 def get_connection():
     return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        port=os.getenv("DB_PORT", 5432),
+        host=_get_env("DB_HOST"),
+        database=_get_env("DB_NAME", "postgres"),
+        user=_get_env("DB_USER"),
+        password=_get_env("DB_PASSWORD"),
+        port=_get_env("DB_PORT", 5432),
         cursor_factory=RealDictCursor
     )
 
-# =========================================================
-# SAFE EXECUTOR (ใช้ทั้งระบบ)
-# =========================================================
 def execute(query, params=None, fetch=False):
     conn = get_connection()
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor() as cur:
             cur.execute(query, params or ())
 
             if fetch:
@@ -34,64 +27,5 @@ def execute(query, params=None, fetch=False):
 
             conn.commit()
             return None
-
-    finally:
-        conn.close()
-
-
-# =========================================================
-# INIT DATABASE (ใช้ bootstrap)
-# =========================================================
-def init_database():
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS shipments (
-                    id SERIAL PRIMARY KEY,
-                    job_no TEXT UNIQUE,
-                    status TEXT DEFAULT 'Proceed',
-                    job_type TEXT,
-                    customer_name TEXT,
-                    shipper TEXT,
-                    consignee TEXT,
-                    pol TEXT,
-                    pod TEXT,
-                    etd DATE,
-                    eta DATE,
-                    bl_no TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS bookings (
-                    id SERIAL PRIMARY KEY,
-                    booking_no TEXT UNIQUE,
-                    job_type TEXT,
-                    customer_name TEXT,
-                    pol TEXT,
-                    pod TEXT,
-                    etd DATE,
-                    eta DATE,
-                    status TEXT DEFAULT 'Draft',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS invoices (
-                    id SERIAL PRIMARY KEY,
-                    doc_no TEXT UNIQUE,
-                    customer_name TEXT,
-                    total_amount NUMERIC DEFAULT 0,
-                    outstanding NUMERIC DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-        conn.commit()
-
     finally:
         conn.close()
