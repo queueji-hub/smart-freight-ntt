@@ -84,29 +84,18 @@ if not user:
 # =========================================================
 PAGES = [
     ("dashboard", "📊 Dashboard", "dashboard"),
-    
     ("crm", "👥 CRM", "crm"),
-
-    # =========================
-    # CORE FREIGHT FLOW
-    # =========================
     ("quotation", "📄 Quotation", "quotation"),
     ("booking", "📑 Booking", "booking"),
-    ("job", "🚢 Job", "shipment"),   # job = shipment backend
-    ("finance", "💰 Finance", "billing"),
-
-    # =========================
-    # OPTIONAL MODULES
-    # =========================
+    ("shipments", "📦 Shipment", "shipment"),
     ("tracking", "📍 Tracking", "milestone"),
     ("profit", "📊 Profit Sheet", "profit"),
+    ("billing", "💰 Billing", "billing"),
+    ("fx", "💱 FX Rates", "fx"),
     ("reports", "📈 Reports", "reports"),
-
-    # =========================
-    # ADMIN
-    # =========================
     ("users", "👤 Users", "users"),
     ("settings", "⚙️ Settings", "template"),
+    ("help", "📘 Help / Manual", "session"),
 ]
 
 role = user.get("role", "")
@@ -209,22 +198,3 @@ except Exception as ex:
         st.code(traceback.format_exc(), language="python")
 
     st.exception(ex)
-
-def bootstrap():
-    try:
-        init_database()
-    except Exception as e:
-        st.warning(f"DB not ready: {e}")
-        return
-
-    try:
-        from managers.fx_manager import seed_default_rates
-        seed_default_rates()
-    except Exception:
-        pass
-
-    try:
-        from managers.db_persistence import push_if_dirty
-        push_if_dirty()
-    except Exception:
-        pass
