@@ -199,26 +199,83 @@ PAGE_ROUTES = {
 # HEADER UI (CLEAN ERP STYLE)
 # =========================================================
 st.markdown(f"""
-<div style="
-    padding:14px;
-    border-radius:12px;
-    border:1px solid #E5E7EB;
-    background:white;
-    margin-bottom:10px;
-    box-shadow:0 1px 2px rgba(0,0,0,0.05);
-">
-    <div style="font-size:22px;font-weight:800;">
+<style>
+
+/* =========================
+   GLOBAL BACKGROUND (SaaS STYLE)
+   ========================= */
+.stApp {{
+    background: radial-gradient(circle at 20% 20%, #f8fafc 0%, #f1f5f9 40%, #eef2ff 100%);
+}}
+
+/* subtle grid overlay */
+.stApp::before {{
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+}}
+
+/* keep content above background */
+.block-container {{
+    position: relative;
+    z-index: 1;
+}}
+
+/* =========================
+   HEADER CARD (GLASS STYLE)
+   ========================= */
+.page-header {{
+    padding: 18px 20px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.6);
+    background: rgba(255,255,255,0.75);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+    margin-bottom: 16px;
+}}
+
+.page-title {{
+    font-size: 24px;
+    font-weight: 800;
+    color: #111827;
+    letter-spacing: -0.3px;
+}}
+
+.page-subtitle {{
+    font-size: 13px;
+    color: #6B7280;
+    margin-top: 4px;
+}}
+
+</style>
+""", unsafe_allow_html=True)
+
+
+# =========================================================
+# HEADER UI
+# =========================================================
+st.markdown(f"""
+<div class="page-header">
+    <div class="page-title">
         {current_page.replace('_',' ').title()}
     </div>
-    <div style="color:#6B7280;font-size:13px;">
-        Smart Freight ERP Platform
+    <div class="page-subtitle">
+        Smart Freight ERP Platform • PostgreSQL Edition
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 
 # =========================================================
-# SAFE MODULE LOADER (POSTGRES SAFE)
+# SAFE MODULE LOADER
 # =========================================================
 try:
 
