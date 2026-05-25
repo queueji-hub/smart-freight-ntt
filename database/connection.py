@@ -2,9 +2,6 @@ import streamlit as st
 import psycopg2
 import psycopg2.extras
 
-# =========================
-# DB CONNECTION
-# =========================
 def get_connection():
     return psycopg2.connect(
         host=st.secrets["connections"]["postgresql"]["host"],
@@ -14,32 +11,6 @@ def get_connection():
         password=st.secrets["connections"]["postgresql"]["password"],
         cursor_factory=psycopg2.extras.RealDictCursor
     )
-
-# =========================
-# SAFE QUERY EXECUTOR
-# =========================
-def execute_query(query, params=None, fetchone=False, fetchall=False, commit=False):
-    conn = get_connection()
-
-    try:
-        with conn.cursor() as cur:
-            cur.execute(query, params)
-
-            result = None
-
-            if fetchone:
-                result = cur.fetchone()
-
-            elif fetchall:
-                result = cur.fetchall()
-
-            if commit:
-                conn.commit()
-
-            return result
-
-    finally:
-        conn.close()
 
 # =========================
 # INIT DATABASE
