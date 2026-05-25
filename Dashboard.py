@@ -203,15 +203,15 @@ st.markdown(f"""
     padding:16px 18px;
     border-radius:16px;
 
-    /* softer premium dark */
-    background: linear-gradient(145deg, #0a0f1c, #070b14);
+    /* PREMIUM DEEP BLACK */
+    background: #05070d;
 
     border: 1px solid rgba(255,255,255,0.06);
 
     margin-bottom:14px;
 
     box-shadow:
-        0 12px 35px rgba(0,0,0,0.55),
+        0 14px 40px rgba(0,0,0,0.65),
         inset 0 1px 0 rgba(255,255,255,0.03);
 
 ">
@@ -235,6 +235,7 @@ st.markdown(f"""
     </div>
 </div>
 """, unsafe_allow_html=True)
+
 
 # =========================================================
 # SAFE MODULE LOADER (POSTGRES SAFE)
