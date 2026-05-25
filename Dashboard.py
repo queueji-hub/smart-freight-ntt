@@ -2,6 +2,13 @@ import streamlit as st
 import psycopg2
 import psycopg2.extras
 
+try:
+    bootstrap()
+except Exception as e:
+    st.error("System bootstrap failed")
+    st.exception(e)
+    st.stop()
+    
 # =========================================================
 # DATABASE CONNECTION
 # =========================================================
