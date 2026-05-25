@@ -200,39 +200,31 @@ PAGE_ROUTES = {
 # =========================================================
 st.markdown(f"""
 <div style="
-    padding:16px 18px;
-    border-radius:16px;
-
-    /* PREMIUM DEEP BLACK */
-    background: #05070d;
-
-    border: 1px solid rgba(255,255,255,0.06);
-
-    margin-bottom:14px;
-
-    box-shadow:
-        0 14px 40px rgba(0,0,0,0.65),
-        inset 0 1px 0 rgba(255,255,255,0.03);
-
+padding:16px 18px;
+border-radius:16px;
+background:#05070d;
+border:1px solid rgba(255,255,255,0.06);
+margin-bottom:14px;
+box-shadow:0 14px 40px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.03);
 ">
-    <div style="
-        font-size:22px;
-        font-weight:800;
-        color:#F8FAFC;
-        letter-spacing:-0.4px;
-    ">
-        {current_page.replace('_',' ').title()}
-    </div>
+<div style="
+font-size:22px;
+font-weight:800;
+color:#F8FAFC;
+letter-spacing:-0.4px;
+">
+{current_page.replace('_',' ').title()}
+</div>
 
-    <div style="
-        color:#94A3B8;
-        font-size:13px;
-        margin-top:6px;
-        letter-spacing:0.2px;
-        opacity:0.9;
-    ">
-        Smart Freight ERP Platform
-    </div>
+<div style="
+color:#94A3B8;
+font-size:13px;
+margin-top:6px;
+letter-spacing:0.2px;
+opacity:0.9;
+">
+Smart Freight ERP Platform
+</div>
 </div>
 """, unsafe_allow_html=True)
 
