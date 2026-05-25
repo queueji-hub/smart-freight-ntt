@@ -201,18 +201,25 @@ PAGE_ROUTES = {
 st.markdown(f"""
 <div style="
     padding:16px 18px;
-    border-radius:14px;
-    border:1px solid rgba(255,255,255,0.08);
-    background: linear-gradient(135deg, #0b1220, #05070f);
-    margin-bottom:12px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
-    backdrop-filter: blur(12px);
+    border-radius:16px;
+
+    /* softer premium dark */
+    background: linear-gradient(145deg, #0a0f1c, #070b14);
+
+    border: 1px solid rgba(255,255,255,0.06);
+
+    margin-bottom:14px;
+
+    box-shadow:
+        0 12px 35px rgba(0,0,0,0.55),
+        inset 0 1px 0 rgba(255,255,255,0.03);
+
 ">
     <div style="
         font-size:22px;
         font-weight:800;
         color:#F8FAFC;
-        letter-spacing:-0.3px;
+        letter-spacing:-0.4px;
     ">
         {current_page.replace('_',' ').title()}
     </div>
@@ -220,13 +227,14 @@ st.markdown(f"""
     <div style="
         color:#94A3B8;
         font-size:13px;
-        margin-top:4px;
+        margin-top:6px;
+        letter-spacing:0.2px;
+        opacity:0.9;
     ">
         Smart Freight ERP Platform
     </div>
 </div>
 """, unsafe_allow_html=True)
-
 
 # =========================================================
 # SAFE MODULE LOADER (POSTGRES SAFE)
