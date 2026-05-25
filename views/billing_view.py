@@ -1,6 +1,6 @@
 """
-Billing / Financial module view.
-Production-ready version
+Billing / Financial module view
+PostgreSQL Production Ready (ERP Grade)
 """
 
 import uuid
@@ -15,16 +15,14 @@ from managers.invoice_manager import (
     WHT_TYPES,
     calculate_summary,
     create_invoice,
-    get_invoice_by_no,
-    get_outstanding_summary,
     list_invoices,
     record_payment,
+    get_outstanding_summary,
 )
 from managers.shipment_manager import list_shipments
-from pdf.invoice_pdf import generate_invoice_pdf
 
 # =========================================================
-# CONSTANTS
+# CONFIG
 # =========================================================
 DOC_TYPES = {
     "INV": "📄 Invoice",
@@ -34,16 +32,19 @@ DOC_TYPES = {
     "SOA": "📊 Statement of Account",
 }
 
+CURRENCIES = ["THB", "USD", "EUR", "CNY"]
+
 # =========================================================
-# RENDER
+# MAIN RENDER
 # =========================================================
 def render():
+
     user = st.session_state.get("user", {})
     role = user.get("role", "")
     can_edit = can_write(role, "billing")
 
-    st.title("💰 Billing & Financial")
-    st.caption("VAT / Advance / WHT Financial System")
+    st.title("💰 Billing & Finance")
+    st.caption("PostgreSQL ERP Financial System")
 
     _render_kpis()
     st.divider()
@@ -52,105 +53,269 @@ def render():
     if can_edit:
         tabs.insert(0, "➕ Create")
 
-    tab_objs = st.tabs(tabs)
+    tab = st.tabs(tabs)
 
     if can_edit:
-        with tab_objs[0]: _create_form(user)
-        with tab_objs[1]: _list_view()
-        with tab_objs[2]: _payment_view()
+        with tab[0]:
+            _create_form(user)
+        with tab[1]:
+            _list_view()
+        with tab[2]:
+            _payment_view()
     else:
-        with tab_objs[0]: _list_view()
-        with tab_objs[1]: st.info("Read-only access")
+        with tab[0]:
+            _list_view()
+        with tab[1]:
+            st.info("Read-only mode")
+
 
 # =========================================================
-# KPI
+# KPI (POSTGRES SAFE)
 # =========================================================
 def _render_kpis():
-    summary = get_outstanding_summary()
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Total Billed", f"฿{summary.get('billed', 0):,.2f}")
-    k2.metric("Total Paid", f"฿{summary.get('paid', 0):,.2f}")
-    k3.metric("Outstanding", f"฿{summary.get('outstanding', 0):,.2f}", delta_color="inverse")
+    try:
+        kpi = get_outstanding_summary() or {}
+    except Exception:
+        kpi = {}
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric("Total Billed", f"฿{kpi.get('billed', 0):,.2f}")
+    c2.metric("Total Paid", f"฿{kpi.get('paid', 0):,.2f}")
+    c3.metric("Outstanding", f"฿{kpi.get('outstanding', 0):,.2f}", delta_color="inverse")
+
 
 # =========================================================
 # CREATE FORM
 # =========================================================
-def _empty_inv_row():
+def _empty_item():
     return {
-        "id": str(uuid.uuid4())[:8], "description": "", "quantity": 1.0,
-        "unit_price": 0.0, "amount": 0.0, "tax_type": "VAT 7%", "wht_type": "None",
+        "id": str(uuid.uuid4())[:8],
+        "description": "",
+        "quantity": 1,
+        "unit_price": 0.0,
+        "tax_type": "VAT 7%",
+        "wht_type": "None",
     }
 
+
 def _create_form(user):
-    st.subheader("Create Financial Document")
-    
+
+    st.subheader("Create Invoice / Billing Document")
+
     col1, col2 = st.columns(2)
+
+    # =========================
+    # LEFT
+    # =========================
     with col1:
-        doc_type = st.selectbox("Document Type", options=list(DOC_TYPES.keys()), format_func=lambda x: DOC_TYPES[x])
-        customers = list_customers()
-        cust_options = [(0, "-- Select Customer --")] + [(c["id"], c["company_name"]) for c in customers]
-        cust_idx = st.selectbox("Customer", range(len(cust_options)), format_func=lambda i: cust_options[i][1])
-        cust_id, cust_name = cust_options[cust_idx]
+
+        doc_type = st.selectbox(
+            "Document Type",
+            list(DOC_TYPES.keys()),
+            format_func=lambda x: DOC_TYPES[x],
+        )
+
+        customers = list_customers() or []
+
+        cust_options = [(0, "-- Select Customer --")] + [
+            (c["id"], c.get("company_name", ""))
+            for c in customers
+        ]
+
+        idx = st.selectbox(
+            "Customer",
+            range(len(cust_options)),
+            format_func=lambda i: cust_options[i][1],
+        )
+
+        cust_id, cust_name = cust_options[idx]
+
         cust_data = get_customer(cust_id) if cust_id else {}
-        credit_terms = cust_data.get("credit_terms_days", 30) if cust_data else 30
-        
-        shipments = list_shipments()
-        ship_options = [("", "-- No Shipment --")] + [(s["job_no"], f"{s['job_no']} — {s.get('customer_name', '')}") for s in shipments[:100]]
-        ship_idx = st.selectbox("Link Shipment", range(len(ship_options)), format_func=lambda i: ship_options[i][1])
+        credit_days = int(cust_data.get("credit_terms_days", 30))
+
+        shipments = list_shipments() or []
+
+        ship_options = [("", "-- No Shipment --")] + [
+            (s.get("job_no"), f"{s.get('job_no')} — {s.get('customer_name','')}")
+            for s in shipments[:100]
+        ]
+
+        ship_idx = st.selectbox(
+            "Link Shipment",
+            range(len(ship_options)),
+            format_func=lambda i: ship_options[i][1],
+        )
+
         job_no = ship_options[ship_idx][0]
 
+    # =========================
+    # RIGHT
+    # =========================
     with col2:
+
         issue_date = st.date_input("Issue Date", value=date.today())
-        due_date = st.date_input("Due Date", value=date.today() + timedelta(days=int(credit_terms)))
-        currency = st.selectbox("Currency", ["THB", "USD", "EUR", "CNY"])
-        ref_doc = st.text_input("Reference Doc No.")
+        due_date = st.date_input(
+            "Due Date",
+            value=date.today() + timedelta(days=credit_days),
+        )
 
-    # Items Management
-    if "billing_items" not in st.session_state: st.session_state["billing_items"] = [_empty_inv_row()]
-    
-    for row in st.session_state["billing_items"]:
-        rid = row["id"]
-        cols = st.columns([3, 0.8, 1.2, 1.2, 1.5, 1.2, 0.4])
-        row["description"] = cols[0].text_input("Desc", value=row["description"], key=f"d_{rid}", label_visibility="collapsed")
-        row["quantity"] = cols[1].number_input("Qty", value=float(row["quantity"]), key=f"q_{rid}", label_visibility="collapsed")
-        row["unit_price"] = cols[2].number_input("Price", value=float(row["unit_price"]), key=f"u_{rid}", label_visibility="collapsed")
-        row["amount"] = row["quantity"] * row["unit_price"]
-        cols[3].write(f"฿{row['amount']:,.2f}")
-        row["tax_type"] = cols[4].selectbox("Tax", TAX_TYPES, index=TAX_TYPES.index(row["tax_type"]), key=f"t_{rid}", label_visibility="collapsed")
-        row["wht_type"] = cols[5].selectbox("WHT", WHT_TYPES, index=WHT_TYPES.index(row["wht_type"]), key=f"w_{rid}", label_visibility="collapsed")
-        if cols[6].button("🗑", key=f"del_{rid}", disabled=(len(st.session_state["billing_items"]) <= 1)):
-            st.session_state["billing_items"].remove(row); st.rerun()
+        currency = st.selectbox("Currency", CURRENCIES)
+        ref_doc = st.text_input("Reference No.")
 
-    if st.button("➕ Add Item"): st.session_state["billing_items"].append(_empty_inv_row()); st.rerun()
+    # =====================================================
+    # ITEMS (SESSION STATE SAFE)
+    # =====================================================
+    if "billing_items" not in st.session_state:
+        st.session_state["billing_items"] = [_empty_item()]
 
-    # Summary
+    st.markdown("### Items")
+
+    for item in st.session_state["billing_items"]:
+
+        cols = st.columns([4, 1, 1.5, 1.5, 1, 0.5])
+
+        item["description"] = cols[0].text_input(
+            "desc",
+            value=item["description"],
+            key=f"d_{item['id']}",
+            label_visibility="collapsed",
+        )
+
+        item["quantity"] = cols[1].number_input(
+            "qty",
+            value=float(item["quantity"]),
+            key=f"q_{item['id']}",
+            label_visibility="collapsed",
+        )
+
+        item["unit_price"] = cols[2].number_input(
+            "price",
+            value=float(item["unit_price"]),
+            key=f"p_{item['id']}",
+            label_visibility="collapsed",
+        )
+
+        amount = item["quantity"] * item["unit_price"]
+        cols[3].write(f"{amount:,.2f}")
+
+        item["tax_type"] = cols[4].selectbox(
+            "tax",
+            TAX_TYPES,
+            index=TAX_TYPES.index(item["tax_type"]),
+            key=f"t_{item['id']}",
+            label_visibility="collapsed",
+        )
+
+        if cols[5].button("🗑", key=f"del_{item['id']}"):
+            st.session_state["billing_items"].remove(item)
+            st.rerun()
+
+    if st.button("➕ Add Item"):
+        st.session_state["billing_items"].append(_empty_item())
+        st.rerun()
+
+    # =====================================================
+    # SUMMARY
+    # =====================================================
     summary = calculate_summary(st.session_state["billing_items"])
-    st.write(f"### Grand Total: ฿{summary['grand_total']:,.2f}")
+
+    st.markdown(f"### 💰 Grand Total: **฿{summary.get('grand_total',0):,.2f}**")
+
     remark = st.text_area("Remark")
 
-    if st.button("🚀 Issue Document", type="primary", use_container_width=True):
-        if cust_id == 0: st.error("Please select customer"); return
+    # =====================================================
+    # SUBMIT
+    # =====================================================
+    if st.button("🚀 Issue Invoice", type="primary"):
+
+        if not cust_id:
+            st.error("Please select customer")
+            return
+
         try:
-            doc_no = create_invoice({
-                "doc_type": doc_type, "job_no": job_no or None, "customer_id": cust_id,
-                "customer_name": cust_name, "issue_date": issue_date.isoformat(),
-                "due_date": due_date.isoformat(), "currency": currency,
-                "ref_doc_no": ref_doc, "remark": remark, "created_by": user.get("username", "")
-            }, st.session_state["billing_items"])
-            st.success(f"✅ Created: {doc_no}"); del st.session_state["billing_items"]; st.rerun()
-        except Exception as e: st.error(f"Error: {e}")
+            doc_no = create_invoice(
+                {
+                    "doc_type": doc_type,
+                    "job_no": job_no or None,
+                    "customer_id": cust_id,
+                    "customer_name": cust_name,
+                    "issue_date": issue_date.isoformat(),
+                    "due_date": due_date.isoformat(),
+                    "currency": currency,
+                    "ref_doc_no": ref_doc,
+                    "remark": remark,
+                    "created_by": user.get("username"),
+                },
+                st.session_state["billing_items"],
+            )
+
+            st.success(f"Created: {doc_no}")
+
+            st.session_state["billing_items"] = [_empty_item()]
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+
 
 # =========================================================
-# LIST & PAYMENT VIEWS
+# LIST VIEW
 # =========================================================
 def _list_view():
-    rows = list_invoices()
-    if rows:
-        df = pd.DataFrame(rows)
-        st.dataframe(df, use_container_width=True)
-        # PDF Generation Logic...
-    else: st.info("No documents found")
 
+    try:
+        rows = list_invoices() or []
+    except Exception:
+        rows = []
+
+    if not rows:
+        st.info("No invoices found")
+        return
+
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True)
+
+
+# =========================================================
+# PAYMENT VIEW
+# =========================================================
 def _payment_view():
-    st.subheader("Record Payment")
-    # Payment logic using record_payment()...
+
+    st.subheader("💳 Record Payment")
+
+    try:
+        invoices = list_invoices() or []
+    except Exception:
+        invoices = []
+
+    if not invoices:
+        st.info("No invoices available")
+        return
+
+    inv_map = {f"{i['doc_no']} - {i.get('customer_name','')}": i for i in invoices}
+
+    selected = st.selectbox("Select Invoice", list(inv_map.keys()))
+    inv = inv_map[selected]
+
+    amount = st.number_input("Payment Amount", min_value=0.0)
+
+    method = st.selectbox("Payment Method", ["Cash", "Bank Transfer", "Cheque"])
+
+    if st.button("Record Payment"):
+
+        try:
+            record_payment(
+                {
+                    "doc_no": inv["doc_no"],
+                    "amount": amount,
+                    "method": method,
+                    "date": date.today().isoformat(),
+                }
+            )
+
+            st.success("Payment recorded")
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"Error: {e}")
