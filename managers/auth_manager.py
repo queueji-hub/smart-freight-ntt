@@ -88,6 +88,8 @@ def can_write(role: str, module: str) -> bool:
 
 def hash_password(password: str) -> str:
 
+    password = password.strip()
+
     return bcrypt.hashpw(
         password.encode("utf-8"),
         bcrypt.gensalt()
@@ -98,11 +100,10 @@ def verify_password(password: str, hashed: str) -> bool:
 
     try:
 
-        if not password:
+        if not password or not hashed:
             return False
 
-        if not hashed:
-            return False
+        password = password.strip()
 
         return bcrypt.checkpw(
             password.encode("utf-8"),
@@ -127,13 +128,11 @@ def authenticate(
     try:
 
         username = username.strip().lower()
+        password = password.strip()
 
         with get_connection() as conn:
             with conn.cursor() as cur:
 
-                # =====================================================
-                # SAFE QUERY (NO is_active dependency)
-                # =====================================================
                 cur.execute(
                     """
                     SELECT *
@@ -146,24 +145,21 @@ def authenticate(
 
                 row = cur.fetchone()
 
-                # =====================================================
+                # =====================================
                 # USER NOT FOUND
-                # =====================================================
+                # =====================================
                 if not row:
 
-                    print("❌ USER NOT FOUND:", username)
+                    print(f"❌ USER NOT FOUND: {username}")
                     return None
 
                 user = dict(row)
 
-                print("✅ USER FOUND")
-                print("USERNAME:", user.get("username"))
-                print("ROLE:", user.get("role"))
-                print("HASH:", user.get("password_hash"))
+                print(f"✅ USER FOUND: {user.get('username')}")
 
-                # =====================================================
+                # =====================================
                 # PASSWORD HASH CHECK
-                # =====================================================
+                # =====================================
                 stored_hash = user.get("password_hash")
 
                 if not stored_hash:
@@ -171,9 +167,9 @@ def authenticate(
                     print("❌ PASSWORD HASH EMPTY")
                     return None
 
-                # =====================================================
+                # =====================================
                 # VERIFY PASSWORD
-                # =====================================================
+                # =====================================
                 password_ok = verify_password(
                     password,
                     stored_hash
@@ -186,9 +182,9 @@ def authenticate(
                     print("❌ INVALID PASSWORD")
                     return None
 
-                # =====================================================
-                # OPTIONAL is_active CHECK
-                # =====================================================
+                # =====================================
+                # OPTIONAL ACTIVE CHECK
+                # =====================================
                 if "is_active" in user:
 
                     try:
@@ -201,9 +197,9 @@ def authenticate(
                     except Exception:
                         pass
 
-                # =====================================================
-                # REMOVE HASH BEFORE RETURN
-                # =====================================================
+                # =====================================
+                # REMOVE HASH
+                # =====================================
                 user.pop("password_hash", None)
 
                 return user
@@ -229,7 +225,14 @@ def list_users() -> List[Dict[str, Any]]:
 
                 cur.execute(
                     """
-                    SELECT *
+                    SELECT
+                        id,
+                        username,
+                        full_name,
+                        email,
+                        role,
+                        is_active,
+                        created_at
                     FROM users
                     ORDER BY username ASC
                     """
@@ -251,6 +254,8 @@ def get_user_by_username(
 
     try:
 
+        username = username.strip().lower()
+
         with get_connection() as conn:
             with conn.cursor() as cur:
 
@@ -261,7 +266,7 @@ def get_user_by_username(
                     WHERE LOWER(username) = %s
                     LIMIT 1
                     """,
-                    (username.strip().lower(),)
+                    (username,)
                 )
 
                 row = cur.fetchone()
@@ -285,16 +290,16 @@ def create_user(
     role: str = "sales"
 ):
 
+    username = username.strip().lower()
+
+    existing = get_user_by_username(username)
+
+    if existing:
+        raise Exception("Username already exists")
+
+    password_hash = hash_password(password)
+
     try:
-
-        username = username.strip().lower()
-
-        existing = get_user_by_username(username)
-
-        if existing:
-            raise Exception("Username already exists")
-
-        password_hash = hash_password(password)
 
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -323,7 +328,7 @@ def create_user(
 
                 conn.commit()
 
-        print("✅ USER CREATED:", username)
+        print(f"✅ USER CREATED: {username}")
 
     except Exception as e:
 
@@ -336,9 +341,9 @@ def update_user_password(
     new_password: str
 ):
 
-    try:
+    password_hash = hash_password(new_password)
 
-        password_hash = hash_password(new_password)
+    try:
 
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -357,7 +362,10 @@ def update_user_password(
 
                 conn.commit()
 
-        print("✅ PASSWORD UPDATED:", username)
+                if cur.rowcount == 0:
+                    raise Exception("User not found")
+
+        print(f"✅ PASSWORD UPDATED: {username}")
 
     except Exception as e:
 
@@ -389,7 +397,7 @@ def update_user_role(
 
                 conn.commit()
 
-        print("✅ ROLE UPDATED:", username)
+        print(f"✅ ROLE UPDATED: {username}")
 
     except Exception as e:
 
@@ -421,7 +429,7 @@ def set_user_active(
 
                 conn.commit()
 
-        print("✅ ACTIVE STATUS UPDATED:", username)
+        print(f"✅ ACTIVE STATUS UPDATED: {username}")
 
     except Exception as e:
 
