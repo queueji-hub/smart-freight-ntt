@@ -1,217 +1,308 @@
+import traceback
+import importlib
 import streamlit as st
-import psycopg2
-import psycopg2.extras
 
-try:
-    bootstrap()
-except Exception as e:
-    st.error("System bootstrap failed")
-    st.exception(e)
+# =========================================================
+# PAGE CONFIG
+# =========================================================
+st.set_page_config(
+    page_title="Smart Freight NTT",
+    page_icon="🚢",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# =========================================================
+# SAFE IMPORTS
+# =========================================================
+from database.connection import init_database
+from managers.auth_manager import ROLE_LABELS, can_read
+from managers.session_manager import (
+    delete_session,
+    get_user_by_token
+)
+from utils.nav import setup_sidebar
+
+
+# =========================================================
+# BOOTSTRAP DATABASE
+# =========================================================
+def bootstrap():
+
+    try:
+        init_database()
+
+    except Exception as e:
+        st.error("❌ Database bootstrap failed")
+        st.exception(e)
+        st.stop()
+
+    # ============================================
+    # OPTIONAL SEEDERS
+    # ============================================
+    try:
+        from managers.fx_manager import seed_default_rates
+        seed_default_rates()
+
+    except Exception:
+        pass
+
+    try:
+        from managers.db_persistence import push_if_dirty
+        push_if_dirty()
+
+    except Exception:
+        pass
+
+
+# =========================================================
+# START SYSTEM
+# =========================================================
+bootstrap()
+
+
+# =========================================================
+# RESTORE SESSION
+# =========================================================
+def restore_session():
+
+    if "user" in st.session_state:
+        return st.session_state["user"]
+
+    token = st.query_params.get("token")
+
+    if not token:
+        return None
+
+    try:
+        user = get_user_by_token(token)
+
+        if not user:
+            return None
+
+        st.session_state["user"] = user
+        st.session_state["session_token"] = token
+
+        return user
+
+    except Exception:
+        return None
+
+
+# =========================================================
+# GET USER
+# =========================================================
+user = restore_session()
+
+
+# =========================================================
+# LOGIN SCREEN
+# =========================================================
+if not user:
+
+    from views.login_view import render
+
+    render()
+
     st.stop()
-    
-# =========================================================
-# DATABASE CONNECTION
-# =========================================================
-def get_connection():
-    """
-    PostgreSQL connection for Supabase
-    """
 
-    return psycopg2.connect(
-        host=st.secrets["DB_HOST"],
-        port=st.secrets["DB_PORT"],
-        dbname=st.secrets["DB_NAME"],
-        user=st.secrets["DB_USER"],
-        password=st.secrets["DB_PASSWORD"],
-        cursor_factory=psycopg2.extras.RealDictCursor,
-        sslmode="require"
+
+# =========================================================
+# NAVIGATION CONFIG
+# =========================================================
+PAGES = [
+
+    ("dashboard", "📊 Dashboard", "dashboard"),
+
+    ("crm", "👥 CRM", "crm"),
+
+    ("quotation", "📄 Quotation", "quotation"),
+
+    ("booking", "📑 Booking", "booking"),
+
+    ("shipments", "📦 Shipment", "shipment"),
+
+    ("tracking", "📍 Tracking", "tracking"),
+
+    ("profit", "📊 Profit Sheet", "profit"),
+
+    ("billing", "💰 Billing", "billing"),
+
+    ("fx", "💱 FX Rates", "fx"),
+
+    ("reports", "📈 Reports", "reports"),
+
+    ("users", "👤 Users", "users"),
+
+    ("settings", "⚙️ Settings", "settings"),
+
+    ("help", "📘 Help / Manual", "help"),
+]
+
+role = user.get("role", "")
+
+allowed_pages = [
+    p for p in PAGES
+    if can_read(role, p[2])
+]
+
+if not allowed_pages:
+
+    st.error("⚠️ No pages available for this role")
+
+    st.stop()
+
+
+allowed_page_ids = [p[0] for p in allowed_pages]
+
+current_page = st.query_params.get(
+    "page",
+    allowed_page_ids[0]
+)
+
+if current_page not in allowed_page_ids:
+    current_page = allowed_page_ids[0]
+
+
+# =========================================================
+# SIDEBAR
+# =========================================================
+setup_sidebar()
+
+with st.sidebar:
+
+    st.markdown(
+        f"""
+        <div style="
+            padding:1rem;
+            border-radius:12px;
+            background:#111827;
+            border:1px solid #374151;
+            margin-bottom:1rem;
+        ">
+
+            <div style="
+                font-size:1.2rem;
+                font-weight:700;
+                color:white;
+            ">
+                🚢 Smart Freight NTT
+            </div>
+
+            <div style="
+                font-size:0.85rem;
+                color:#9CA3AF;
+                margin-top:6px;
+            ">
+                {user.get('full_name', 'User')}
+            </div>
+
+            <div style="
+                font-size:0.75rem;
+                color:#6B7280;
+            ">
+                {ROLE_LABELS.get(role, role)}
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
     )
 
+    # =====================================================
+    # NAV BUTTONS
+    # =====================================================
+    for page_id, label, module_name in allowed_pages:
 
-# =========================================================
-# SAFE QUERY EXECUTOR
-# =========================================================
-def execute_query(
-    query,
-    params=None,
-    fetchone=False,
-    fetchall=False,
-    commit=False
-):
-    """
-    Universal DB executor
-    """
+        st.button(
+            label,
+            key=f"nav_{page_id}",
+            use_container_width=True,
+            type="primary" if current_page == page_id else "secondary",
+            on_click=lambda p=page_id: st.query_params.__setitem__("page", p)
+        )
 
-    conn = get_connection()
+    st.markdown("---")
 
-    try:
-        with conn.cursor() as cur:
+    # =====================================================
+    # LOGOUT
+    # =====================================================
+    if st.button(
+        "🚪 Sign Out",
+        use_container_width=True,
+        key="logout_btn"
+    ):
 
-            cur.execute(query, params)
+        if st.session_state.get("session_token"):
 
-            result = None
+            try:
+                delete_session(
+                    st.session_state["session_token"]
+                )
 
-            if fetchone:
-                result = cur.fetchone()
+            except Exception:
+                pass
 
-            elif fetchall:
-                result = cur.fetchall()
+        st.session_state.clear()
 
-            if commit:
-                conn.commit()
+        st.query_params.clear()
 
-            return result
-
-    except Exception as e:
-        conn.rollback()
-        raise e
-
-    finally:
-        conn.close()
+        st.rerun()
 
 
 # =========================================================
-# INIT DATABASE
+# PAGE ROUTES
 # =========================================================
-def init_database():
-    """
-    Initialize required tables
-    """
+PAGE_ROUTES = {
+    p[0]: (
+        f"views.{p[2]}_view",
+        "render"
+    )
+    for p in PAGES
+}
 
-    conn = get_connection()
 
-    try:
-        with conn.cursor() as cur:
+# =========================================================
+# SAFE PAGE LOADER
+# =========================================================
+try:
 
-            # =====================================================
-            # USERS
-            # =====================================================
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    username TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    role TEXT DEFAULT 'user',
-                    full_name TEXT,
-                    email TEXT,
-                    is_active INTEGER DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+    if current_page not in PAGE_ROUTES:
 
-            # =====================================================
-            # SESSIONS
-            # =====================================================
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS sessions (
-                    id SERIAL PRIMARY KEY,
-                    user_id INTEGER REFERENCES users(id),
-                    token TEXT UNIQUE NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+        st.warning("🚧 Page not found")
 
-            # =====================================================
-            # CUSTOMERS
-            # =====================================================
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS customers (
-                    id SERIAL PRIMARY KEY,
-                    company_name TEXT NOT NULL,
-                    attention TEXT,
-                    tel TEXT,
-                    email TEXT,
-                    address TEXT,
-                    tax_id TEXT,
-                    is_active INTEGER DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+        st.stop()
 
-            # =====================================================
-            # QUOTATIONS
-            # =====================================================
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS quotations (
-                    id SERIAL PRIMARY KEY,
-                    quotation_no TEXT UNIQUE NOT NULL,
-                    customer_name TEXT,
-                    issue_date DATE,
-                    validity_date DATE,
-                    subtotal NUMERIC DEFAULT 0,
-                    vat_amount NUMERIC DEFAULT 0,
-                    total_amount NUMERIC DEFAULT 0,
-                    remark TEXT,
-                    status TEXT DEFAULT 'Draft',
-                    created_by TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+    module_path, fn_name = PAGE_ROUTES[current_page]
 
-            # =====================================================
-            # INVOICES
-            # =====================================================
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS invoices (
-                    id SERIAL PRIMARY KEY,
-                    doc_no TEXT UNIQUE NOT NULL,
-                    doc_type TEXT,
-                    shipment_id INTEGER,
-                    job_no TEXT,
-                    customer_id INTEGER,
-                    customer_name TEXT,
-                    issue_date DATE,
-                    due_date DATE,
-                    currency TEXT DEFAULT 'THB',
+    with st.spinner(f"Loading {current_page.title()}..."):
 
-                    subtotal NUMERIC DEFAULT 0,
-                    vat_rate NUMERIC DEFAULT 0,
-                    vat_amount NUMERIC DEFAULT 0,
+        module = importlib.import_module(module_path)
 
-                    wht_amount NUMERIC DEFAULT 0,
+        if not hasattr(module, fn_name):
 
-                    total_amount NUMERIC DEFAULT 0,
-                    outstanding NUMERIC DEFAULT 0,
+            st.error(
+                f"❌ Missing function `{fn_name}` "
+                f"in `{module_path}`"
+            )
 
-                    payment_status TEXT DEFAULT 'Unpaid',
+            st.stop()
 
-                    ref_doc_no TEXT,
-                    remark TEXT,
-                    created_by TEXT,
+        render_fn = getattr(module, fn_name)
 
-                    advance_amount NUMERIC DEFAULT 0,
-                    wht_1_amount NUMERIC DEFAULT 0,
-                    wht_3_amount NUMERIC DEFAULT 0,
+        render_fn()
 
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+except Exception as ex:
 
-            # =====================================================
-            # INVOICE ITEMS
-            # =====================================================
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS invoice_items (
-                    id SERIAL PRIMARY KEY,
-                    invoice_id INTEGER REFERENCES invoices(id),
+    st.error(
+        f"❌ Error loading page `{current_page}`"
+    )
 
-                    description TEXT,
-                    quantity NUMERIC DEFAULT 1,
-                    unit_price NUMERIC DEFAULT 0,
-                    amount NUMERIC DEFAULT 0,
+    with st.expander("🐞 Debug Error"):
 
-                    tax_type TEXT,
-                    wht_type TEXT,
+        st.code(
+            traceback.format_exc(),
+            language="python"
+        )
 
-                    sort_order INTEGER DEFAULT 0
-                )
-            """)
-
-            conn.commit()
-
-    except Exception as e:
-        conn.rollback()
-        raise e
-
-    finally:
-        conn.close()
+    st.exception(ex)
