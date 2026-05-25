@@ -1,115 +1,69 @@
-import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
 import streamlit as st
-
-
-# =========================
-# SAFE ENV LOADER
-# =========================
-def _get(key, default=None):
-    try:
-        return st.secrets.get(key, os.getenv(key, default))
-    except Exception:
-        return os.getenv(key, default)
-
+import psycopg2
+import psycopg2.extras
 
 # =========================
-# CONNECTION
+# DB CONNECTION
 # =========================
 def get_connection():
-
-    host = _get("DB_HOST")
-    db = _get("DB_NAME", "postgres")
-    user = _get("DB_USER")
-    password = _get("DB_PASSWORD")
-    port = _get("DB_PORT", 5432)
-
-    # 🔥 กันพังก่อน connect
-    if not host or not user or not password:
-        raise Exception(
-            "DB CONFIG MISSING ❌ "
-            "Please set DB_HOST, DB_USER, DB_PASSWORD in Streamlit secrets"
-        )
-
     return psycopg2.connect(
-        host=host,
-        database=db,
-        user=user,
-        password=password,
-        port=port,
-        cursor_factory=RealDictCursor
+        host=st.secrets["connections"]["postgresql"]["host"],
+        port=st.secrets["connections"]["postgresql"]["port"],
+        database=st.secrets["connections"]["postgresql"]["database"],
+        user=st.secrets["connections"]["postgresql"]["user"],
+        password=st.secrets["connections"]["postgresql"]["password"],
+        cursor_factory=psycopg2.extras.RealDictCursor
     )
 
-
 # =========================
-# SAFE EXECUTE
+# SAFE QUERY EXECUTOR
 # =========================
-def execute(query, params=None, fetch=False):
+def execute_query(query, params=None, fetchone=False, fetchall=False, commit=False):
     conn = get_connection()
+
     try:
         with conn.cursor() as cur:
-            cur.execute(query, params or ())
+            cur.execute(query, params)
 
-            if fetch:
-                return cur.fetchall()
+            result = None
 
-            conn.commit()
-            return None
+            if fetchone:
+                result = cur.fetchone()
+
+            elif fetchall:
+                result = cur.fetchall()
+
+            if commit:
+                conn.commit()
+
+            return result
+
     finally:
         conn.close()
 
-
 # =========================
-# INIT DB (SAFE)
+# INIT DATABASE
 # =========================
 def init_database():
     conn = get_connection()
+
     try:
         with conn.cursor() as cur:
 
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS shipments (
-                    id SERIAL PRIMARY KEY,
-                    job_no TEXT UNIQUE,
-                    status TEXT DEFAULT 'Proceed',
-                    job_type TEXT,
-                    customer_name TEXT,
-                    pol TEXT,
-                    pod TEXT,
-                    etd DATE,
-                    eta DATE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                full_name TEXT,
+                email TEXT,
+                is_active INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
             """)
 
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS bookings (
-                    id SERIAL PRIMARY KEY,
-                    booking_no TEXT UNIQUE,
-                    job_type TEXT,
-                    customer_name TEXT,
-                    pol TEXT,
-                    pod TEXT,
-                    etd DATE,
-                    eta DATE,
-                    status TEXT DEFAULT 'Draft',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS invoices (
-                    id SERIAL PRIMARY KEY,
-                    doc_no TEXT UNIQUE,
-                    customer_name TEXT,
-                    total_amount NUMERIC DEFAULT 0,
-                    outstanding NUMERIC DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-        conn.commit()
+            conn.commit()
 
     finally:
         conn.close()
