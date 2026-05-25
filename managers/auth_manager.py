@@ -14,28 +14,37 @@ PERMISSIONS = {
         "quotation": "rw",
         "booking": "rw",
         "shipment": "rw",
+        "tracking": "rw",
+        "profit": "rw",
         "billing": "rw",
+        "fx": "rw",
         "reports": "rw",
         "users": "rw",
+        "settings": "rw",
     },
+
     "sales": {
         "dashboard": "r",
         "crm": "rw",
         "quotation": "rw",
         "booking": "r",
         "shipment": "r",
+        "tracking": "r",
         "billing": "r",
         "reports": "r",
     },
+
     "operation": {
         "dashboard": "r",
         "crm": "rw",
         "quotation": "rw",
         "booking": "rw",
         "shipment": "rw",
+        "tracking": "rw",
         "billing": "r",
         "reports": "r",
     },
+
     "accounting": {
         "dashboard": "r",
         "crm": "r",
@@ -57,12 +66,29 @@ ROLE_LABELS = {
 
 
 # =========================================================
+# USER CONTRACT
+# =========================================================
+
+def normalize_user(user: Dict[str, Any]) -> Dict[str, Any]:
+
+    return {
+        "id": user.get("id"),
+        "username": user.get("username", ""),
+        "full_name": user.get("full_name") or user.get("username", "User"),
+        "email": user.get("email", ""),
+        "role": user.get("role", "sales"),
+        "is_active": int(user.get("is_active", 1)),
+    }
+
+
+# =========================================================
 # PERMISSION HELPERS
 # =========================================================
 
 def can(role: str, module: str, action: str = "r") -> bool:
 
-    perms = PERMISSIONS.get(role, {})
+    perms = PERMISSIONS.get(role or "", {})
+
     granted = perms.get(module, "")
 
     if action == "r":
@@ -88,7 +114,7 @@ def can_write(role: str, module: str) -> bool:
 
 def hash_password(password: str) -> str:
 
-    password = password.strip()
+    password = (password or "").strip()
 
     return bcrypt.hashpw(
         password.encode("utf-8"),
@@ -100,7 +126,10 @@ def verify_password(password: str, hashed: str) -> bool:
 
     try:
 
-        if not password or not hashed:
+        if not password:
+            return False
+
+        if not hashed:
             return False
 
         password = password.strip()
@@ -127,8 +156,11 @@ def authenticate(
 
     try:
 
-        username = username.strip().lower()
-        password = password.strip()
+        username = (username or "").strip().lower()
+        password = (password or "").strip()
+
+        if not username:
+            return None
 
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -145,9 +177,6 @@ def authenticate(
 
                 row = cur.fetchone()
 
-                # =====================================
-                # USER NOT FOUND
-                # =====================================
                 if not row:
 
                     print(f"❌ USER NOT FOUND: {username}")
@@ -155,11 +184,6 @@ def authenticate(
 
                 user = dict(row)
 
-                print(f"✅ USER FOUND: {user.get('username')}")
-
-                # =====================================
-                # PASSWORD HASH CHECK
-                # =====================================
                 stored_hash = user.get("password_hash")
 
                 if not stored_hash:
@@ -167,9 +191,6 @@ def authenticate(
                     print("❌ PASSWORD HASH EMPTY")
                     return None
 
-                # =====================================
-                # VERIFY PASSWORD
-                # =====================================
                 password_ok = verify_password(
                     password,
                     stored_hash
@@ -183,26 +204,24 @@ def authenticate(
                     return None
 
                 # =====================================
-                # OPTIONAL ACTIVE CHECK
+                # ACTIVE CHECK
                 # =====================================
-                if "is_active" in user:
+                try:
 
-                    try:
+                    if int(user.get("is_active", 1)) != 1:
 
-                        if int(user.get("is_active", 1)) != 1:
+                        print("❌ USER DISABLED")
+                        return None
 
-                            print("❌ USER DISABLED")
-                            return None
-
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
 
                 # =====================================
                 # REMOVE HASH
                 # =====================================
                 user.pop("password_hash", None)
 
-                return user
+                return normalize_user(user)
 
     except Exception as e:
 
@@ -213,7 +232,49 @@ def authenticate(
 
 
 # =========================================================
-# USER MANAGEMENT
+# GET USER
+# =========================================================
+
+def get_user_by_username(
+    username: str
+) -> Optional[Dict[str, Any]]:
+
+    try:
+
+        username = (username or "").strip().lower()
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT *
+                    FROM users
+                    WHERE LOWER(username) = %s
+                    LIMIT 1
+                    """,
+                    (username,)
+                )
+
+                row = cur.fetchone()
+
+                if not row:
+                    return None
+
+                user = dict(row)
+
+                user.pop("password_hash", None)
+
+                return normalize_user(user)
+
+    except Exception as e:
+
+        print("GET USER ERROR:", e)
+        return None
+
+
+# =========================================================
+# LIST USERS
 # =========================================================
 
 def list_users() -> List[Dict[str, Any]]:
@@ -240,7 +301,10 @@ def list_users() -> List[Dict[str, Any]]:
 
                 rows = cur.fetchall()
 
-                return [dict(r) for r in rows]
+                return [
+                    normalize_user(dict(r))
+                    for r in rows
+                ]
 
     except Exception as e:
 
@@ -248,39 +312,9 @@ def list_users() -> List[Dict[str, Any]]:
         return []
 
 
-def get_user_by_username(
-    username: str
-) -> Optional[Dict[str, Any]]:
-
-    try:
-
-        username = username.strip().lower()
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-
-                cur.execute(
-                    """
-                    SELECT *
-                    FROM users
-                    WHERE LOWER(username) = %s
-                    LIMIT 1
-                    """,
-                    (username,)
-                )
-
-                row = cur.fetchone()
-
-                if not row:
-                    return None
-
-                return dict(row)
-
-    except Exception as e:
-
-        print("GET USER ERROR:", e)
-        return None
-
+# =========================================================
+# CREATE USER
+# =========================================================
 
 def create_user(
     username: str,
@@ -290,7 +324,10 @@ def create_user(
     role: str = "sales"
 ):
 
-    username = username.strip().lower()
+    username = (username or "").strip().lower()
+
+    if not username:
+        raise Exception("Username required")
 
     existing = get_user_by_username(username)
 
@@ -336,6 +373,10 @@ def create_user(
         raise e
 
 
+# =========================================================
+# UPDATE PASSWORD
+# =========================================================
+
 def update_user_password(
     username: str,
     new_password: str
@@ -373,6 +414,10 @@ def update_user_password(
         raise e
 
 
+# =========================================================
+# UPDATE ROLE
+# =========================================================
+
 def update_user_role(
     username: str,
     role: str
@@ -404,6 +449,10 @@ def update_user_role(
         print("UPDATE ROLE ERROR:", e)
         raise e
 
+
+# =========================================================
+# ENABLE / DISABLE USER
+# =========================================================
 
 def set_user_active(
     username: str,
