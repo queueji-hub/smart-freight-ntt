@@ -202,7 +202,7 @@ st.markdown(f"""
 <div style="
 padding:16px 18px;
 border-radius:16px;
-background:#05070d;
+background:#1C222F;
 border:1px solid rgba(255,255,255,0.06);
 margin-bottom:14px;
 box-shadow:0 14px 40px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.03);
