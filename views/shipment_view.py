@@ -1,26 +1,33 @@
-import streamlit as st
-import pandas as pd
-from datetime import date
+from typing import List, Dict, Any, Optional
+from psycopg2.extras import RealDictCursor
 
 from database.connection import get_connection
-from config import JOB_TYPES
-from managers.auth_manager import can_write
 from managers.job_number import generate_job_number
 
-# =========================================================
-# CONSTANTS
-# =========================================================
-STATUS_OPTIONS = ["Proceed", "Finished", "Closed", "Canceled"]
-CARGO_TYPES = ["", "FCL", "LCL", "AIR", "TRUCK"]
+# =========================
+# CONFIG
+# =========================
+
+SHIPMENT_FIELDS = [
+    "status", "job_type", "booking_no", "customer_name",
+    "shipper", "consignee", "cargo_type", "carrier",
+    "pol", "pod", "etd", "eta",
+    "bl_no", "invoice_no",
+    "customer_paid",
+    "remark",
+    "created_by", "updated_by"
+]
+
+STATUS_FLOW = ["Proceed", "In Transit", "Arrived", "Finished", "Closed", "Canceled"]
 
 
-# =========================================================
-# DB INIT (POSTGRES SAFE)
-# =========================================================
-def _ensure_table():
+# =========================
+# INIT TABLE (POSTGRES)
+# =========================
+
+def init_shipments_table():
     with get_connection() as conn:
         with conn.cursor() as cur:
-
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS shipments (
                     id SERIAL PRIMARY KEY,
@@ -45,7 +52,7 @@ def _ensure_table():
                     updated_by TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
+                );
             """)
 
             cur.execute("""
@@ -56,240 +63,143 @@ def _ensure_table():
         conn.commit()
 
 
-# =========================================================
-# RENDER
-# =========================================================
-def render():
+# =========================
+# CREATE SHIPMENT
+# =========================
 
-    _ensure_table()
-
-    user = st.session_state.get("user", {})
-    role = user.get("role", "")
-    can_edit = can_write(role, "shipment")
-
-    st.title("📦 Shipment / Job Control")
-
-    tabs = st.tabs(["➕ Create", "📋 List & Batch Edit", "✏️ Single Edit"])
-
-    with tabs[0]:
-        _create_form(user, can_edit)
-
-    with tabs[1]:
-        _list_view(can_edit)
-
-    with tabs[2]:
-        _edit_view(user, can_edit)
-
-
-# =========================================================
-# CREATE
-# =========================================================
-def _create_form(user, can_edit):
-
-    if not can_edit:
-        st.warning("Read-only access")
-        return
-
-    with st.form("create_shipment"):
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            job_type = st.selectbox("Job Type", JOB_TYPES)
-            customer = st.text_input("Customer *")
-
-        with col2:
-            cargo = st.selectbox("Cargo Type", CARGO_TYPES)
-            etd = st.date_input("ETD", value=date.today())
-            eta = st.date_input("ETA", value=date.today())
-
-        remark = st.text_area("Remark")
-
-        submitted = st.form_submit_button("✅ Create")
-
-        if submitted:
-
-            if not customer:
-                st.error("Customer is required")
-                return
-
-            if etd and eta and etd > eta:
-                st.error("ETD cannot be after ETA")
-                return
-
-            job_no = create_shipment({
-                "job_type": job_type,
-                "customer_name": customer,
-                "cargo_type": cargo,
-                "etd": etd,
-                "eta": eta,
-                "remark": remark,
-                "created_by": user.get("username")
-            })
-
-            st.success(f"Created: {job_no}")
-
-
-# =========================================================
-# LIST
-# =========================================================
-def _list_view(can_edit):
-
-    rows = list_shipments()
-
-    if not rows:
-        st.info("No shipments found")
-        return
-
-    df = pd.DataFrame(rows)
-
-    st.subheader("Shipments")
-
-    if can_edit:
-
-        edited = st.data_editor(
-            df[["job_no", "status", "customer_name", "etd", "eta"]],
-            use_container_width=True,
-            hide_index=True
-        )
-
-        if st.button("💾 Save Changes"):
-
-            for _, r in edited.iterrows():
-                update_shipment(
-                    r["job_no"],
-                    {"status": r["status"]}
-                )
-
-            st.success("Updated!")
-
-    else:
-        st.dataframe(df, use_container_width=True)
-
-
-# =========================================================
-# EDIT
-# =========================================================
-def _edit_view(user, can_edit):
-
-    if not can_edit:
-        st.warning("Read-only access")
-        return
-
-    rows = list_shipments()
-
-    if not rows:
-        st.info("No data")
-        return
-
-    job_no = st.selectbox(
-        "Select Job",
-        [r["job_no"] for r in rows]
+def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
+    job_no = generate_job_number(
+        data.get("job_type", "SE"),
+        data.get("etd"),
+        company_prefix
     )
 
-    shipment = get_shipment(job_no)
+    data = {k: v for k, v in data.items() if k in SHIPMENT_FIELDS}
 
-    with st.form("edit_form"):
+    cols = ["job_no"] + list(data.keys())
+    values = [job_no] + list(data.values())
 
-        status = st.selectbox(
-            "Status",
-            STATUS_OPTIONS,
-            index=STATUS_OPTIONS.index(
-                shipment.get("status", "Proceed")
-            )
-        )
+    placeholders = ", ".join(["%s"] * len(cols))
+    columns = ", ".join(cols)
 
-        bl_no = st.text_input(
-            "B/L No",
-            value=shipment.get("bl_no", "")
-        )
-
-        submitted = st.form_submit_button("💾 Update")
-
-        if submitted:
-
-            if status == "Closed" and not bl_no:
-                st.error("BL No required before closing")
-                return
-
-            update_shipment(job_no, {
-                "status": status,
-                "bl_no": bl_no,
-                "updated_by": user.get("username")
-            })
-
-            st.success("Updated!")
-            st.rerun()
-
-
-# =========================================================
-# DB FUNCTIONS (POSTGRES FIXED)
-# =========================================================
-def create_shipment(data):
-
-    job_no = generate_job_number(data.get("job_type", "SE"))
-    data["job_no"] = job_no
-
-    cols = ",".join(data.keys())
-    placeholders = ",".join(["%s"] * len(data))
-    values = tuple(data.values())
+    sql = f"""
+        INSERT INTO shipments ({columns})
+        VALUES ({placeholders})
+    """
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                INSERT INTO shipments ({cols})
-                VALUES ({placeholders})
-                """,
-                values
-            )
-
+            cur.execute(sql, tuple(values))
         conn.commit()
 
     return job_no
 
 
-def list_shipments():
+# =========================
+# LIST SHIPMENTS
+# =========================
+
+def list_shipments(status: Optional[str] = None, limit: int = 200) -> List[Dict]:
+    sql = "SELECT * FROM shipments WHERE 1=1"
+    params = []
+
+    if status:
+        sql += " AND status = %s"
+        params.append(status)
+
+    sql += " ORDER BY created_at DESC LIMIT %s"
+    params.append(limit)
 
     with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT * FROM shipments
-                ORDER BY created_at DESC
-            """)
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
 
     return [dict(r) for r in rows]
 
 
-def get_shipment(job_no):
+# =========================
+# GET SINGLE
+# =========================
+
+def get_shipment(job_no: str) -> Optional[Dict]:
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM shipments WHERE job_no = %s",
+                (job_no,)
+            )
+            row = cur.fetchone()
+
+    return dict(row) if row else None
+
+
+# =========================
+# UPDATE SHIPMENT
+# =========================
+
+def update_shipment(job_no: str, data: Dict[str, Any]) -> bool:
+    allowed = {k: v for k, v in data.items() if k in SHIPMENT_FIELDS}
+
+    if not allowed:
+        return False
+
+    sets = ", ".join([f"{k} = %s" for k in allowed.keys()])
+    values = list(allowed.values())
+    values.append(job_no)
+
+    sql = f"""
+        UPDATE shipments
+        SET {sets},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE job_no = %s
+    """
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT * FROM shipments
-                WHERE job_no = %s
-            """, (job_no,))
-            row = cur.fetchone()
+            cur.execute(sql, tuple(values))
+            updated = cur.rowcount
 
-    return dict(row) if row else {}
+        conn.commit()
+
+    return updated > 0
 
 
-def update_shipment(job_no, data):
+# =========================
+# DELETE SHIPMENT
+# =========================
 
-    sets = ", ".join([f"{k}=%s" for k in data.keys()])
-    values = list(data.values()) + [job_no]
-
+def delete_shipment(job_no: str) -> bool:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                f"""
-                UPDATE shipments
-                SET {sets},
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE job_no = %s
-                """,
-                values
+                "DELETE FROM shipments WHERE job_no = %s",
+                (job_no,)
             )
 
         conn.commit()
+
+    return True
+
+
+# =========================
+# DASHBOARD STATS
+# =========================
+
+def get_dashboard_stats() -> Dict[str, Any]:
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT
+                    COUNT(*) AS total,
+                    COALESCE(SUM(CASE WHEN status='Proceed' THEN 1 ELSE 0 END),0) AS proceed,
+                    COALESCE(SUM(CASE WHEN status='In Transit' THEN 1 ELSE 0 END),0) AS in_transit,
+                    COALESCE(SUM(CASE WHEN status='Finished' THEN 1 ELSE 0 END),0) AS finished,
+                    COALESCE(SUM(CASE WHEN status='Closed' THEN 1 ELSE 0 END),0) AS closed,
+                    COALESCE(SUM(CASE WHEN status='Canceled' THEN 1 ELSE 0 END),0) AS canceled
+                FROM shipments
+            """)
+
+            row = cur.fetchone()
+
+    return dict(row) if row else {}
