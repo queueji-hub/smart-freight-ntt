@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # =========================================================
-# IMPORTS (SAFE)
+# IMPORTS SAFE (POSTGRES FRIENDLY)
 # =========================================================
 from managers.auth_manager import ROLE_LABELS, can_read
 from managers.session_manager import delete_session, get_user_by_token
@@ -25,19 +25,20 @@ except Exception:
 
 
 # =========================================================
-# SAFE DB BOOTSTRAP (POSTGRES FRIENDLY)
+# SAFE DATABASE BOOTSTRAP (POSTGRES SAFE MODE)
 # =========================================================
 def bootstrap():
-    if init_database is None:
-        st.warning("⚠️ Database module not available")
+
+    if not init_database:
+        st.warning("⚠️ Database module not loaded")
         return
 
     try:
         init_database()
     except Exception as e:
-        # ❗ IMPORTANT: ไม่ให้ DB crash ทั้ง app
-        st.warning("⚠️ Database not ready (app still running)")
-        print("DB INIT ERROR:", e)
+        # ❗ NEVER STOP APP FOR DB ERROR
+        st.warning("⚠️ Database connection issue (app still running)")
+        print("DB BOOT ERROR:", e)
 
 
 bootstrap()
@@ -47,20 +48,24 @@ bootstrap()
 # SESSION RESTORE
 # =========================================================
 def restore_session():
+
     if "user" in st.session_state:
         return st.session_state["user"]
 
     token = st.query_params.get("token")
+
     if not token:
         return None
 
     try:
         user = get_user_by_token(token)
+
         if not user:
             return None
 
         st.session_state["user"] = user
         st.session_state["session_token"] = token
+
         return user
 
     except Exception as e:
@@ -70,6 +75,9 @@ def restore_session():
 
 user = restore_session()
 
+# =========================================================
+# LOGIN GATE
+# =========================================================
 if not user:
     from views.login_view import render
     render()
@@ -77,18 +85,21 @@ if not user:
 
 
 # =========================================================
-# PAGES CONFIG (CLEAN ERP STRUCTURE)
+# ERP MODULES (CLEAN ARCHITECTURE)
 # =========================================================
 PAGES = [
     ("dashboard", "📊 Dashboard", "dashboard"),
 
     ("crm", "👥 CRM", "crm"),
+
     ("quotation", "📄 Quotation", "quotation"),
     ("booking", "📑 Booking", "booking"),
+
     ("job", "📦 Shipments", "shipment"),
+
     ("tracking", "📍 Tracking", "tracking"),
 
-    ("finance", "💰 Billing", "billing"),
+    ("billing", "💰 Billing", "billing"),
     ("profit", "💹 Profit", "profit"),
 
     ("reports", "📈 Reports", "reports"),
@@ -109,28 +120,32 @@ allowed_ids = [p[0] for p in allowed_pages]
 
 
 # =========================================================
-# PAGE ROUTER
+# SAFE PAGE PARAM (STREAMLIT FRIENDLY)
 # =========================================================
-current_page = st.query_params.get("page", allowed_ids[0])
+query_params = st.query_params.to_dict()
+current_page = query_params.get("page", allowed_ids[0])
+
 if current_page not in allowed_ids:
     current_page = allowed_ids[0]
 
 
 # =========================================================
-# SIDEBAR UI (PROFESSIONAL ERP STYLE)
+# SIDEBAR UI (ENTERPRISE GRADE)
 # =========================================================
 with st.sidebar:
 
     st.markdown(f"""
     <div style="
-        padding:16px;
-        border-radius:14px;
+        padding:18px;
+        border-radius:16px;
         background:linear-gradient(135deg,#0F172A,#111827);
         border:1px solid #334155;
-        margin-bottom:16px;
+        margin-bottom:18px;
         color:white;
     ">
-        <div style="font-size:18px;font-weight:800;">🚢 Smart Freight NTT</div>
+        <div style="font-size:18px;font-weight:800;">
+            🚢 Smart Freight NTT
+        </div>
         <div style="font-size:13px;color:#CBD5E1;margin-top:6px;">
             {user.get('full_name','User')}
         </div>
@@ -143,19 +158,28 @@ with st.sidebar:
     st.markdown("### Navigation")
 
     for page_id, label, module in allowed_pages:
-        if st.button(label, key=f"nav_{page_id}", use_container_width=True):
+
+        active = (current_page == page_id)
+
+        if st.button(
+            label,
+            key=f"nav_{page_id}",
+            use_container_width=True,
+            type="primary" if active else "secondary"
+        ):
             st.query_params["page"] = page_id
             st.rerun()
 
     st.markdown("---")
 
     if st.button("🚪 Logout", use_container_width=True):
+
         try:
             token = st.session_state.get("session_token")
             if token:
                 delete_session(token)
-        except Exception:
-            pass
+        except Exception as e:
+            print("LOGOUT ERROR:", e)
 
         st.session_state.clear()
         st.query_params.clear()
@@ -163,7 +187,7 @@ with st.sidebar:
 
 
 # =========================================================
-# PAGE LOADER MAP
+# PAGE ROUTER (SAFE IMPORT)
 # =========================================================
 PAGE_ROUTES = {
     p[0]: (f"views.{p[2]}_view", "render")
@@ -172,7 +196,7 @@ PAGE_ROUTES = {
 
 
 # =========================================================
-# HEADER
+# HEADER UI (CLEAN ERP STYLE)
 # =========================================================
 st.markdown(f"""
 <div style="
@@ -181,6 +205,7 @@ st.markdown(f"""
     border:1px solid #E5E7EB;
     background:white;
     margin-bottom:10px;
+    box-shadow:0 1px 2px rgba(0,0,0,0.05);
 ">
     <div style="font-size:22px;font-weight:800;">
         {current_page.replace('_',' ').title()}
@@ -193,27 +218,32 @@ st.markdown(f"""
 
 
 # =========================================================
-# SAFE MODULE LOADER
+# SAFE MODULE LOADER (POSTGRES SAFE)
 # =========================================================
 try:
+
     if current_page not in PAGE_ROUTES:
         st.warning("Page not found")
         st.stop()
 
     module_path, fn_name = PAGE_ROUTES[current_page]
 
-    module = importlib.import_module(module_path)
+    with st.spinner(f"Loading {current_page.title()}..."):
 
-    if not hasattr(module, fn_name):
-        st.error(f"Missing function: {fn_name} in {module_path}")
-        st.stop()
+        module = importlib.import_module(module_path)
 
-    getattr(module, fn_name)()
+        if not hasattr(module, fn_name):
+            st.error(f"Missing function: {fn_name} in {module_path}")
+            st.stop()
+
+        render_fn = getattr(module, fn_name)
+        render_fn()
 
 except Exception as e:
+
     st.error(f"Error loading page: {current_page}")
 
-    with st.expander("Debug"):
-        st.code(traceback.format_exc())
+    with st.expander("Debug Error"):
+        st.code(traceback.format_exc(), language="python")
 
     st.exception(e)
