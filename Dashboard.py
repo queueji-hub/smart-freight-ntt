@@ -199,149 +199,51 @@ PAGE_ROUTES = {
 # HEADER UI (CLEAN ERP STYLE)
 # =========================================================
 st.markdown(f"""
-<style>
-
-/* =========================
-   GLOBAL BACKGROUND (SaaS STYLE)
-   ========================= */
-.stApp {{
-    background: radial-gradient(circle at 20% 20%, #f8fafc 0%, #f1f5f9 40%, #eef2ff 100%);
-}}
-
-/* subtle grid overlay */
-.stApp::before {{
-    content: "";
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-image: linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
-                      linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
-    pointer-events: none;
-    z-index: 0;
-}}
-
-/* keep content above background */
-.block-container {{
-    position: relative;
-    z-index: 1;
-}}
-
-/* =========================
-   HEADER CARD (GLASS STYLE)
-   ========================= */
-.page-header {{
-    padding: 18px 20px;
-    border-radius: 16px;
-    border: 1px solid rgba(255,255,255,0.6);
-    background: rgba(255,255,255,0.75);
-    backdrop-filter: blur(10px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.06);
-    margin-bottom: 16px;
-}}
-
-.page-title {{
-    font-size: 24px;
-    font-weight: 800;
-    color: #111827;
-    letter-spacing: -0.3px;
-}}
-
-.page-subtitle {{
-    font-size: 13px;
-    color: #6B7280;
-    margin-top: 4px;
-}}
-
-</style>
-""", unsafe_allow_html=True)
-
-
-# =========================================================
-# HEADER UI
-# =========================================================
-st.markdown(f"""
-<style>
-
-/* =========================
-   DARK BACKGROUND (SAAS STYLE)
-   ========================= */
-.stApp {{
-    background: radial-gradient(circle at 20% 20%, #0b1220 0%, #070a12 45%, #05060a 100%);
-    color: #E5E7EB;
-}}
-
-/* subtle grid overlay (dark mode) */
-.stApp::before {{
-    content: "";
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-image: linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-                      linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-    background-size: 42px 42px;
-    pointer-events: none;
-    z-index: 0;
-    opacity: 0.25;
-}}
-
-/* keep content above background */
-.block-container {{
-    position: relative;
-    z-index: 1;
-}}
-
-/* =========================
-   DARK HEADER CARD
-   ========================= */
-.page-header {{
-    padding: 18px 20px;
-    border-radius: 16px;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(15, 23, 42, 0.65);
-    backdrop-filter: blur(12px);
-    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-    margin-bottom: 16px;
-}}
-
-.page-title {{
-    font-size: 24px;
-    font-weight: 800;
-    color: #F9FAFB;
-    letter-spacing: -0.3px;
-}}
-
-.page-subtitle {{
-    font-size: 13px;
-    color: #94A3B8;
-    margin-top: 4px;
-}}
-
-/* =========================
-   GLOBAL TEXT FIX
-   ========================= */
-h1, h2, h3, h4, p, span, label {{
-    color: #E5E7EB !important;
-}}
-
-</style>
-""", unsafe_allow_html=True)
-
-
-# =========================================================
-# HEADER UI
-# =========================================================
-st.markdown(f"""
-<div class="page-header">
-    <div class="page-title">
+<div style="
+    padding:14px;
+    border-radius:12px;
+    border:1px solid #E5E7EB;
+    background:white;
+    margin-bottom:10px;
+    box-shadow:0 1px 2px rgba(0,0,0,0.05);
+">
+    <div style="font-size:22px;font-weight:800;">
         {current_page.replace('_',' ').title()}
     </div>
-    <div class="page-subtitle">
-        Smart Freight ERP Platform • PostgreSQL Edition
+    <div style="color:#6B7280;font-size:13px;">
+        Smart Freight ERP Platform
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+
+# =========================================================
+# SAFE MODULE LOADER (POSTGRES SAFE)
+# =========================================================
+try:
+
+    if current_page not in PAGE_ROUTES:
+        st.warning("Page not found")
+        st.stop()
+
+    module_path, fn_name = PAGE_ROUTES[current_page]
+
+    with st.spinner(f"Loading {current_page.title()}..."):
+
+        module = importlib.import_module(module_path)
+
+        if not hasattr(module, fn_name):
+            st.error(f"Missing function: {fn_name} in {module_path}")
+            st.stop()
+
+        render_fn = getattr(module, fn_name)
+        render_fn()
+
+except Exception as e:
+
+    st.error(f"Error loading page: {current_page}")
+
+    with st.expander("Debug Error"):
+        st.code(traceback.format_exc(), language="python")
+
+    st.exception(e)
