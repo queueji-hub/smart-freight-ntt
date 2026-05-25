@@ -200,57 +200,34 @@ PAGE_ROUTES = {
 # =========================================================
 st.markdown(f"""
 <div style="
-    padding:18px 20px;
-    border-radius:18px;
-
-    /* GLASS PREMIUM BACKGROUND */
-    background: linear-gradient(135deg, #1C222F, #141A26);
-
-    /* GRADIENT BORDER EFFECT */
-    border: 1px solid transparent;
-    background-clip: padding-box;
-
-    position: relative;
-
-    margin-bottom:16px;
-
-    box-shadow:
-        0 20px 60px rgba(0,0,0,0.65),
-        inset 0 1px 0 rgba(255,255,255,0.04);
+padding:16px 18px;
+border-radius:16px;
+background:linear-gradient(135deg,#0F172A,#111827);
+border:1px solid rgba(255,255,255,0.06);
+margin-bottom:14px;
+box-shadow:0 14px 40px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.03);
 ">
-    <div style="
-        font-size:14px;
-        color:#94A3B8;
-        letter-spacing:0.12em;
-        text-transform:uppercase;
-        margin-bottom:6px;
-        opacity:0.85;
-    ">
-        Smart Freight ERP
-    </div>
+<div style="
+font-size:22px;
+font-weight:800;
+color:#F8FAFC;
+letter-spacing:-0.4px;
+">
+{current_page.replace('_',' ').title()}
+</div>
 
-    <div style="
-        font-size:24px;
-        font-weight:800;
-        color:#F8FAFC;
-        letter-spacing:-0.6px;
-        display:flex;
-        align-items:center;
-        gap:10px;
-    ">
-        🚢 {current_page.replace('_',' ').title()}
-    </div>
-
-    <div style="
-        margin-top:6px;
-        font-size:13px;
-        color:#9AA4B2;
-        opacity:0.9;
-    ">
-        Enterprise Logistics Management System
-    </div>
+<div style="
+color:#94A3B8;
+font-size:13px;
+margin-top:6px;
+letter-spacing:0.2px;
+opacity:0.9;
+">
+Smart Freight ERP Platform
+</div>
 </div>
 """, unsafe_allow_html=True)
+
 
 # =========================================================
 # SAFE MODULE LOADER (POSTGRES SAFE)
