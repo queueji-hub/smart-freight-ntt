@@ -155,34 +155,20 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown(f"""
-<div style="
-    padding:16px 18px;
-    border-radius:14px;
-    border:1px solid rgba(255,255,255,0.08);
-    background: linear-gradient(135deg, rgba(15,23,42,0.9), rgba(2,6,23,0.95));
-    margin-bottom:12px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-    backdrop-filter: blur(10px);
-">
-    <div style="
-        font-size:22px;
-        font-weight:800;
-        color:#F9FAFB;
-        letter-spacing:-0.3px;
-    ">
-        {current_page.replace('_',' ').title()}
-    </div>
+    st.markdown("### Navigation")
 
-    <div style="
-        color:#94A3B8;
-        font-size:13px;
-        margin-top:4px;
-    ">
-        Smart Freight ERP Platform
-    </div>
-</div>
-""", unsafe_allow_html=True)
+    for page_id, label, module in allowed_pages:
+
+        active = (current_page == page_id)
+
+        if st.button(
+            label,
+            key=f"nav_{page_id}",
+            use_container_width=True,
+            type="primary" if active else "secondary"
+        ):
+            st.query_params["page"] = page_id
+            st.rerun()
 
     st.markdown("---")
 
@@ -214,17 +200,28 @@ PAGE_ROUTES = {
 # =========================================================
 st.markdown(f"""
 <div style="
-    padding:14px;
-    border-radius:12px;
-    border:1px solid #E5E7EB;
-    background:white;
-    margin-bottom:10px;
-    box-shadow:0 1px 2px rgba(0,0,0,0.05);
+    padding:16px 18px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,0.08);
+    background: linear-gradient(135deg, #0b1220, #05070f);
+    margin-bottom:12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    backdrop-filter: blur(12px);
 ">
-    <div style="font-size:22px;font-weight:800;">
+    <div style="
+        font-size:22px;
+        font-weight:800;
+        color:#F8FAFC;
+        letter-spacing:-0.3px;
+    ">
         {current_page.replace('_',' ').title()}
     </div>
-    <div style="color:#6B7280;font-size:13px;">
+
+    <div style="
+        color:#94A3B8;
+        font-size:13px;
+        margin-top:4px;
+    ">
         Smart Freight ERP Platform
     </div>
 </div>
