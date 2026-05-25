@@ -2,6 +2,7 @@ import bcrypt
 from typing import Optional, Dict, Any, List
 from database.connection import get_connection
 
+
 # =========================================================
 # ROLE PERMISSIONS
 # =========================================================
@@ -46,6 +47,7 @@ PERMISSIONS = {
     },
 }
 
+
 ROLE_LABELS = {
     "admin": "Administrator",
     "sales": "Sales",
@@ -59,6 +61,7 @@ ROLE_LABELS = {
 # =========================================================
 
 def can(role: str, module: str, action: str = "r") -> bool:
+
     perms = PERMISSIONS.get(role, {})
     granted = perms.get(module, "")
 
@@ -84,6 +87,7 @@ def can_write(role: str, module: str) -> bool:
 # =========================================================
 
 def hash_password(password: str) -> str:
+
     return bcrypt.hashpw(
         password.encode("utf-8"),
         bcrypt.gensalt()
@@ -91,11 +95,17 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, hashed: str) -> bool:
+
     try:
+
+        if not password or not hashed:
+            return False
+
         return bcrypt.checkpw(
             password.encode("utf-8"),
             hashed.encode("utf-8")
         )
+
     except Exception as e:
         print("verify_password error:", e)
         return False
@@ -105,55 +115,81 @@ def verify_password(password: str, hashed: str) -> bool:
 # AUTHENTICATION
 # =========================================================
 
-def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
+def authenticate(
+    username: str,
+    password: str
+) -> Optional[Dict[str, Any]]:
 
-    username = username.strip().lower()
+    try:
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
+        username = username.strip().lower()
 
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    username,
-                    password_hash,
-                    full_name,
-                    email,
-                    role,
-                    is_active
-                FROM users
-                WHERE username = %s
-                LIMIT 1
-                """,
-                (username,)
-            )
+        with get_connection() as conn:
+            with conn.cursor() as cur:
 
-            user = cur.fetchone()
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        username,
+                        password_hash,
+                        full_name,
+                        email,
+                        role,
+                        is_active
+                    FROM users
+                    WHERE LOWER(username) = %s
+                    LIMIT 1
+                    """,
+                    (username,)
+                )
 
-            if not user:
-                print("USER NOT FOUND")
-                return None
+                user = cur.fetchone()
 
-            user = dict(user)
+                # =====================================
+                # USER NOT FOUND
+                # =====================================
+                if not user:
+                    print("❌ USER NOT FOUND")
+                    return None
 
-            if not user.get("is_active", 1):
-                print("USER DISABLED")
-                return None
+                user = dict(user)
 
-            password_ok = verify_password(
-                password,
-                user["password_hash"]
-            )
+                print("USER:", user["username"])
+                print("HASH:", user["password_hash"])
 
-            print("PASSWORD OK:", password_ok)
+                # =====================================
+                # ACCOUNT DISABLED
+                # =====================================
+                if int(user.get("is_active", 1)) != 1:
+                    print("❌ ACCOUNT DISABLED")
+                    return None
 
-            if not password_ok:
-                return None
+                # =====================================
+                # VERIFY PASSWORD
+                # =====================================
+                password_ok = verify_password(
+                    password,
+                    user["password_hash"]
+                )
 
-            del user["password_hash"]
+                print("PASSWORD OK:", password_ok)
 
-            return user
+                if not password_ok:
+                    print("❌ INVALID PASSWORD")
+                    return None
+
+                # =====================================
+                # REMOVE HASH BEFORE RETURN
+                # =====================================
+                user.pop("password_hash", None)
+
+                return user
+
+    except Exception as e:
+
+        print("AUTH ERROR:", e)
+        return None
 
     return None
 
@@ -164,27 +200,66 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
 
 def list_users() -> List[Dict[str, Any]]:
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
+    try:
 
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    username,
-                    full_name,
-                    email,
-                    role,
-                    is_active,
-                    created_at
-                FROM users
-                ORDER BY username ASC
-                """
-            )
+        with get_connection() as conn:
+            with conn.cursor() as cur:
 
-            rows = cur.fetchall()
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        username,
+                        full_name,
+                        email,
+                        role,
+                        is_active,
+                        created_at
+                    FROM users
+                    ORDER BY username ASC
+                    """
+                )
 
-            return [dict(r) for r in rows]
+                rows = cur.fetchall()
+
+                return [dict(r) for r in rows]
+
+    except Exception as e:
+
+        print("LIST USERS ERROR:", e)
+        return []
+
+
+def get_user_by_username(
+    username: str
+) -> Optional[Dict[str, Any]]:
+
+    try:
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT *
+                    FROM users
+                    WHERE LOWER(username) = %s
+                    LIMIT 1
+                    """,
+                    (username.strip().lower(),)
+                )
+
+                row = cur.fetchone()
+
+                if not row:
+                    return None
+
+                return dict(row)
+
+    except Exception as e:
+
+        print("GET USER ERROR:", e)
+        return None
 
 
 def create_user(
@@ -197,53 +272,135 @@ def create_user(
 
     username = username.strip().lower()
 
+    existing = get_user_by_username(username)
+
+    if existing:
+        raise Exception("Username already exists")
+
     password_hash = hash_password(password)
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
+    try:
 
-            cur.execute(
-                """
-                INSERT INTO users (
-                    username,
-                    password_hash,
-                    full_name,
-                    email,
-                    role,
-                    is_active
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    INSERT INTO users (
+                        username,
+                        password_hash,
+                        full_name,
+                        email,
+                        role,
+                        is_active
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        username,
+                        password_hash,
+                        full_name,
+                        email,
+                        role,
+                        1
+                    )
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    username,
-                    password_hash,
-                    full_name,
-                    email,
-                    role,
-                    1
-                )
-            )
 
-            conn.commit()
+                conn.commit()
+
+    except Exception as e:
+
+        print("CREATE USER ERROR:", e)
+        raise e
 
 
-def update_user_password(username: str, new_password: str):
+def update_user_password(
+    username: str,
+    new_password: str
+):
 
     password_hash = hash_password(new_password)
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
+    try:
 
-            cur.execute(
-                """
-                UPDATE users
-                SET password_hash = %s
-                WHERE username = %s
-                """,
-                (
-                    password_hash,
-                    username.strip().lower()
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET password_hash = %s
+                    WHERE LOWER(username) = %s
+                    """,
+                    (
+                        password_hash,
+                        username.strip().lower()
+                    )
                 )
-            )
 
-            conn.commit()
+                conn.commit()
+
+    except Exception as e:
+
+        print("UPDATE PASSWORD ERROR:", e)
+        raise e
+
+
+def update_user_role(
+    username: str,
+    role: str
+):
+
+    try:
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET role = %s
+                    WHERE LOWER(username) = %s
+                    """,
+                    (
+                        role,
+                        username.strip().lower()
+                    )
+                )
+
+                conn.commit()
+
+    except Exception as e:
+
+        print("UPDATE ROLE ERROR:", e)
+        raise e
+
+
+def set_user_active(
+    username: str,
+    active: bool
+):
+
+    try:
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET is_active = %s
+                    WHERE LOWER(username) = %s
+                    """,
+                    (
+                        1 if active else 0,
+                        username.strip().lower()
+                    )
+                )
+
+                conn.commit()
+
+    except Exception as e:
+
+        print("SET ACTIVE ERROR:", e)
+        raise e
