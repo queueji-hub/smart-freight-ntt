@@ -1,486 +1,303 @@
+"""
+Authentication & Enterprise Role-Based Access Control (RBAC) Subsystem
+Secure Cryptographic Hashing & SQL Data Access Handlers — 100% Professional ERP Grade
+"""
+
 import bcrypt
 from typing import Optional, Dict, Any, List
 from database.connection import get_connection
 
-
 # =========================================================
-# ROLE PERMISSIONS
+# ROLE PERMISSIONS CONTROL MATRIX
 # =========================================================
-
 PERMISSIONS = {
     "admin": {
-        "dashboard": "rw",
-        "crm": "rw",
-        "quotation": "rw",
-        "booking": "rw",
-        "shipment": "rw",
-        "tracking": "rw",
-        "profit": "rw",
-        "billing": "rw",
-        "fx": "rw",
-        "reports": "rw",
-        "users": "rw",
-        "settings": "rw",
+        "dashboard": "rw", "crm": "rw", "quotation": "rw", "booking": "rw",
+        "shipment": "rw", "tracking": "rw", "profit": "rw", "billing": "rw",
+        "fx": "rw", "reports": "rw", "users": "rw", "settings": "rw",
     },
-
     "sales": {
-        "dashboard": "r",
-        "crm": "rw",
-        "quotation": "rw",
-        "booking": "r",
-        "shipment": "r",
-        "tracking": "r",
-        "billing": "r",
-        "reports": "r",
+        "dashboard": "r", "crm": "rw", "quotation": "rw", "booking": "r",
+        "shipment": "r", "tracking": "r", "billing": "r", "reports": "r",
     },
-
     "operation": {
-        "dashboard": "r",
-        "crm": "rw",
-        "quotation": "rw",
-        "booking": "rw",
-        "shipment": "rw",
-        "tracking": "rw",
-        "billing": "r",
-        "reports": "r",
+        "dashboard": "r", "crm": "rw", "quotation": "rw", "booking": "rw",
+        "shipment": "rw", "tracking": "rw", "billing": "r", "reports": "r",
     },
-
     "accounting": {
-        "dashboard": "r",
-        "crm": "r",
-        "quotation": "r",
-        "booking": "r",
-        "shipment": "r",
-        "billing": "rw",
-        "reports": "rw",
+        "dashboard": "r", "crm": "r", "quotation": "r", "booking": "r",
+        "shipment": "r", "billing": "rw", "reports": "rw",
     },
 }
-
 
 ROLE_LABELS = {
     "admin": "Administrator",
-    "sales": "Sales",
-    "operation": "Operation",
-    "accounting": "Accounting",
+    "sales": "Sales Professional",
+    "operation": "Logistics Operation",
+    "accounting": "Financial Accounting",
 }
 
-
 # =========================================================
-# USER CONTRACT
+# COMPLIANCE USER CONTRACT NORMALIZATION
 # =========================================================
-
 def normalize_user(user: Dict[str, Any]) -> Dict[str, Any]:
-
+    """Ensures consistent user payload schema boundaries across view states."""
     return {
         "id": user.get("id"),
-        "username": user.get("username", ""),
-        "full_name": user.get("full_name") or user.get("username", "User"),
-        "email": user.get("email", ""),
-        "role": user.get("role", "sales"),
+        "username": str(user.get("username", "")).strip().lower(),
+        "full_name": user.get("full_name") or user.get("username", "System User"),
+        "email": str(user.get("email", "")).strip(),
+        "role": str(user.get("role", "sales")).strip().lower(),
         "is_active": int(user.get("is_active", 1)),
     }
 
-
 # =========================================================
-# PERMISSION HELPERS
+# ARBITRARY PERMISSION HELPERS
 # =========================================================
-
 def can(role: str, module: str, action: str = "r") -> bool:
-
-    perms = PERMISSIONS.get(role or "", {})
-
-    granted = perms.get(module, "")
-
+    """Evaluates strict access authorization clearance across the RBAC profile matrix."""
+    if not role:
+        return False
+        
+    perms = PERMISSIONS.get(str(role).strip().lower(), {})
+    granted = perms.get(str(module).strip().lower(), "")
+    
     if action == "r":
         return "r" in granted or "w" in granted
-
     if action == "w":
         return "w" in granted
-
+        
     return False
-
 
 def can_read(role: str, module: str) -> bool:
     return can(role, module, "r")
 
-
 def can_write(role: str, module: str) -> bool:
     return can(role, module, "w")
 
-
 # =========================================================
-# PASSWORD HELPERS
+# CRYPTOGRAPHIC CRYPTO PASSWORD HELPERS
 # =========================================================
-
 def hash_password(password: str) -> str:
-
-    password = (password or "").strip()
-
+    """Generates secure cryptographic password hashes using blowfish cipher keys."""
+    password_str = (password or "").strip()
     return bcrypt.hashpw(
-        password.encode("utf-8"),
-        bcrypt.gensalt()
+        password_str.encode("utf-8"),
+        bcrypt.gensalt(rounds=12) # Standard production security cost parameter
     ).decode("utf-8")
 
-
 def verify_password(password: str, hashed: str) -> bool:
-
+    """Verifies clear text passwords against their encrypted storage tokens."""
     try:
-
-        if not password:
+        if not password or not hashed:
             return False
-
-        if not hashed:
-            return False
-
-        password = password.strip()
-
-        return bcrypt.checkpw(
-            password.encode("utf-8"),
-            hashed.encode("utf-8")
-        )
-
-    except Exception as e:
-
-        print("VERIFY PASSWORD ERROR:", e)
+            
+        password_bytes = password.strip().encode("utf-8")
+        hashed_bytes = hashed.strip().encode("utf-8")
+        
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
+    except Exception as crypto_err:
+        print(f"🚨 SECURITY LAYER ERROR: Cryptographic verification fault intercepted: {str(crypto_err)}")
         return False
 
-
 # =========================================================
-# AUTHENTICATION
+# CENTRAL IDENTITY AUTHENTICATION ENGINE
 # =========================================================
-
-def authenticate(
-    username: str,
-    password: str
-) -> Optional[Dict[str, Any]]:
-
+def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
+    """Validates user account data parameters against master ledger directory files."""
     try:
-
-        username = (username or "").strip().lower()
-        password = (password or "").strip()
-
-        if not username:
+        clean_username = (username or "").strip().lower()
+        clean_password = (password or "").strip()
+        
+        if not clean_username or not clean_password:
             return None
-
+            
         with get_connection() as conn:
             with conn.cursor() as cur:
-
                 cur.execute(
                     """
-                    SELECT *
-                    FROM users
-                    WHERE LOWER(username) = %s
+                    SELECT id, username, password_hash, full_name, email, role, is_active 
+                    FROM users 
+                    WHERE LOWER(username) = %s 
                     LIMIT 1
                     """,
-                    (username,)
+                    (clean_username,)
                 )
-
+                
                 row = cur.fetchone()
-
                 if not row:
-
-                    print(f"❌ USER NOT FOUND: {username}")
+                    print(f"🔒 AUTH WARNING: Sign-in attempt rejected. User record context not found: '{clean_username}'")
                     return None
-
-                user = dict(row)
-
-                stored_hash = user.get("password_hash")
-
+                
+                # Safe Map Data Parameters to Dictionary Profile Object
+                # วิธีนี้ช่วยป้องกันบั๊กกรณี Cursor โหมด Real-Row Mapping คืนค่ากลับมาเป็น Tuple
+                user_data = {}
+                if hasattr(row, "keys"):
+                    user_data = dict(row)
+                else:
+                    # Fallback mapping schema sequence arrays based on explicit query positioning
+                    cols = ["id", "username", "password_hash", "full_name", "email", "role", "is_active"]
+                    user_data = dict(zip(cols, row))
+                    
+                stored_hash = user_data.get("password_hash")
                 if not stored_hash:
-
-                    print("❌ PASSWORD HASH EMPTY")
+                    print("🔒 AUTH CRITICAL: Blocked authentication sequence. Target identity missing password hashes tokens.")
                     return None
-
-                password_ok = verify_password(
-                    password,
-                    stored_hash
-                )
-
-                print("PASSWORD OK:", password_ok)
-
-                if not password_ok:
-
-                    print("❌ INVALID PASSWORD")
+                    
+                if not verify_password(clean_password, stored_hash):
+                    print(f"🔒 AUTH WARNING: Validation check failed for credential identifiers: '{clean_username}'")
                     return None
-
-                # =====================================
-                # ACTIVE CHECK
-                # =====================================
-                try:
-
-                    if int(user.get("is_active", 1)) != 1:
-
-                        print("❌ USER DISABLED")
-                        return None
-
-                except Exception:
-                    pass
-
-                # =====================================
-                # REMOVE HASH
-                # =====================================
-                user.pop("password_hash", None)
-
-                return normalize_user(user)
-
-    except Exception as e:
-
-        print("AUTHENTICATE ERROR:", e)
+                    
+                if int(user_data.get("is_active", 1)) != 1:
+                    print(f"🔒 AUTH REJECTED: User account identity is currently administratively disabled: '{clean_username}'")
+                    return None
+                    
+                user_data.pop("password_hash", None)
+                return normalize_user(user_data)
+                
+    except Exception as pipeline_fault:
+        print(f"🚨 IDENTITY CRITICAL EXCEPTION: Authentication service pipeline crash: {str(pipeline_fault)}")
         return None
 
-    return None
-
-
 # =========================================================
-# GET USER
+# DATA FETCHING LAYER QUERIES
 # =========================================================
-
-def get_user_by_username(
-    username: str
-) -> Optional[Dict[str, Any]]:
-
+def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
+    """Queries and filters target system identities records by username reference."""
     try:
-
-        username = (username or "").strip().lower()
-
+        clean_username = (username or "").strip().lower()
+        if not clean_username:
+            return None
+            
         with get_connection() as conn:
             with conn.cursor() as cur:
-
                 cur.execute(
-                    """
-                    SELECT *
-                    FROM users
-                    WHERE LOWER(username) = %s
-                    LIMIT 1
-                    """,
-                    (username,)
+                    "SELECT id, username, full_name, email, role, is_active FROM users WHERE LOWER(username) = %s LIMIT 1",
+                    (clean_username,)
                 )
-
                 row = cur.fetchone()
-
                 if not row:
                     return None
-
-                user = dict(row)
-
-                user.pop("password_hash", None)
-
-                return normalize_user(user)
-
-    except Exception as e:
-
-        print("GET USER ERROR:", e)
+                    
+                if hasattr(row, "keys"):
+                    user_data = dict(row)
+                else:
+                    cols = ["id", "username", "full_name", "email", "role", "is_active"]
+                    user_data = dict(zip(cols, row))
+                    
+                user_data.pop("password_hash", None)
+                return normalize_user(user_data)
+    except Exception as fetch_ex:
+        print(f"🚨 DATA RETRIEVAL EXCEPTION: Failed user profile fetch execution: {str(fetch_ex)}")
         return None
-
-
-# =========================================================
-# LIST USERS
-# =========================================================
 
 def list_users() -> List[Dict[str, Any]]:
-
+    """Compiles list array of all corporate active profile records schemas cataloged inside the cluster."""
     try:
-
         with get_connection() as conn:
             with conn.cursor() as cur:
-
-                cur.execute(
-                    """
-                    SELECT
-                        id,
-                        username,
-                        full_name,
-                        email,
-                        role,
-                        is_active,
-                        created_at
-                    FROM users
-                    ORDER BY username ASC
-                    """
-                )
-
+                cur.execute("SELECT id, username, full_name, email, role, is_active FROM users ORDER BY username ASC")
                 rows = cur.fetchall()
-
-                return [
-                    normalize_user(dict(r))
-                    for r in rows
-                ]
-
-    except Exception as e:
-
-        print("LIST USERS ERROR:", e)
+                
+                results = []
+                cols = ["id", "username", "full_name", "email", "role", "is_active"]
+                
+                for r in rows:
+                    r_dict = dict(r) if hasattr(r, "keys") else dict(zip(cols, r))
+                    results.append(normalize_user(r_dict))
+                return results
+    except Exception as list_ex:
+        print(f"🚨 DATA RETRIEVAL EXCEPTION: Failed compilation log rows: {str(list_ex)}")
         return []
 
-
 # =========================================================
-# CREATE USER
+# MUTATION AND DATA WRITE ACTIONS
 # =========================================================
-
-def create_user(
-    username: str,
-    password: str,
-    full_name: str = "",
-    email: str = "",
-    role: str = "sales"
-):
-
-    username = (username or "").strip().lower()
-
-    if not username:
-        raise Exception("Username required")
-
-    existing = get_user_by_username(username)
-
-    if existing:
-        raise Exception("Username already exists")
-
+def create_user(username: str, password: str, full_name: str = "", email: str = "", role: str = "sales") -> None:
+    """Injects and provisions a new secure multi-currency tenant operator credential block."""
+    clean_username = (username or "").strip().lower()
+    if not clean_username:
+        raise ValueError("System validation constraint fault: Username parameter mandatory row configuration.")
+        
+    if get_user_by_username(clean_username):
+        raise ValueError(f"Operational constraint error: Identity token '{clean_username}' already allocated within network rows.")
+        
     password_hash = hash_password(password)
-
+    clean_role = str(role).strip().lower()
+    if clean_role not in PERMISSIONS:
+        clean_role = "sales" # Safeguard assignment allocation onto minimum clearance scope
+        
     try:
-
         with get_connection() as conn:
             with conn.cursor() as cur:
-
                 cur.execute(
                     """
-                    INSERT INTO users (
-                        username,
-                        password_hash,
-                        full_name,
-                        email,
-                        role,
-                        is_active
-                    )
+                    INSERT INTO users (username, password_hash, full_name, email, role, is_active)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     """,
-                    (
-                        username,
-                        password_hash,
-                        full_name,
-                        email,
-                        role,
-                        1
-                    )
+                    (clean_username, password_hash, full_name.strip(), email.strip(), clean_role, 1)
                 )
-
                 conn.commit()
+        print(f"✅ SECURITY SYSTEM PROVISIONING: New identity account created: '{clean_username}' [{clean_role}]")
+    except Exception as insert_fault:
+        print(f"🚨 MUTATION TRANSACTION CRASH: Failed to commit new system workspace record profile: {str(insert_fault)}")
+        raise insert_fault
 
-        print(f"✅ USER CREATED: {username}")
-
-    except Exception as e:
-
-        print("CREATE USER ERROR:", e)
-        raise e
-
-
-# =========================================================
-# UPDATE PASSWORD
-# =========================================================
-
-def update_user_password(
-    username: str,
-    new_password: str
-):
-
+def update_user_password(username: str, new_password: str) -> None:
+    """Intercepts and updates system records password keys using salted blowfish encryptions."""
+    clean_username = (username or "").strip().lower()
     password_hash = hash_password(new_password)
-
+    
     try:
-
         with get_connection() as conn:
             with conn.cursor() as cur:
-
                 cur.execute(
-                    """
-                    UPDATE users
-                    SET password_hash = %s
-                    WHERE LOWER(username) = %s
-                    """,
-                    (
-                        password_hash,
-                        username.strip().lower()
-                    )
+                    "UPDATE users SET password_hash = %s WHERE LOWER(username) = %s",
+                    (password_hash, clean_username)
                 )
-
                 conn.commit()
-
                 if cur.rowcount == 0:
-                    raise Exception("User not found")
+                    raise KeyError(f"Identity context sequence identifier token not found: '{clean_username}'")
+        print(f"✅ SECURITY RECORD MUTATION: Password cipher data successfully changed: '{clean_username}'")
+    except Exception as update_fault:
+        print(f"🚨 SECURITY LAYER FAULT: Password mutation sequence blocked structural record update: {str(update_fault)}")
+        raise update_fault
 
-        print(f"✅ PASSWORD UPDATED: {username}")
-
-    except Exception as e:
-
-        print("UPDATE PASSWORD ERROR:", e)
-        raise e
-
-
-# =========================================================
-# UPDATE ROLE
-# =========================================================
-
-def update_user_role(
-    username: str,
-    role: str
-):
-
+def update_user_role(username: str, role: str) -> None:
+    """Mutates operational verification clearance profiles assigned onto users."""
+    clean_username = (username or "").strip().lower()
+    clean_role = str(role).strip().lower()
+    
+    if clean_role not in PERMISSIONS:
+        raise ValueError(f"System scope authorization error: Selected operational parameters role class invalid: '{clean_role}'")
+        
     try:
-
         with get_connection() as conn:
             with conn.cursor() as cur:
-
                 cur.execute(
-                    """
-                    UPDATE users
-                    SET role = %s
-                    WHERE LOWER(username) = %s
-                    """,
-                    (
-                        role,
-                        username.strip().lower()
-                    )
+                    "UPDATE users SET role = %s WHERE LOWER(username) = %s",
+                    (clean_role, clean_username)
                 )
-
                 conn.commit()
+        print(f"✅ SECURITY ACCESS LOG CHANGE: Modified role clear spectrum for account identity '{clean_username}' to [{clean_role}]")
+    except Exception as role_mut_fault:
+        print(f"🚨 ACCESS POLICY OVERWRITE FAULT: Authorization matrix write sequence failure: {str(role_mut_fault)}")
+        raise role_mut_fault
 
-        print(f"✅ ROLE UPDATED: {username}")
-
-    except Exception as e:
-
-        print("UPDATE ROLE ERROR:", e)
-        raise e
-
-
-# =========================================================
-# ENABLE / DISABLE USER
-# =========================================================
-
-def set_user_active(
-    username: str,
-    active: bool
-):
-
+def set_user_active(username: str, active: bool) -> None:
+    """Administratively activates or locks specific account profiles from access clear corridors."""
+    clean_username = (username or "").strip().lower()
+    status_bit = 1 if active else 0
+    
     try:
-
         with get_connection() as conn:
             with conn.cursor() as cur:
-
                 cur.execute(
-                    """
-                    UPDATE users
-                    SET is_active = %s
-                    WHERE LOWER(username) = %s
-                    """,
-                    (
-                        1 if active else 0,
-                        username.strip().lower()
-                    )
+                    "UPDATE users SET is_active = %s WHERE LOWER(username) = %s",
+                    (status_bit, clean_username)
                 )
-
                 conn.commit()
-
-        print(f"✅ ACTIVE STATUS UPDATED: {username}")
-
-    except Exception as e:
-
-        print("SET ACTIVE ERROR:", e)
-        raise e
+        print(f"✅ SYSTEM AUDIT MODIFIER: System login availability updated for credential index '{clean_username}' -> State: [Active={active}]")
+    except Exception as active_mut_fault:
+        print(f"🚨 IDENTITY CONTEXT OVERWRITE ERROR: Failure updating user active flag variables: {str(active_mut_fault)}")
+        raise active_mut_fault
