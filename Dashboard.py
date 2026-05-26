@@ -3,125 +3,148 @@ import importlib
 import streamlit as st
 
 # =========================================================
-# PAGE CONFIG
+# PAGE CONFIG (ENTERPRISE STANDARD)
 # =========================================================
 st.set_page_config(
-    page_title="Smart Freight NTT",
+    page_title="Smart Freight NTT | Enterprise Logistics ERP",
     page_icon="🚢",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
+# Custom CSS to global elements for professional look & feel
+st.markdown("""
+<style>
+    /* Main Content Padding Optimization */
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 2rem !important;
+    }
+    /* Metric Card Polish */
+    div[data-testid="stMetric"] {
+        background-color: #0F172A;
+        border: 1px solid #1E293B;
+        padding: 1rem 1.25rem !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }
+    div[data-testid="stMetric"] label {
+        color: #94A3B8 !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+    }
+    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
+        color: #F8FAFC !important;
+        font-size: 1.75rem !important;
+        font-weight: 700 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # =========================================================
-# IMPORTS SAFE (POSTGRES FRIENDLY)
+# IMPORTS SAFE (POSTGRESQL & SERVICE LAYER)
 # =========================================================
-from managers.auth_manager import ROLE_LABELS, can_read
-from managers.session_manager import delete_session, get_user_by_token
+try:
+    from managers.auth_manager import ROLE_LABELS, can_read
+    from managers.session_manager import delete_session, get_user_by_token
+except ImportError as ie:
+    st.error(f"❌ Critical Component Missing: {str(ie)}")
+    st.stop()
 
 try:
     from database.connection import init_database
-except Exception:
+except ImportError:
     init_database = None
 
 
 # =========================================================
-# SAFE DATABASE BOOTSTRAP (POSTGRES SAFE MODE)
+# SAFE DATABASE BOOTSTRAP (POSTGRES RESILIENT MODE)
 # =========================================================
 def bootstrap():
-
     if not init_database:
-        st.warning("⚠️ Database module not loaded")
-        return
-
+        st.sidebar.error("⚠️ Database connection module could not be initialized.")
+        return False
     try:
         init_database()
+        return True
     except Exception as e:
-        # ❗ NEVER STOP APP FOR DB ERROR
-        st.warning("⚠️ Database connection issue (app still running)")
-        print("DB BOOT ERROR:", e)
+        # Resilient implementation: Application keeps running with descriptive fallback warnings
+        st.sidebar.warning("⚠️ PostgreSQL Connection Failure. Operating in offline/degraded mode.")
+        print(f"[CRITICAL] DB BOOT ERROR (PostgreSQL): {str(e)}")
+        return False
 
 
-bootstrap()
+is_db_connected = bootstrap()
 
 
 # =========================================================
-# SESSION RESTORE
+# ROUTINE SESSION RESTORE
 # =========================================================
 def restore_session():
-
     if "user" in st.session_state:
         return st.session_state["user"]
 
     token = st.query_params.get("token")
-
     if not token:
         return None
 
     try:
-        user = get_user_by_token(token)
-
-        if not user:
+        user_record = get_user_by_token(token)
+        if not user_record:
             return None
 
-        st.session_state["user"] = user
+        st.session_state["user"] = user_record
         st.session_state["session_token"] = token
-
-        return user
-
+        return user_record
     except Exception as e:
-        print("SESSION ERROR:", e)
+        print(f"[SESSION RESTORE ERROR]: {str(e)}")
         return None
 
 
 user = restore_session()
 
 # =========================================================
-# LOGIN GATE
+# SECURITY & AUTHENTICATION GATE
 # =========================================================
 if not user:
-    from views.login_view import render
-    render()
+    try:
+        from views.login_view import render as render_login
+        render_login()
+    except Exception as e:
+        st.error("Authentication Service Unavailable.")
+        st.code(str(e), language="python")
     st.stop()
 
 
 # =========================================================
-# ERP MODULES (CLEAN ARCHITECTURE)
+# ERP REPOSITORIES & ACCESS CONTROL
 # =========================================================
 PAGES = [
-    ("dashboard", "📊 Dashboard", "dashboard"),
-
-    ("crm", "👥 CRM", "crm"),
-
-    ("quotation", "📄 Quotation", "quotation"),
-    ("booking", "📑 Booking", "booking"),
-
-    ("job", "📦 Shipments", "shipment"),
-
-    ("tracking", "📍 Tracking", "tracking"),
-
-    ("billing", "💰 Billing", "billing"),
-    ("profit", "💹 Profit", "profit"),
-
-    ("reports", "📈 Reports", "reports"),
-    ("users", "👤 Users", "users"),
-    ("settings", "⚙️ Settings", "settings"),
+    ("dashboard", "📊 Dashboard Analytics", "dashboard"),
+    ("crm", "👥 Customer Relations (CRM)", "crm"),
+    ("quotation", "📄 Quote Management", "quotation"),
+    ("booking", "📑 Booking Orders", "booking"),
+    ("job", "📦 Shipment Operations", "shipment"),
+    ("tracking", "📍 Vessel & Cargo Tracking", "tracking"),
+    ("billing", "💰 Financial Billing", "billing"),
+    ("profit", "💹 Profit & Cost Analysis", "profit"),
+    ("reports", "📈 Operational Reports", "reports"),
+    ("users", "👤 Identity Management", "users"),
+    ("settings", "⚙️ System Settings", "settings"),
 ]
 
-
-role = (user.get("role") or "admin").lower()
-
-allowed_pages = [p for p in PAGES if can_read(role, p[2])]
+user_role = str(user.get("role", "guest")).lower()
+allowed_pages = [p for p in PAGES if can_read(user_role, p[2])]
 
 if not allowed_pages:
-    st.error("No pages available for this role")
+    st.error("🔒 Access Denied: Your account role does not have viewing permissions for this platform.")
     st.stop()
 
 allowed_ids = [p[0] for p in allowed_pages]
 
-
-# =========================================================
-# SAFE PAGE PARAM (STREAMLIT FRIENDLY)
-# =========================================================
+# Extract routing metadata safely
 query_params = st.query_params.to_dict()
 current_page = query_params.get("page", allowed_ids[0])
 
@@ -130,56 +153,58 @@ if current_page not in allowed_ids:
 
 
 # =========================================================
-# SIDEBAR UI (ENTERPRISE GRADE)
+# SIDEBAR UI (CARGOWISE METRO STYLE)
 # =========================================================
 with st.sidebar:
-
+    # Corporate Identity Header Card
     st.markdown(f"""
     <div style="
-        padding:18px;
-        border-radius:16px;
-        background:linear-gradient(135deg,#0F172A,#111827);
-        border:1px solid #334155;
-        margin-bottom:18px;
-        color:white;
+        padding: 20px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #1E293B, #0F172A);
+        border: 1px solid #334155;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     ">
-        <div style="font-size:18px;font-weight:800;">
-            🚢 Smart Freight NTT
+        <div style="font-size: 20px; font-weight: 800; color: #F8FAFC; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px;">
+            <span>🚢</span> Smart Freight NTT
         </div>
-        <div style="font-size:13px;color:#CBD5E1;margin-top:6px;">
-            {user.get('full_name','User')}
+        <div style="height: 1px; background: #334155; margin: 12px 0;"></div>
+        <div style="font-size: 14px; font-weight: 600; color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            {user.get('full_name', 'Operator Active')}
         </div>
-        <div style="font-size:11px;color:#94A3B8;">
-            {ROLE_LABELS.get(role, role)}
+        <div style="font-size: 11px; color: #38BDF8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">
+            ⚙️ {ROLE_LABELS.get(user_role, user_role.upper())}
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("### Navigation")
+    st.markdown("<p style='color:#64748B; font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>Navigation Matrix</p>", unsafe_allow_html=True)
 
+    # Menu Router Action Buttons
     for page_id, label, module in allowed_pages:
-
-        active = (current_page == page_id)
-
+        is_active = (current_page == page_id)
+        
         if st.button(
             label,
-            key=f"nav_{page_id}",
+            key=f"nav_btn_{page_id}",
             use_container_width=True,
-            type="primary" if active else "secondary"
+            type="primary" if is_active else "secondary"
         ):
             st.query_params["page"] = page_id
             st.rerun()
 
+    st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
     st.markdown("---")
 
-    if st.button("🚪 Logout", use_container_width=True):
-
+    # Logout Engine Execution
+    if st.button("🚪 System Terminate (Logout)", use_container_width=True):
         try:
-            token = st.session_state.get("session_token")
-            if token:
-                delete_session(token)
+            active_token = st.session_state.get("session_token")
+            if active_token:
+                delete_session(active_token)
         except Exception as e:
-            print("LOGOUT ERROR:", e)
+            print(f"[LOGOUT EXCEPTION]: {str(e)}")
 
         st.session_state.clear()
         st.query_params.clear()
@@ -187,75 +212,61 @@ with st.sidebar:
 
 
 # =========================================================
-# PAGE ROUTER (SAFE IMPORT)
+# CENTRAL PAGE HEADER COMPONENT
 # =========================================================
-PAGE_ROUTES = {
-    p[0]: (f"views.{p[2]}_view", "render")
-    for p in PAGES
-}
-
-
-# =========================================================
-# HEADER UI (CLEAN ERP STYLE)
-# =========================================================
+page_title_text = current_page.replace('_', ' ').title()
 st.markdown(f"""
 <div style="
-padding:16px 18px;
-border-radius:16px;
-background:linear-gradient(135deg,#0F172A,#111827);
-border:1px solid rgba(255,255,255,0.06);
-margin-bottom:14px;
-box-shadow:0 14px 40px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.03);
+    padding: 20px 24px;
+    border-radius: 14px;
+    background: linear-gradient(90deg, #0F172A 0%, #1E293B 100%);
+    border: 1px solid #1E293B;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 ">
-<div style="
-font-size:22px;
-font-weight:800;
-color:#F8FAFC;
-letter-spacing:-0.4px;
-">
-{current_page.replace('_',' ').title()}
-</div>
-
-<div style="
-color:#94A3B8;
-font-size:13px;
-margin-top:6px;
-letter-spacing:0.2px;
-opacity:0.9;
-">
-Smart Freight ERP Platform
-</div>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1 style="font-size: 24px; font-weight: 800; color: #F8FAFC; margin: 0; letter-spacing: -0.5px;">
+                {page_title_text}
+            </h1>
+            <p style="color: #94A3B8; font-size: 13px; margin: 4px 0 0 0; letter-spacing: 0.2px;">
+                Smart Freight Enterprise Supply Chain Infrastructure Engine
+            </p>
+        </div>
+        <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.2); padding: 6px 12px; border-radius: 20px; color: #38BDF8; font-size: 11px; font-weight: 700; text-transform: uppercase;">
+            🟢 System Online
+        </div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
 
 # =========================================================
-# SAFE MODULE LOADER (POSTGRES SAFE)
+# ASYNCHRONOUS SAFE VIEW MODULE DYNAMIC ROUTER
 # =========================================================
+PAGE_ROUTES = {p[0]: (f"views.{p[2]}_view", "render") for p in PAGES}
+
+if current_page not in PAGE_ROUTES:
+    st.error("🎯 Resource Execution Failure: Target context router location mismatch.")
+    st.stop()
+
+module_path, fn_name = PAGE_ROUTES[current_page]
+
 try:
-
-    if current_page not in PAGE_ROUTES:
-        st.warning("Page not found")
-        st.stop()
-
-    module_path, fn_name = PAGE_ROUTES[current_page]
-
-    with st.spinner(f"Loading {current_page.title()}..."):
-
-        module = importlib.import_module(module_path)
-
-        if not hasattr(module, fn_name):
-            st.error(f"Missing function: {fn_name} in {module_path}")
+    with st.spinner("Executing secure pipeline operation..."):
+        view_module = importlib.import_module(module_path)
+        
+        if not hasattr(view_module, fn_name):
+            st.error(f"❌ Compilation Error: View module missing expected entrypoint '{fn_name}'")
             st.stop()
+            
+        render_target = getattr(view_module, fn_name)
+        render_target()
 
-        render_fn = getattr(module, fn_name)
-        render_fn()
-
-except Exception as e:
-
-    st.error(f"Error loading page: {current_page}")
-
-    with st.expander("Debug Error"):
+except Exception as view_exec_err:
+    st.error("🚨 Critical Crash Intercepted inside Runtime Pipeline View")
+    
+    with st.expander("Diagnostic Traceback Logs", expanded=True):
         st.code(traceback.format_exc(), language="python")
-
-    st.exception(e)
+    
+    st.exception(view_exec_err)
