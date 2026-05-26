@@ -1,4 +1,8 @@
-"""Profit Sheet view - AR/AP cost lines + sign-off PDF generation."""
+"""
+Job Profitability Sheet - Strategic Financial Reconciliation & Audit Workspace
+AR/AP Ledger Cost Controls + Sign-off Pipeline - 100% Professional ERP Grade
+"""
+
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -14,131 +18,275 @@ from managers.fx_manager import SUPPORTED_CURRENCIES
 from managers.auth_manager import can_write
 
 def role_has_approve(user) -> bool:
-    return user.get("role") in ("admin", "accounting")
+    return str(user.get("role", "")).lower() in ("admin", "accounting")
 
+# =========================================================
+# SYSTEM VIEW ROUTER ENTRYPOINT
+# =========================================================
 def render():
     user = st.session_state.get("user", {})
-    role = user.get("role", "")
+    role = str(user.get("role", "")).lower()
     can_edit = can_write(role, "shipment") or can_write(role, "billing")
     
-    st.title("📊 Job Profitability Sheet")
+    st.markdown("<p style='color: #38BDF8; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;'>Financial Audit Infrastructure</p>", unsafe_allow_html=True)
+    st.markdown("<h2 style='margin-top: 0px; font-weight: 800; color:#F8FAFC;'>📊 Job Profitability Sheet</h2>", unsafe_allow_html=True)
+    st.caption("P&L Financial Ledger — Audit real-time accounts receivable (AR) vs payable (AP) lines, evaluate gross operating margins, and generate sign-off profiles.")
     
-    # Reset PDF preview เมื่อเปลี่ยน Job
+    # Initialize multi-session track states safely
     if "prev_shipment" not in st.session_state:
         st.session_state.prev_shipment = None
     
-    # ===== Select Shipment =====
-    ships = list_shipments()
+    # --- 1. SELECT FREIGHT WORKSPACE PROFILE ---
+    with st.spinner("Extracting master logistics records..."):
+        try:
+            ships = list_shipments() or []
+        except Exception as e:
+            st.error(f"Master ledger extraction blocked at interface layers: {str(e)}")
+            return
+            
     if not ships:
-        st.info("No shipments to analyze.")
+        st.info("ℹ️ No active corporate shipments logged to compile profitability metrics.")
         return
     
-    options = {f"{s['job_no']} — {s.get('customer_name','—')}": s for s in ships[:200]}
-    sel_label = st.selectbox("Select Shipment", list(options.keys()), key="ps_sel")
+    # Cap parsing at index bounds safely
+    options = {f"🚢 {s['job_no']} — {s.get('customer_name','Internal Account')} ({s.get('container_no','-')})": s for s in ships[:200]}
+    sel_label = st.selectbox("Target Freight Reference Operation *", list(options.keys()), key="profit_sheet_target_selector")
     ship = options[sel_label]
     
-    # ล้างไฟล์ PDF เก่าเมื่อเปลี่ยน Shipment
+    # --- AUTOMATED CACHE PURGE UPON JOB SWITCH ---
     if st.session_state.prev_shipment != ship["id"]:
-        if "latest_ps_pdf" in st.session_state:
-            del st.session_state["latest_ps_pdf"]
+        st.session_state.pop("latest_ps_pdf", None)
         st.session_state.prev_shipment = ship["id"]
     
-    # ===== Job header info =====
+    # --- 2. EXECUTIVE CORE HEAD METRICS GRID ---
+    st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Job No.", ship["job_no"])
-    c2.metric("Customer", (ship.get("customer_name") or "—")[:15])
-    c3.metric("Status", ship.get("status", "Proceed"))
-    c4.metric("Container", ship.get("container_no") or "—")
+    c1.metric("Job Tracking Identifier", str(ship["job_no"]))
+    c2.metric("Corporate Debtor Title", str(ship.get("customer_name") or "—")[:18])
+    c3.metric("Freight Life Status", str(ship.get("status", "Proceed")))
+    c4.metric("Intermodal Unit Equipment", str(ship.get("container_no") or "—"))
     
     st.markdown("---")
     
-    # ===== Profit Summary KPI =====
-    summary = get_profit_summary(ship["id"])
+    # --- 3. OPERATIONAL P&L GAUGE METRICS ---
+    try:
+        summary = get_profit_summary(ship["id"]) or {"total_ar": 0, "total_ap": 0, "net_profit": 0, "profit_margin": 0}
+    except Exception as sum_err:
+        st.error(f"Failed to sum local table records variables: {str(sum_err)}")
+        summary = {"total_ar": 0, "total_ap": 0, "net_profit": 0, "profit_margin": 0}
+
+    net = summary.get("net_profit", 0)
+    margin = summary.get("profit_margin", 0)
+    
     s1, s2, s3, s4 = st.columns(4)
-    s1.metric("Revenue (AR)", f"฿{summary['total_ar']:,.0f}")
-    s2.metric("Cost (AP)", f"฿{summary['total_ap']:,.0f}")
-    net = summary["net_profit"]
-    s3.metric("Net Profit", f"฿{net:,.0f}", delta=f"{summary['profit_margin']:.1f}%")
-    s4.metric("Status", "🟢 Profit" if net >= 0 else "🔴 Loss")
+    s1.metric("Gross Revenue Allocation (AR)", f"฿ {summary.get('total_ar', 0):,.2f}")
+    s2.metric("Total Operational Cost (AP)", f"฿ {summary.get('total_ap', 0):,.2f}")
+    s3.metric("Net Job Yield Margin", f"฿ {net:,.2f}", delta=f"{margin:.1f}% Margin Ratio")
     
-    st.markdown("---")
+    if net >= 0:
+        s4.markdown("<div style='padding: 8px 14px; background-color: #064e3b; border-radius: 8px; text-align: center; border: 1px solid #059669; margin-top:10px;'><span style='color: #34d399; font-weight:800; font-size:16px;'>🟢 YIELD PROFITABLE</span></div>", unsafe_allow_html=True)
+    else:
+        s4.markdown("<div style='padding: 8px 14px; background-color: #7f1d1d; border-radius: 8px; text-align: center; border: 1px solid #dc2626; margin-top:10px;'><span style='color: #fca5a5; font-weight:800; font-size:16px;'>🔴 REVENUE LOSS</span></div>", unsafe_allow_html=True)
+        
+    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
     
-    # ===== AR/AP Cost Tables =====
-    tab_ar, tab_ap, tab_sheets = st.tabs(["💰 AR", "💸 AP", "📋 Profit Sheets"])
+    # --- 4. DATA TABLES LEDGER INTERACTION TABS ---
+    tab_ar, tab_ap, tab_sheets = st.tabs(["💰 Accounts Receivable (AR)", "💸 Accounts Payable (AP)", "📋 Signed P&L Ledger Archive"])
     
     with tab_ar:
         _render_cost_section(ship, "AR", AR_CATEGORIES, can_edit, user)
     with tab_ap:
         _render_cost_section(ship, "AP", AP_CATEGORIES, can_edit, user)
     with tab_sheets:
-        _render_sheets_section(ship, summary, can_edit, user)
+        _render_sheets_section(ship, summary, can_edit, role, user)
 
+
+# =========================================================
+# SUB-ROUTINE: COST SECTION RENDER ENGINE
+# =========================================================
 def _render_cost_section(ship, cost_type, categories, can_edit, user):
-    lines = get_cost_lines(ship["id"], cost_type)
+    st.markdown(f"##### Integrated {cost_type} Transaction Statements")
     
+    try:
+        lines = get_cost_lines(ship["id"], cost_type) or []
+    except Exception as read_ex:
+        st.error(f"Failed to load ledger lines: {str(read_ex)}")
+        lines = []
+
+    # Insert Data Form Segment
     if can_edit:
-        with st.expander(f"➕ Add {cost_type} Line"):
-            with st.form(f"add_{cost_type}"):
-                c1, c2 = st.columns(2)
-                cat = c1.selectbox("Category", categories)
-                desc = c1.text_input("Description")
-                qty = c2.number_input("Quantity", min_value=0.0, value=1.0)
-                price = c2.number_input("Unit Price", min_value=0.0, format="%.2f")
+        with st.expander(f"➕ Append New Dynamic Line Item into {cost_type} Matrix"):
+            with st.form(f"profit_form_add_line_{cost_type}_{ship['id']}"):
+                c_form1, c_form2 = st.columns(2)
+                cat = c_form1.selectbox("Standard Ledger Category Class *", options=categories, key=f"sel_cat_widget_{cost_type}")
+                desc = c_form1.text_input("Operational Line Item Description *", placeholder="e.g., Ocean Freight Charge...", key=f"txt_desc_widget_{cost_type}")
+                qty = c_form2.number_input("Transactional Volumetric Quantity *", min_value=0.01, value=1.0, step=1.0, key=f"num_qty_widget_{cost_type}")
+                price = c_form2.number_input("Unit Price Rate Frame (THB) *", min_value=0.00, format="%.2f", step=500.0, key=f"num_prc_widget_{cost_type}")
                 
-                if st.form_submit_button("Add Line"):
-                    add_cost_line({
-                        "shipment_id": ship["id"], "cost_type": cost_type,
-                        "category": cat, "description": desc,
-                        "quantity": qty, "unit_price": price,
-                        "amount": qty * price, "created_by": user.get("username")
-                    })
-                    st.rerun()
+                submit_line = st.form_submit_button(f"⚡ Append to {cost_type} Ledger", use_container_width=True)
+                
+            if submit_line:
+                if not desc.strip():
+                    st.error("⚠️ Validation Fault: Operational narrative description parameter is required.")
+                else:
+                    with st.spinner("Injecting vector metrics line item..."):
+                        try:
+                            add_cost_line({
+                                "shipment_id": ship["id"], 
+                                "cost_type": cost_type,
+                                "category": cat, 
+                                "description": desc.strip(),
+                                "quantity": qty, 
+                                "unit_price": price,
+                                "amount": qty * price, 
+                                "created_by": str(user.get("username", "billing_agent"))
+                            })
+                            st.toast(f"✅ Item line inserted into {cost_type} tables mapping successfully.", icon="💰" if cost_type == "AR" else "💸")
+                            st.rerun()
+                        except Exception as add_ex:
+                            st.error(f"Database rejected cost injection sequence: {str(add_ex)}")
 
-    if lines:
+    if not lines:
+        st.info(f"ℹ️ Zero {cost_type} financial line-items currently allocated to this shipping reference frame.")
+    else:
         df = pd.DataFrame(lines)
-        st.dataframe(df, use_container_width=True, hide_index=True)
         
+        # Humanize structures for downstream operational view mapping
+        column_configs = {
+            "category": st.column_config.TextColumn("Category Type", width="small"),
+            "description": st.column_config.TextColumn("Line Narrative Description", width="medium"),
+            "quantity": st.column_config.NumberColumn("Qty", format="%.2f"),
+            "unit_price": st.column_config.NumberColumn("Unit Rate Price", format="฿%,.2f"),
+            "amount": st.column_config.NumberColumn("Net Consolidated Amount", format="฿%,.2f"),
+            "created_by": st.column_config.TextColumn("Author Token", width="small"),
+        }
+        
+        display_cols = [c for c in ["category", "description", "quantity", "unit_price", "amount", "created_by"] if c in df.columns]
+        st.dataframe(df[display_cols], use_container_width=True, hide_index=True, column_config=column_configs)
+        
+        # Administrative line elimination isolation container desk
         if can_edit:
-            del_id = st.selectbox(f"Select to delete", [(l["id"], l["description"]) for l in lines], 
-                                  format_func=lambda x: x[1], key=f"del_{cost_type}")
-            if st.button(f"🗑 Delete", key=f"btn_del_{cost_type}"):
-                delete_cost_line(del_id[0])
-                st.rerun()
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+            with st.form(key=f"profit_form_prune_line_{cost_type}_{ship['id']}"):
+                delete_options = [(l["id"], f"🗑️ {l.get('category')} — {l.get('description','No Description')} [฿{l.get('amount',0):,.2f}]") for l in lines]
+                target_del_tuple = st.selectbox(
+                    f"Select Unreconciled {cost_type} Target Item to Prune", 
+                    options=delete_options, 
+                    format_func=lambda x: x[1],
+                    key=f"profit_delete_select_box_{cost_type}"
+                )
+                submit_deletion = st.form_submit_button(f"Prune Selected {cost_type} Entry Line permanently", type="secondary", use_container_width=True)
+                
+            if submit_deletion and target_del_tuple:
+                with st.spinner("Erasing database entry sequence index..."):
+                    try:
+                        delete_cost_line(target_del_tuple[0])
+                        st.toast("Financial line item permanently pruned from workspace metrics context.", icon="🗑️")
+                        st.rerun()
+                    except Exception as del_ex:
+                        st.error(f"Ledger mutation layer blocked structural record deletion: {str(del_ex)}")
 
-def _render_sheets_section(ship, summary, can_edit, user):
-    sheets = list_profit_sheets(ship["id"])
+
+# =========================================================
+# SUB-ROUTINE: MASTER SHEETS GENERATION & EXECUTIVE SIGN-OFF
+# =========================================================
+def _render_sheets_section(ship, summary, can_edit, role, user):
+    st.markdown("##### Consolidated P&L Report Compilation Matrix")
     
+    try:
+        sheets = list_profit_sheets(ship["id"]) or []
+    except Exception as read_sheets_ex:
+        st.error(f"Failed to recall corporate balance sheet indexes: {str(read_sheets_ex)}")
+        sheets = []
+
+    # Dynamic PDF Generator Blueprint Hook Trigger
     if can_edit:
-        if st.button("🚀 Generate Profit Sheet PDF", type="primary"):
-            with st.status("Generating PDF...", expanded=True) as status:
+        if st.button("🚀 Generate Official Job Profitability Sheet PDF Structure", type="primary", use_container_width=True):
+            with st.status("Executing PDF vector compile engines...", expanded=True) as status_indicator:
                 try:
                     from pdf.profit_pdf import generate_profit_pdf
-                    sheet = create_profit_sheet(ship["id"], prepared_by=user.get("full_name"))
-                    ar = get_cost_lines(ship["id"], "AR")
-                    ap = get_cost_lines(ship["id"], "AP")
+                    
+                    sheet = create_profit_sheet(ship["id"], prepared_by=str(user.get("full_name", user.get("username", "Operator"))))
+                    ar = get_cost_lines(ship["id"], "AR") or []
+                    ap = get_cost_lines(ship["id"], "AP") or []
+                    
                     pdf_path = generate_profit_pdf(ship, ar, ap, summary, sheet)
                     
-                    with open(pdf_path, "rb") as f:
-                        st.session_state["latest_ps_pdf"] = {"data": f.read(), "name": f"{sheet['sheet_no']}.pdf"}
-                    status.update(label="✅ Success!", state="complete")
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                    with open(pdf_path, "rb") as pdf_file_stream:
+                        st.session_state["latest_ps_pdf"] = {
+                            "data": pdf_file_stream.read(), 
+                            "name": f"PROFIT_SHEET_{sheet.get('sheet_no', 'GEN')}_{ship['job_no']}.pdf"
+                        }
+                    status_indicator.update(label="✅ Snapshot Verification Success! Document buffer initialized.", state="complete")
+                    st.rerun()
+                except Exception as pdf_ex:
+                    st.error(f"🚨 Pipeline Interruption: Compilation engine failed: {str(pdf_ex)}")
 
     if "latest_ps_pdf" in st.session_state:
-        pdf = st.session_state["latest_ps_pdf"]
-        st.download_button("📥 Download Generated PDF", pdf["data"], pdf["name"], use_container_width=True)
+        pdf_payload = st.session_state["latest_ps_pdf"]
+        st.markdown("<div style='margin-top:10px; margin-bottom:15px;'></div>", unsafe_allow_html=True)
+        st.download_button(
+            label="📥 Download Newly Compiled Audit Sheet Document Frame (PDF)", 
+            data=pdf_payload["data"], 
+            file_name=pdf_payload["name"], 
+            mime="application/pdf",
+            use_container_width=True,
+            key="profit_sheet_download_trigger_btn"
+        )
 
-    for s in sheets:
-        with st.container(border=True):
-            c1, c2, c3 = st.columns([2, 1, 1])
-            c1.markdown(f"**{s['sheet_no']}**")
-            c2.metric("Net", f"฿{s.get('net_profit', 0):,.0f}")
-            if can_edit:
-                if not s.get("reviewed_by"):
-                    if c3.button("👁 Review", key=f"rev_{s['id']}"):
-                        update_signoff(s["id"], "review", user.get("full_name"))
-                        st.rerun()
-                elif not s.get("approved_by") and role_has_approve(user):
-                    if c3.button("✅ Approve", key=f"app_{s['id']}"):
-                        update_signoff(s["id"], "approve", user.get("full_name"))
-                        st.rerun()
+    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+    st.markdown("###### Historical Document Multi-Stage Sign-off Vault")
+    
+    if not sheets:
+        st.caption("No historical P&L sheets compiled for this operational matrix.")
+    else:
+        for s in sheets:
+            with st.container(border=True):
+                col_sh1, col_sh2, col_sh3 = st.columns([2, 1, 1])
+                
+                # Render metadata structural tag layouts
+                with col_sh1:
+                    st.markdown(f"📄 **Document No:** `{s['sheet_no']}`")
+                    st.caption(f"Prepared Authorized Token: {s.get('prepared_by', 'System Engine')}")
+                    
+                    # Workflow status indicators blocks render markup
+                    rev_token = s.get('reviewed_by')
+                    app_token = s.get('approved_by')
+                    
+                    status_badge = "<span style='color:#E2E8F0; background-color:#475569; padding:2px 8px; border-radius:4px; font-size:11px;'>STAGE 1: DRAFTED</span>"
+                    if rev_token:
+                        status_badge = "<span style='color:#FEE2E2; background-color:#991B1B; padding:2px 8px; border-radius:4px; font-size:11px;'>STAGE 2: AUDITED</span>"
+                    if app_token:
+                        status_badge = "<span style='color:#D1FAE5; background-color:#065F46; padding:2px 8px; border-radius:4px; font-size:11px;'>STAGE 3: APPROVED & RELEASED</span>"
+                        
+                    st.markdown(f"Workflow Authorization Vector Clearance: {status_badge}", unsafe_allow_html=True)
+                
+                col_sh2.metric("Declared Net Profit", f"฿ {s.get('net_profit', 0):,.2f}")
+                
+                # Active Dual-Stage Sign-off Process execution desk
+                with col_sh3:
+                    st.markdown("<div style='padding-top:10px;'></div>", unsafe_allow_html=True)
+                    if can_edit:
+                        # Stage A: Financial Audit Verification Row
+                        if not s.get("reviewed_by"):
+                            if st.button("👁️ Verify Audit Sign-off", key=f"profit_btn_review_token_{s['id']}", use_container_width=True):
+                                with st.spinner("Signing record frame..."):
+                                    try:
+                                        update_signoff(s["id"], "review", str(user.get("full_name", user.get("username", "Auditor"))))
+                                        st.toast("Document frame state successfully upgraded to AUDITED index.", icon="👁️")
+                                        st.rerun()
+                                    except Exception as err_rev:
+                                        st.error(str(err_rev))
+                                        
+                        # Stage B: Management Executive Control Clearing Row                
+                        elif not s.get("approved_by") and role_has_approve(user):
+                            if st.button("✅ Executive Release", key=f"profit_btn_approve_token_{s['id']}", use_container_width=True, type="primary"):
+                                with st.spinner("Locking corporate records balance vector..."):
+                                    try:
+                                        update_signoff(s["id"], "approve", str(user.get("full_name", user.get("username", "Executive"))))
+                                        st.toast("Document matrix locked and approved for liquidation distribution.", icon="✅")
+                                        st.rerun()
+                                    except Exception as err_app:
+                                        st.error(str(err_app))
+                        else:
+                            st.markdown("<center style='color:#94A3B8; font-size:12px; font-style:italic; padding-top:15px;'>Verification Locked</center>", unsafe_allow_html=True)
