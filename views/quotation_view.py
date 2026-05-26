@@ -1,5 +1,5 @@
 """
-Quotation Management View
+Quotation Management View Workspace
 PostgreSQL Connected - 100% Professional ERP Grade Interface
 """
 
@@ -17,6 +17,9 @@ from managers.quotation_manager import (
 )
 from managers.customer_manager import search_customers, get_customer_by_name
 from managers.booking_manager import create_booking
+
+# Centralized Security Audit System Integration
+from core.audit import log_action
 
 # Dynamic Presentation Layer Engine Guard
 _PDF_AVAILABLE = True
@@ -145,4 +148,202 @@ def _quotation_form(prefix: str, defaults: Optional[Dict[str, Any]] = None) -> T
     # --- DETAILED COST ITEMS BREAKDOWN (State Grid) ---
     st.markdown("### 📊 Pricing Model Line Items")
     
-    # Header Blueprint
+    header_cols = st.columns([3, 1, 1.2, 1, 2, 0.4])
+    header_cols[0].caption("**Charge Item Description Specification**")
+    header_cols[1].caption("**Currency**")
+    header_cols[2].caption("**Unit Rate Price**")
+    header_cols[3].caption("**Billing Unit**")
+    header_cols[4].caption("**Transactional Item Remark**")
+    header_cols[5].caption("**Action**")
+
+    items_to_remove = []
+    updated_items = []
+
+    for i, row in enumerate(st.session_state[items_key]):
+        row_id = row.get("id", str(i))
+        cols = st.columns([3, 1, 1.2, 1, 2, 0.4])
+        
+        desc = cols[0].text_input("Desc", row["description"], key=f"{prefix}_desc_{row_id}", label_visibility="collapsed", placeholder="Handling Fee, Freight Charge...")
+        curr = cols[1].selectbox("Curr", ["USD", "THB", "CNY", "EUR"], index=["USD", "THB", "CNY", "EUR"].index(row.get("currency", "USD")) if row.get("currency") in ["USD", "THB", "CNY", "EUR"] else 0, key=f"{prefix}_cur_{row_id}", label_visibility="collapsed")
+        price = cols[2].number_input("Price", value=float(row["price"]), min_value=0.0, step=50.0, format="%.2f", key=f"{prefix}_p_{row_id}", label_visibility="collapsed")
+        unit = cols[3].text_input("Unit", row["unit"], key=f"{prefix}_u_{row_id}", label_visibility="collapsed", placeholder="CBM / BL")
+        remark = cols[4].text_input("Remark", row["remark"], key=f"{prefix}_r_{row_id}", label_visibility="collapsed", placeholder="Internal context notes")
+        
+        if cols[5].button("🗑️", key=f"{prefix}_del_{row_id}", help="Purge this charge line"):
+            items_to_remove.append(row_id)
+
+        updated_items.append({
+            "id": row_id,
+            "description": desc,
+            "currency": curr,
+            "price": price,
+            "unit": unit,
+            "remark": remark
+        })
+
+    if items_to_remove:
+        st.session_state[items_key] = [item for item in updated_items if item["id"] not in items_to_remove]
+        st.rerun()
+    else:
+        st.session_state[items_key] = updated_items
+
+    col_act1, _ = st.columns([1, 4])
+    with col_act1:
+        st.button("➕ Add Row", on_click=_add_item, args=(prefix,), use_container_width=True)
+
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+    terms = st.text_area("Legal Terms & Contractual Conditions Clauses", value=d.get("terms_conditions", DEFAULT_TERMS), key=f"{prefix}_terms", height=120)
+
+    form_payload = {
+        "job_type": job_type, "customer_name": typed.strip(), "attention": attention.strip(), "tel": tel.strip(),
+        "carrier": carrier.strip(), "pol": pol.strip(), "pod": pod.strip(), "quotation_date": quotation_date.isoformat(),
+        "validity_date": validity_date.isoformat(), "payment_term": payment_term.strip(),
+        "commodity": commodity.strip(), "subject": subject.strip(), "terms_conditions": terms.strip()
+    }
+    
+    return form_payload, pd.DataFrame(st.session_state[items_key])
+
+
+# =========================================================
+# CENTRAL INTERFACE ROUTER (THE MISSING RENDER FUNCTION)
+# =========================================================
+def render() -> None:
+    """
+    Master presentation shell router for the complete Quotation Module.
+    Invoked dynamically by the Core Dashboard compiler.
+    """
+    st.subheader("💼 Quotation Management Hub")
+    st.caption("Commercial Pro-Forma Processing Operations Control Panel")
+
+    tab_create, tab_all = st.tabs(["➕ Structure New Quotation", "📋 Historical Manifest Ledger"])
+
+    # --- TAB 1: FORMATION HUB ---
+    with tab_create:
+        form_data, items_df = _quotation_form("create")
+        
+        st.divider()
+        col_sub1, _ = st.columns([1.5, 4])
+        with col_sub1:
+            if st.button("🚀 Finalize & Generate Document", type="primary", use_container_width=True):
+                if not form_data["customer_name"]:
+                    st.error("⚠️ Incomplete Parameters: Customer name identity is a required field.")
+                    return
+                
+                with st.spinner("Executing secure transactional entry integration..."):
+                    try:
+                        qno = create_quotation(form_data, items_df.to_dict('records'))
+                        
+                        # Execute secure structural tracking audit
+                        log_action(
+                            user_id=1,
+                            tenant_id="demo",
+                            entity="quotation",
+                            entity_id=qno,
+                            action="CREATE"
+                        )
+                        
+                        st.success(f"✅ Document Successfully Registered to Ledger: {qno}")
+                        _clear_form_state("create")
+                        st.rerun()
+                    except Exception as transaction_error:
+                        st.error(f"🚨 PostgreSQL Ledger Failure: {str(transaction_error)}")
+
+    # --- TAB 2: AUDIT LOGS & ARCHIVES ---
+    with tab_all:
+        try:
+            records = list_quotations() or []
+        except Exception as read_error:
+            st.error(f"Failed loading indices from database context: {read_error}")
+            records = []
+
+        if not records:
+            st.info("No quotation manifests matching search context exist inside database indexes.")
+            return
+
+        df = pd.DataFrame(records)
+        
+        col_f1, col_f2 = st.columns([2, 1])
+        search_query = col_f1.text_input("🔍 Filter Ledger Records", placeholder="Search Customer Name, Reference Number...")
+        
+        if search_query:
+            df = df[df.apply(lambda r: search_query.lower() in str(r).lower(), axis=1)]
+
+        # Custom high-performance analytical columns visualization configuration
+        st.dataframe(
+            df, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "quotation_no": st.column_config.TextColumn("Quotation No.", width="medium"),
+                "customer_name": st.column_config.TextColumn("Client Corporate Account", width="large"),
+                "job_type": st.column_config.TextColumn("Operation Track"),
+                "quotation_date": st.column_config.DateColumn("Issuing Date", format="YYYY-MM-DD"),
+                "validity_date": st.column_config.DateColumn("Expiration", format="YYYY-MM-DD"),
+                "status": st.column_config.TextColumn("Status")
+            }
+        )
+
+        st.divider()
+        st.markdown("**🛠️ Selected Document Operation Desk**")
+        
+        col_sel1, col_sel2, _ = st.columns([2, 1, 2])
+        with col_sel1:
+            sel_qno = st.selectbox(
+                "Active Working Document Selection Target", 
+                options=df["quotation_no"].tolist() if "quotation_no" in df.columns else [],
+                label_visibility="collapsed"
+            )
+        
+        with col_sel2:
+            edit_triggered = st.button("✏️ Check Out & Modify", type="secondary", use_container_width=True)
+            
+        if edit_triggered and sel_qno:
+            st.session_state["edit_loaded"] = sel_qno
+            st.rerun()
+
+        # --- LIVE DOCUMENT RECONCILIATION EDIT DRAWER ---
+        if "edit_loaded" in st.session_state:
+            st.markdown("---")
+            target_no = st.session_state["edit_loaded"]
+            
+            with st.spinner(f"Extracting state payload record index target '{target_no}'..."):
+                try:
+                    loaded = get_quotation_by_no(target_no)
+                except Exception as fetch_err:
+                    st.error(f"Failed retrieval transaction pipeline: {fetch_err}")
+                    loaded = None
+
+            if loaded:
+                st.markdown(f"#### 🔒 Workspace Checkout: Editing Manifest `{loaded['quotation_no']}`")
+                
+                form_data_edit, items_df_edit = _quotation_form("edit", defaults=loaded)
+                
+                st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                col_e1, col_e2, _ = st.columns([1, 1, 3])
+                
+                with col_e1:
+                    if st.button("💾 Apply Overwrite", type="primary", use_container_width=True):
+                        try:
+                            update_quotation(loaded["quotation_no"], form_data_edit, items_df_edit.to_dict('records'))
+                            
+                            # Log the edit modification trace
+                            log_action(
+                                user_id=1,
+                                tenant_id="demo",
+                                entity="quotation",
+                                entity_id=loaded["quotation_no"],
+                                action="UPDATE"
+                            )
+                            
+                            st.success("Ledger values modified successfully.")
+                            del st.session_state["edit_loaded"]
+                            _clear_form_state("edit")
+                            st.rerun()
+                        except Exception as update_err:
+                            st.error(f"Pipeline intercept error: {update_err}")
+                            
+                with col_e2:
+                    if st.button("❌ Close Workspace", use_container_width=True):
+                        del st.session_state["edit_loaded"]
+                        _clear_form_state("edit")
+                        st.rerun()
