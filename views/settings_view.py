@@ -5,8 +5,16 @@ PostgreSQL / SMTP / GitHub Persistence Architecture — 100% Professional ERP Gr
 
 import streamlit as st
 import pandas as pd
-from managers.template_manager import list_templates, get_template, update_template, seed_default_templates
-from managers.email_manager import list_email_logs, _get_smtp_config
+
+# --- CORE SYSTEM MANAGERS INTEGRATION ---
+try:
+    from managers.template_manager import list_templates, get_template, update_template, seed_default_templates
+    from managers.email_manager import list_email_logs, _get_smtp_config
+    from managers.db_persistence import get_backup_status, force_push
+except ImportError as imp_err:
+    # Failover Guard: ป้องกันระบบล่มในกรณีที่โครงสร้างโฟลเดอร์/ไฟล์ในระบบ local แตกต่างออกไป
+    st.error(f"🚨 Dependency Error: ไม่สามารถโหลดโมดูลระบบหลังบ้านได้ กรุณาตรวจสอบโฟลเดอร์ 'managers'")
+    st.code(str(imp_err))
 
 # =========================================================
 # SYSTEM VIEW ROUTER ENTRYPOINT
@@ -102,7 +110,6 @@ def render():
             st.markdown("**Active Secure Routing Metric Block:**")
             st.code(f"Relay Endpoint Host: {cfg.get('host')}\nSystem Outbound Mask Line (From): {cfg.get('from_email')}\nSecurity TLS/SSL Protocol: Enforced", language="ini")
             
-            # Future Provisioning Expansion Desk Anchor
             st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
             with st.expander("🛠️ Gateway Connectivity Diagnostic Tool"):
                 test_email = st.text_input("Destination Account for Test Payload", placeholder="operator@smartfreight.com", key="settings_smtp_test_dest")
@@ -133,7 +140,6 @@ def render():
         if logs:
             df = pd.DataFrame(logs)
             
-            # Map structural data frames into neat human readable indices for operators
             column_mapping = {
                 "id": "Log Sequence ID",
                 "recipient": "Target Destination Address",
@@ -156,15 +162,11 @@ def render():
         st.markdown("<h4 style='font-size:15px; color:#F1F5F9; font-weight:700;'>💾 Disaster Recovery & Secure Persistence Engines</h4>", unsafe_allow_html=True)
         
         try:
-            from managers.db_persistence import get_backup_status, force_push
             status = get_backup_status()
-        except Exception as import_backup_ex:
-            st.error("Infrastructure Interface missing configuration modules.")
-            st.exception(import_backup_ex)
+        except Exception:
             status = {"configured": False}
         
-        if status.get("configured"):
-            # Main Telemetry Snapshot Metric Blocks Grid
+        if status and status.get("configured"):
             col_bk1, col_bk2, col_bk3 = st.columns(3)
             col_bk1.metric("Last Upstream Synchronization", str(status.get("last_push_str", "Unknown Timestamp")))
             col_bk2.metric("Physical Engine Allocation Size", f"{float(status.get('db_size_bytes', 0)) / 1024:.2f} KB")
@@ -184,4 +186,20 @@ def render():
                     except Exception as force_ex:
                         st.error(f"Critical execution fault triggered during push routine: {str(force_ex)}")
         else:
-            st
+            st.markdown("<div style='padding: 14px; border: 1px solid #334155; background-color: #0F172A; border-radius: 10px;'>", unsafe_allow_html=True)
+            with st.expander("📖 Automated Versioned Backups Configuration Blueprint Architecture", expanded=True):
+                st.markdown("""
+                ### 🛠️ Upstream Snapshot Sync Pipeline Integration Instructions
+                To map dynamic production schemas safely onto automated storage, satisfy the following environments:
+                
+                1. **Generate Token:** Ensure a personal deployment token holds secure write credentials permissions to target repositories configurations.
+                2. **Inject Secrets Engine:** Update application properties parameters file mapping the exactly configured definitions:
+                   ```toml
+                   [persistence_engine]
+                   github_token = "ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+                   repository_endpoint = "user/smart-freight-snapshots-ledger"
+                   auto_sync_interval_minutes = 60
+                   ```
+                3. **Initialize Network Layers:** Restart main cluster thread instances to allow the background daemon hooks to intercept state.
+                """)
+            st.markdown("</div>", unsafe_allow_html=True)
