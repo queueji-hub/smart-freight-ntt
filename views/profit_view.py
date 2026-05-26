@@ -8,12 +8,28 @@ import pandas as pd
 from datetime import datetime
 
 from managers.shipment_manager import list_shipments
-from managers.profit_manager import (
-    AR_CATEGORIES, AP_CATEGORIES,
-    add_cost_line, delete_cost_line,
-    get_cost_lines, get_profit_summary,
-    create_profit_sheet, list_profit_sheets, update_signoff,
-)
+
+# --- SAFE INJECTION & BACKUP FAILOVER GUARD FOR ACCOUNTING CATEGORIES ---
+try:
+    from managers.profit_manager import (
+        add_cost_line, delete_cost_line,
+        get_cost_lines, get_profit_summary,
+        create_profit_sheet, list_profit_sheets, update_signoff,
+    )
+    # พยายามโหลดหมวดหมู่ หากโหลดไม่ได้จะไปทำที่บล็อก exceptด้านล่าง
+    from managers.profit_manager import AR_CATEGORIES, AP_CATEGORIES
+except ImportError:
+    # Local Failover Memory Array Injections ในกรณีที่หลังบ้านไม่ได้ประกาศตัวแปรไว้
+    AR_CATEGORIES = ["Ocean Freight Revenue", "Local Terminal Charges (AR)", "Customs Clearance Service", "Inland Trucking Revenue", "Warehousing", "Miscellaneous Revenue"]
+    AP_CATEGORIES = ["Ocean Freight Cost", "Port Terminal Cost", "Customs Duty Paid", "Inland Carrier Expenses", "Agent Handling Fee", "Miscellaneous Cost"]
+    
+    # ดึงฟังก์ชันที่เหลือมาทำงานต่อเพื่อไม่ให้ระบบหยุดทำงาน
+    from managers.profit_manager import (
+        add_cost_line, delete_cost_line,
+        get_cost_lines, get_profit_summary,
+        create_profit_sheet, list_profit_sheets, update_signoff,
+    )
+
 from managers.fx_manager import SUPPORTED_CURRENCIES
 from managers.auth_manager import can_write
 
@@ -151,7 +167,6 @@ def _render_cost_section(ship, cost_type, categories, can_edit, user):
     else:
         df = pd.DataFrame(lines)
         
-        # Humanize structures for downstream operational view mapping
         column_configs = {
             "category": st.column_config.TextColumn("Category Type", width="small"),
             "description": st.column_config.TextColumn("Line Narrative Description", width="medium"),
@@ -164,7 +179,6 @@ def _render_cost_section(ship, cost_type, categories, can_edit, user):
         display_cols = [c for c in ["category", "description", "quantity", "unit_price", "amount", "created_by"] if c in df.columns]
         st.dataframe(df[display_cols], use_container_width=True, hide_index=True, column_config=column_configs)
         
-        # Administrative line elimination isolation container desk
         if can_edit:
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
             with st.form(key=f"profit_form_prune_line_{cost_type}_{ship['id']}"):
@@ -199,7 +213,6 @@ def _render_sheets_section(ship, summary, can_edit, role, user):
         st.error(f"Failed to recall corporate balance sheet indexes: {str(read_sheets_ex)}")
         sheets = []
 
-    # Dynamic PDF Generator Blueprint Hook Trigger
     if can_edit:
         if st.button("🚀 Generate Official Job Profitability Sheet PDF Structure", type="primary", use_container_width=True):
             with st.status("Executing PDF vector compile engines...", expanded=True) as status_indicator:
@@ -244,12 +257,10 @@ def _render_sheets_section(ship, summary, can_edit, role, user):
             with st.container(border=True):
                 col_sh1, col_sh2, col_sh3 = st.columns([2, 1, 1])
                 
-                # Render metadata structural tag layouts
                 with col_sh1:
                     st.markdown(f"📄 **Document No:** `{s['sheet_no']}`")
                     st.caption(f"Prepared Authorized Token: {s.get('prepared_by', 'System Engine')}")
                     
-                    # Workflow status indicators blocks render markup
                     rev_token = s.get('reviewed_by')
                     app_token = s.get('approved_by')
                     
@@ -263,11 +274,9 @@ def _render_sheets_section(ship, summary, can_edit, role, user):
                 
                 col_sh2.metric("Declared Net Profit", f"฿ {s.get('net_profit', 0):,.2f}")
                 
-                # Active Dual-Stage Sign-off Process execution desk
                 with col_sh3:
                     st.markdown("<div style='padding-top:10px;'></div>", unsafe_allow_html=True)
                     if can_edit:
-                        # Stage A: Financial Audit Verification Row
                         if not s.get("reviewed_by"):
                             if st.button("👁️ Verify Audit Sign-off", key=f"profit_btn_review_token_{s['id']}", use_container_width=True):
                                 with st.spinner("Signing record frame..."):
@@ -278,7 +287,6 @@ def _render_sheets_section(ship, summary, can_edit, role, user):
                                     except Exception as err_rev:
                                         st.error(str(err_rev))
                                         
-                        # Stage B: Management Executive Control Clearing Row                
                         elif not s.get("approved_by") and role_has_approve(user):
                             if st.button("✅ Executive Release", key=f"profit_btn_approve_token_{s['id']}", use_container_width=True, type="primary"):
                                 with st.spinner("Locking corporate records balance vector..."):
