@@ -147,7 +147,7 @@ def _new_form():
                     }
                     create_customer(payload)
                     st.toast("✅ Legal entity account successfully committed to database indexes!", icon="✅")
-                    st.cache_data.clear()  # Clear cache to force reload database entries dynamically
+                    st.cache_data.clear()  # Clears cache safely within validated scope
                     st.rerun()
                 except Exception as ex:
                     st.error(f"🚨 Relational Ledger Processing Exception Intercepted: {str(ex)}")
@@ -169,7 +169,6 @@ def _edit_form(cust):
         with c2:
             tax_id = st.text_input("Government Tax Registration Reference ID (Tax ID)", value=str(cust.get("tax_id") or ""))
             
-            # Safely transform PostgreSQL legacy int formats
             try:
                 current_credit_days = int(cust.get("credit_terms_days") or 30)
             except (ValueError, TypeError):
@@ -210,3 +209,6 @@ def _edit_form(cust):
                 delete_customer(cust["id"])
                 st.toast("🗑️ Account context successfully pruned from ledger registry.")
                 st.cache_data.clear()
+                st.rerun()
+            except Exception as del_err:
+                st.error(f"🚨 Secure Deactivation Pipeline Fault: {str(del_err)}")
