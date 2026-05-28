@@ -6,7 +6,7 @@ import streamlit as st
 # PAGE CONFIG (ENTERPRISE STANDARD)
 # =========================================================
 st.set_page_config(
-    page_title="Smart Freight NTT | Enterprise Logistics ERP",
+    page_title="Smart Freight NTT, | Enterprise Logistics ERP",
     page_icon="🚢",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -167,7 +167,7 @@ with st.sidebar:
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     ">
         <div style="font-size: 20px; font-weight: 800; color: #F8FAFC; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px;">
-            <span>🚢</span> Smart Freight NTT
+            <span>🚢</span> Smart Freight NTT,
         </div>
         <div style="height: 1px; background: #334155; margin: 12px 0;"></div>
         <div style="font-size: 14px; font-weight: 600; color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">

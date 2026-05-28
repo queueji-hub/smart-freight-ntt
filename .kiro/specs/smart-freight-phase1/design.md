@@ -811,7 +811,7 @@ def init_database():
 
 def main():
     st.set_page_config(
-        page_title="Smart Freight NTT",
+        page_title="Smart Freight NTT,",
         page_icon="🚢",
         layout="wide"
     )
@@ -820,7 +820,7 @@ def main():
     db = init_database()
     
     # Sidebar navigation
-    st.sidebar.title("🚢 Smart Freight NTT")
+    st.sidebar.title("🚢 Smart Freight NTT,")
     st.sidebar.markdown("---")
     st.sidebar.info("""
     **Phase 1 Features:**
