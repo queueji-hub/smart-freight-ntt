@@ -37,8 +37,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                         payment_term, commodity, subject, terms_conditions,
                         status, created_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
-                    RETURNING id;
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP);
                 """, (
                     quotation_no,
                     data.get("job_type"),
@@ -57,6 +56,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     "ACTIVE"
                 ))
                 
+                cur.execute("SELECT id FROM quotations WHERE quotation_no = %s LIMIT 1;", (quotation_no,))
                 result = cur.fetchone()
                 quotation_id = result[0] if isinstance(result, (tuple, list)) else result["id"]
 
@@ -101,10 +101,8 @@ def list_quotations() -> List[Dict[str, Any]]:
                 FROM quotations 
                 ORDER BY id DESC;
             """)
-            if hasattr(cur, "description") and cur.description:
-                columns = [col[0] for col in cur.description]
-                return [dict(zip(columns, row)) for row in cur.fetchall()]
-            return []
+            rows = cur.fetchall()
+            return [dict(r) for r in rows]
 
 
 def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
@@ -125,8 +123,7 @@ def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
             if not row:
                 return None
                 
-            columns = [col[0] for col in cur.description]
-            q_data = dict(zip(columns, row))
+            q_data = dict(row)
             
             # Format dates seamlessly to strings for frontend engine compliance
             for date_key in ["quotation_date", "validity_date"]:
@@ -135,14 +132,13 @@ def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
 
             # Fetch Child Item Array rows
             cur.execute("""
-                SELECT id::text, description, currency, price, unit, remark 
+                SELECT id, description, currency, price, unit, remark 
                 FROM quotation_items 
                 WHERE quotation_id = %s 
                 ORDER BY sort_order ASC;
             """, (q_data["id"],))
             
-            item_cols = [col[0] for col in cur.description]
-            q_data["items"] = [dict(zip(item_cols, r)) for r in cur.fetchall()]
+            q_data["items"] = [dict(r) for r in cur.fetchall()]
             
             return q_data
 
@@ -158,7 +154,12 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
         with conn.cursor() as cur:
             try:
                 # 1. Row Lock Verification check
-                cur.execute("SELECT id FROM quotations WHERE quotation_no = %s FOR UPDATE;", (quotation_no,))
+                cur.execute("SELECT id FROM quotations WHERE quotation_no = %s LIMIT 1;", (quotation_no,))
+                header = cur.fetchone()
+                if not header:
+                    raise ValueError(f"Target index '{quotation_no}' not found.")
+                
+                q_id = header[0] if isinstance(header, (tuple, list)) else header["id"]
                 header = cur.fetchone()
                 if not header:
                     raise ValueError(f"Target index '{quotation_no}' not found.")

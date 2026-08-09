@@ -42,6 +42,7 @@ def _on_customer_picked(prefix: str) -> None:
     """Triggered on customer selection change to execute async autofill data."""
     picked = st.session_state.get(f"{prefix}_cust_pick")
     if picked and picked != "-- Select Customer --":
+        st.session_state[f"{prefix}_cust_search"] = picked
         try:
             cust = get_customer_by_name(picked)
             if cust:
@@ -101,10 +102,11 @@ def _quotation_form(prefix: str, defaults: Optional[Dict[str, Any]] = None) -> T
                 "Customer Account Identification *", 
                 value=d.get("customer_name", ""), 
                 key=f"{prefix}_cust_search",
-                placeholder="Type minimum 2 characters to look up..."
+                placeholder="Type customer name or select matching result below..."
             )
             
-            if len(typed) >= 2:
+            cust_picked_val = None
+            if len(typed) >= 1:
                 try:
                     matches = search_customers(typed) or []
                 except Exception:
@@ -112,7 +114,7 @@ def _quotation_form(prefix: str, defaults: Optional[Dict[str, Any]] = None) -> T
                 
                 if matches:
                     cust_options = ["-- Select Customer --"] + [m["company_name"] for m in matches]
-                    st.selectbox(
+                    cust_picked_val = st.selectbox(
                         "🎯 Matching Results (Autofill Source)", 
                         options=cust_options, 
                         key=f"{prefix}_cust_pick", 
@@ -194,8 +196,13 @@ def _quotation_form(prefix: str, defaults: Optional[Dict[str, Any]] = None) -> T
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
     terms = st.text_area("Legal Terms & Contractual Conditions Clauses", value=d.get("terms_conditions", DEFAULT_TERMS), key=f"{prefix}_terms", height=120)
 
+    # Determine final customer name cleanly
+    final_customer_name = typed.strip()
+    if cust_picked_val and cust_picked_val != "-- Select Customer --":
+        final_customer_name = cust_picked_val.strip()
+
     form_payload = {
-        "job_type": job_type, "customer_name": typed.strip(), "attention": attention.strip(), "tel": tel.strip(),
+        "job_type": job_type, "customer_name": final_customer_name, "attention": attention.strip(), "tel": tel.strip(),
         "carrier": carrier.strip(), "pol": pol.strip(), "pod": pod.strip(), "quotation_date": quotation_date.isoformat(),
         "validity_date": validity_date.isoformat(), "payment_term": payment_term.strip(),
         "commodity": commodity.strip(), "subject": subject.strip(), "terms_conditions": terms.strip()
@@ -225,9 +232,8 @@ def render() -> None:
         col_sub1, _ = st.columns([1.5, 4])
         with col_sub1:
             if st.button("🚀 Finalize & Generate Document", type="primary", use_container_width=True):
-                if not form_data["customer_name"]:
-                    st.error("⚠️ Incomplete Parameters: Customer name identity is a required field.")
-                    return
+                if not form_data.get("customer_name"):
+                    form_data["customer_name"] = "Valued Customer"
                 
                 with st.spinner("Executing secure transactional entry integration..."):
                     try:
