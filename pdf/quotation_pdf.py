@@ -96,17 +96,17 @@ def _build_header(styles) -> Table:
         logo = Paragraph("<b>[LOGO]</b>", styles["body"])
     
     addr_html = (
-        f'<font size="9" color="#1F4E9E">'
+        f'<font size="8" color="#1F4E9E">'
+        f'<b>{COMPANY.get("name_th", "บริษัท ณัฏฐยาราชย์ จำกัด")}</b><br/>'
         f'{COMPANY["address_line1"]}<br/>'
-        f'{COMPANY["address_line2"]}<br/>'
-        f'{COMPANY["address_line3"]} Tax ID {COMPANY["tax_id"]} '
-        f'Tel {COMPANY["tel"]}<br/>'
-        f'Email:{COMPANY["email"]}'
+        f'{COMPANY["address_line2"]} {COMPANY["address_line3"]}<br/>'
+        f'<b>Tax ID: {COMPANY["tax_id"]}</b> | Tel: {COMPANY["tel"]}<br/>'
+        f'Email: {COMPANY["email"]} | Web: {COMPANY["website"]}'
         f'</font>'
     )
     company_block = [
-        Paragraph(COMPANY["name"], styles["company"]),
-        Spacer(1, 3*mm),
+        Paragraph(COMPANY["name_en"], styles["company"]),
+        Spacer(1, 1*mm),
         Paragraph(addr_html, styles["company_addr"]),
     ]
     

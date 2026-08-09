@@ -37,11 +37,14 @@ TIMEZONE = "Asia/Bangkok"
 # =========================================================
 COMPANY = {
     "name": "NATTAYARAAT CO., LTD.",
+    "name_th": "บริษัท ณัฏฐยาราชย์ จำกัด",
+    "name_en": "NATTAYARAAT CO., LTD.",
     "short_name": "NATTAYARAAT",
-    "tax_id": "0735568004823",
-    "address_line1": "59/9 The Balanz Zigma Village, Moo 4, Soi Bangkrathuek 3",
-    "address_line2": "Bangkrathuek Subdistrict, Sam Phran District",
-    "address_line3": "Nakhon Pathom 73210, Thailand",
+    "tax_id": "073-556-800-4823",
+    "address_line1": "59/9 THE BALANZ ZIGMA VILLAGE, MOO4, SOI BANGKRATHUEK 3,",
+    "address_line2": "BANGKRATHUEK SUBDISTRICT, SAMPHRAN DISTRICT,",
+    "address_line3": "NAKHON PATHOM PROVINCE 73210, THAILAND",
+    "address_full": "59/9 THE BALANZ ZIGMA VILLAGE, MOO4, SOI BANGKRATHUEK 3, BANGKRATHUEK SUBDISTRICT, SAMPHRAN DISTRICT, NAKHON PATHOM PROVINCE 73210",
     "tel": "063-428-9691",
     "email": "Management@nattayaraat.com",
     "website": "www.nattayaraat.com",

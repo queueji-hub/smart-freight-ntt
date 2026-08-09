@@ -80,16 +80,17 @@ def _header(styles):
     else:
         logo = Paragraph("[LOGO]", styles["body"])
     
-    addr = (f'<font color="#1F4E9E" size="9">'
+    addr = (f'<font color="#1F4E9E" size="8">'
+            f'<b>{COMPANY.get("name_th", "บริษัท ณัฏฐยาราชย์ จำกัด")}</b><br/>'
             f'{COMPANY["address_line1"]}<br/>'
             f'{COMPANY["address_line2"]} {COMPANY["address_line3"]}<br/>'
-            f'Tax ID: {COMPANY["tax_id"]} · Tel: {COMPANY["tel"]}<br/>'
+            f'<b>Tax ID: {COMPANY["tax_id"]}</b> · Tel: {COMPANY["tel"]}<br/>'
             f'Email: {COMPANY["email"]}'
             f'</font>')
     
     company_block = [
-        Paragraph(COMPANY["name"], styles["company"]),
-        Spacer(1, 3*mm),
+        Paragraph(COMPANY["name_en"], styles["company"]),
+        Spacer(1, 1*mm),
         Paragraph(addr, styles["addr"]),
     ]
     
