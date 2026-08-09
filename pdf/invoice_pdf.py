@@ -302,8 +302,27 @@ def generate_invoice_pdf(invoice: Dict[str, Any],
                                 invoice.get("currency", "THB"), styles))
     story.append(Spacer(1, 4*mm))
     
+    # Amount in Words Block
+    from utils.number_to_words import thai_baht_text, number_to_english_words
+    total_val = float(invoice.get("total_amount", 0) or 0)
+    cur = invoice.get("currency", "THB")
+    
+    amount_words_text = thai_baht_text(total_val) if cur == "THB" else number_to_english_words(total_val, cur)
+    
+    words_table = Table([[
+        Paragraph(f"<b>AMOUNT IN WORDS:</b> <font color='#1F4E9E'><b>{amount_words_text}</b></font>", styles["body"])
+    ]], colWidths=[180*mm])
+    words_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#F8FAFC")),
+        ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
+        ("LEFTPADDING", (0,0), (-1,-1), 6),
+        ("RIGHTPADDING", (0,0), (-1,-1), 6),
+        ("TOPPADDING", (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+    ]))
+    
     # Right-align totals block
-    totals_wrap = Table([["", _totals_block(invoice, styles)]],
+    totals_wrap = Table([[words_table, _totals_block(invoice, styles)]],
                          colWidths=[80*mm, 100*mm])
     totals_wrap.setStyle(TableStyle([
         ("VALIGN", (0,0), (-1,-1), "TOP"),
@@ -335,5 +354,26 @@ def generate_invoice_pdf(invoice: Dict[str, Any],
     ]))
     story.append(sig)
     
-    doc.build(story)
+    is_draft = str(invoice.get("payment_status", invoice.get("status", ""))).upper().strip() != "ISSUED"
+
+    def _draw_invoice_canvas(canvas, doc):
+        canvas.saveState()
+        if is_draft:
+            canvas.setFont(THAI_FONT_BOLD, 64)
+            canvas.setFillColor(colors.HexColor("#EF4444"), alpha=0.20)
+            canvas.translate(A4[0] / 2, A4[1] / 2)
+            canvas.rotate(45)
+            canvas.drawCentredString(0, 0, "DRAFT — UNOFFICIAL COPY")
+
+        canvas.setFont(THAI_FONT, 8)
+        canvas.setFillColor(colors.grey)
+        canvas.drawString(15 * mm, 10 * mm, "Smart Freight NTT, — Enterprise Tax Invoice Engine")
+        canvas.drawRightString(A4[0] - 15 * mm, 10 * mm, f"Page {doc.page}")
+        canvas.restoreState()
+
+    doc.build(
+        story,
+        onFirstPage=_draw_invoice_canvas,
+        onLaterPages=_draw_invoice_canvas
+    )
     return output_path

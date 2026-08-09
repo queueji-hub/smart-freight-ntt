@@ -241,6 +241,24 @@ def _signature_block(styles):
     return tbl
 
 
+def _draft_watermark_canvas(canvas, doc, is_draft=True):
+    """Draws a semi-transparent diagonal 'DRAFT' watermark if status is not ISSUED."""
+    canvas.saveState()
+    if is_draft:
+        canvas.setFont(THAI_FONT_BOLD, 64)
+        canvas.setFillColor(colors.HexColor("#EF4444"), alpha=0.20)
+        canvas.translate(A4[0] / 2, A4[1] / 2)
+        canvas.rotate(45)
+        canvas.drawCentredString(0, 0, "DRAFT — UNOFFICIAL COPY")
+
+    # Footer Page Number
+    canvas.setFont(THAI_FONT, 8)
+    canvas.setFillColor(colors.grey)
+    canvas.drawString(15 * mm, 10 * mm, "Smart Freight NTT, — Enterprise ERP System")
+    canvas.drawRightString(A4[0] - 15 * mm, 10 * mm, f"Page {doc.page}")
+    canvas.restoreState()
+
+
 def generate_bl_pdf(shipment: Dict[str, Any], output_path: str = None) -> str:
     """Generate Bill of Lading PDF."""
     if output_path is None:
@@ -271,5 +289,11 @@ def generate_bl_pdf(shipment: Dict[str, Any], output_path: str = None) -> str:
     story.append(Spacer(1, 2*mm))
     story.append(_signature_block(styles))
     
-    doc.build(story)
+    is_draft = str(shipment.get("status", "")).upper().strip() != "ISSUED"
+
+    doc.build(
+        story,
+        onFirstPage=lambda c, d: _draft_watermark_canvas(c, d, is_draft=is_draft),
+        onLaterPages=lambda c, d: _draft_watermark_canvas(c, d, is_draft=is_draft)
+    )
     return output_path
