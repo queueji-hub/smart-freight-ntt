@@ -18,11 +18,17 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
     from managers.quotation_number import generate_quotation_number
     
     # Generate tracking identity
-    q_date = data.get("quotation_date")
-    if isinstance(q_date, str):
-        q_date_obj = datetime.strptime(q_date[:10], "%Y-%m-%d")
+    q_date_val = data.get("quotation_date") or datetime.now().strftime("%Y-%m-%d")
+    v_date_val = data.get("validity_date") or (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+
+    if isinstance(q_date_val, str) and len(q_date_val) >= 10:
+        try:
+            q_date_obj = datetime.strptime(q_date_val[:10], "%Y-%m-%d")
+        except ValueError:
+            q_date_obj = datetime.now()
     else:
         q_date_obj = datetime.now()
+        q_date_val = q_date_obj.strftime("%Y-%m-%d")
         
     job_type = data.get("job_type") or "SE"
     if job_type not in ["SE", "SI", "AE", "AI", "TE", "TI"]:
@@ -46,18 +52,18 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                 """, (
                     quotation_no,
                     job_type,
-                    data.get("customer_name"),
-                    data.get("attention"),
-                    data.get("tel"),
-                    data.get("carrier"),
-                    data.get("pol"),
-                    data.get("pod"),
-                    data.get("quotation_date"),
-                    data.get("validity_date"),
-                    data.get("payment_term"),
-                    data.get("commodity"),
-                    data.get("subject"),
-                    data.get("terms_conditions"),
+                    data.get("customer_name") or "Valued Customer",
+                    data.get("attention", ""),
+                    data.get("tel", ""),
+                    data.get("carrier", ""),
+                    data.get("pol", ""),
+                    data.get("pod", ""),
+                    q_date_val,
+                    v_date_val,
+                    data.get("payment_term", "Net 30"),
+                    data.get("commodity", ""),
+                    data.get("subject", ""),
+                    data.get("terms_conditions", ""),
                     "ACTIVE"
                 ))
                 
