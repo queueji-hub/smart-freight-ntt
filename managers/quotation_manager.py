@@ -4,7 +4,7 @@ PostgreSQL Stable Release - Production Ready
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from database.connection import get_connection
 
 # =========================================================
