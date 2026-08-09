@@ -24,7 +24,12 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
     else:
         q_date_obj = datetime.now()
         
-    quotation_no = generate_quotation_number(data.get("job_type", "FREIGHT"), q_date_obj)
+    job_type = data.get("job_type") or "SE"
+    if job_type not in ["SE", "SI", "AE", "AI", "TE", "TI"]:
+        mapping = {"SEA_EXP": "SE", "SEA_IMP": "SI", "AIR_EXP": "AE", "AIR_IMP": "AI", "TRK_EXP": "TE", "TRK_IMP": "TI", "FREIGHT": "SE"}
+        job_type = mapping.get(job_type, "SE")
+
+    quotation_no = generate_quotation_number(job_type, q_date_obj)
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -40,7 +45,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP);
                 """, (
                     quotation_no,
-                    data.get("job_type"),
+                    job_type,
                     data.get("customer_name"),
                     data.get("attention"),
                     data.get("tel"),
