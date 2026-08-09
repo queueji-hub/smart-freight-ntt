@@ -70,6 +70,17 @@ def render():
         # Resample logic via DataFrame group operators
         daily_trend = filtered_ships_df.groupby('clean_date').size().rename("Bookings Counter")
         st.line_chart(daily_trend, use_container_width=True, color="#38bdf8")
+
+        # Export Operational Shipments CSV
+        ships_csv = filtered_ships_df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 Export Operational Shipment Ledger to Excel (CSV)",
+            data=ships_csv,
+            file_name=f'shipments_activity_{start_date.isoformat()}_to_{end_date.isoformat()}.csv',
+            mime='text/csv',
+            use_container_width=True,
+            key="bi_shipment_download_trigger_btn"
+        )
     else:
         st.info("ℹ️ No historical shipping logs matched your specified window interval criteria.")
 

@@ -40,7 +40,8 @@ def render():
         "📝 Document & Email Templates", 
         "📨 SMTP Gateway Relay", 
         "🔍 Central Communication Audit", 
-        "💾 Cloud Snapshots & Backup"
+        "💾 Cloud Snapshots & Backup",
+        "📜 System Audit Trail Explorer"
     ])
     
     # =========================================================
@@ -203,3 +204,37 @@ def render():
                 3. **Initialize Network Layers:** Restart main cluster thread instances to allow the background daemon hooks to intercept state.
                 """)
             st.markdown("</div>", unsafe_allow_html=True)
+
+    # =========================================================
+    # TAB 5: SYSTEM AUDIT TRAIL EXPLORER
+    # =========================================================
+    with tabs[4]:
+        st.markdown("<h4 style='font-size:15px; color:#F1F5F9; font-weight:700;'>📜 System Audit Trail & Historical Traceability Explorer</h4>", unsafe_allow_html=True)
+        st.caption("Complete chronological record of security actions, user operations, and data mutations across the entire Freight OS.")
+
+        from core.audit import list_audit_logs
+
+        a_col1, a_col2, a_col3 = st.columns([2, 1, 1])
+        a_search = a_col1.text_input("🔍 Search Audit Records (Job No, Action, Details)", placeholder="Type keyword...", key="audit_explore_search")
+        a_entity = a_col2.selectbox("Filter Entity", options=["All", "shipment", "booking", "quotation", "invoice", "user", "profit"], key="audit_explore_entity")
+        a_limit = a_col3.number_input("Record Limit", min_value=10, max_value=1000, value=200, step=50, key="audit_explore_limit")
+
+        entity_param = None if a_entity == "All" else a_entity
+        logs = list_audit_logs(entity=entity_param, search=a_search if a_search.strip() else None, limit=int(a_limit))
+
+        if not logs:
+            st.info("ℹ️ No historical audit trail records found matching the active filter criteria.")
+        else:
+            df_audit = pd.DataFrame(logs)
+            cols = [c for c in ["timestamp", "username", "full_name", "action", "entity", "entity_id", "details"] if c in df_audit.columns]
+            st.dataframe(df_audit[cols], use_container_width=True, hide_index=True)
+
+            csv_bytes = df_audit[cols].to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Audit Logs (CSV)",
+                data=csv_bytes,
+                file_name="SYSTEM_AUDIT_LOGS.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="audit_logs_csv_download_btn"
+            )
