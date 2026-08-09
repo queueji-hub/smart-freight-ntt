@@ -465,6 +465,45 @@ def init_database():
                 """)
 
                 # =====================================================
+                # CONTAINERS
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS containers (
+                        id SERIAL PRIMARY KEY,
+                        job_no TEXT NOT NULL,
+                        bl_no TEXT,
+                        container_no TEXT NOT NULL,
+                        container_size TEXT DEFAULT '40HC',
+                        container_type TEXT DEFAULT 'GP',
+                        seal_no TEXT,
+                        vgm_kg NUMERIC(15,2) DEFAULT 0,
+                        vgm_method TEXT DEFAULT 'Method 1',
+                        gross_weight NUMERIC(15,2) DEFAULT 0,
+                        net_weight NUMERIC(15,2) DEFAULT 0,
+                        tare_weight NUMERIC(15,2) DEFAULT 0,
+                        max_payload NUMERIC(15,2) DEFAULT 0,
+                        volume_cbm NUMERIC(15,2) DEFAULT 0,
+                        soc_coc TEXT DEFAULT 'COC',
+                        temp_setting NUMERIC(5,2),
+                        temp_unit TEXT DEFAULT 'C',
+                        vent_setting TEXT,
+                        genset_no TEXT,
+                        oog_length_cm NUMERIC(10,2) DEFAULT 0,
+                        oog_width_cm NUMERIC(10,2) DEFAULT 0,
+                        oog_height_cm NUMERIC(10,2) DEFAULT 0,
+                        un_number TEXT,
+                        imo_class TEXT,
+                        status TEXT DEFAULT 'Loaded',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_containers_job_no
+                    ON containers(job_no)
+                """)
+
+                # =====================================================
                 # JOB COSTS (P&L LEDGER LINES)
                 # =====================================================
                 cur.execute("""
