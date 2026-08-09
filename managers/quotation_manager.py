@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from database.connection import get_connection
 
+
 # =========================================================
 # CORE TRANSACTION: CREATE QUOTATION (ACID COMPLIANT)
 # =========================================================
@@ -16,7 +17,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
     Uses PostgreSQL standard placeholders (%s) and sequence generation.
     """
     from managers.quotation_number import generate_quotation_number
-    
+
     # Generate tracking identity
     q_date_val = data.get("quotation_date") or datetime.now().strftime("%Y-%m-%d")
     v_date_val = data.get("validity_date") or (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
@@ -29,7 +30,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
     else:
         q_date_obj = datetime.now()
         q_date_val = q_date_obj.strftime("%Y-%m-%d")
-        
+
     job_type = data.get("job_type") or "SE"
     if job_type not in ["SE", "SI", "AE", "AI", "TE", "TI"]:
         mapping = {"SEA_EXP": "SE", "SEA_IMP": "SI", "AIR_EXP": "AE", "AIR_IMP": "AI", "TRK_EXP": "TE", "TRK_IMP": "TI", "FREIGHT": "SE"}
@@ -46,9 +47,9 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                         quotation_no, job_type, customer_name, attention, tel,
                         carrier, pol, pod, quotation_date, validity_date,
                         payment_term, commodity, subject, terms_conditions,
-                        status, created_at
+                        status, created_by, created_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP);
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP);
                 """, (
                     quotation_no,
                     job_type,
@@ -64,9 +65,10 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     data.get("commodity", ""),
                     data.get("subject", ""),
                     data.get("terms_conditions", ""),
-                    "ACTIVE"
+                    "ACTIVE",
+                    data.get("created_by", "system")
                 ))
-                
+
                 cur.execute("SELECT id FROM quotations WHERE quotation_no = %s LIMIT 1;", (quotation_no,))
                 result = cur.fetchone()
                 quotation_id = result[0] if isinstance(result, (tuple, list)) else result["id"]
@@ -93,7 +95,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
 
             except Exception as e:
                 conn.rollback()
-                raise RuntimeError(f"PostgreSQL ACID Transaction Aborted: {str(e)}")
+                raise RuntimeError(f"Database Transaction Aborted: {str(e)}")
 
 
 # =========================================================
@@ -129,13 +131,13 @@ def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
             cur.execute("""
                 SELECT * FROM quotations WHERE quotation_no = %s LIMIT 1;
             """, (quotation_no,))
-            
+
             row = cur.fetchone()
             if not row:
                 return None
-                
+
             q_data = dict(row)
-            
+
             # Format dates seamlessly to strings for frontend engine compliance
             for date_key in ["quotation_date", "validity_date"]:
                 if date_key in q_data and q_data[date_key] and not isinstance(q_data[date_key], str):
@@ -148,9 +150,9 @@ def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
                 WHERE quotation_id = %s 
                 ORDER BY sort_order ASC;
             """, (q_data["id"],))
-            
+
             q_data["items"] = [dict(r) for r in cur.fetchall()]
-            
+
             return q_data
 
 
@@ -160,21 +162,17 @@ def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
 def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[str, Any]]) -> None:
     """
     Updates quotation metadata master record and replaces line rows in a block.
+    Fixed: removed duplicate fetchone() that caused NoneType crash.
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
             try:
-                # 1. Row Lock Verification check
+                # 1. Row Lock Verification check (single fetch only)
                 cur.execute("SELECT id FROM quotations WHERE quotation_no = %s LIMIT 1;", (quotation_no,))
                 header = cur.fetchone()
                 if not header:
-                    raise ValueError(f"Target index '{quotation_no}' not found.")
-                
-                q_id = header[0] if isinstance(header, (tuple, list)) else header["id"]
-                header = cur.fetchone()
-                if not header:
-                    raise ValueError(f"Target index '{quotation_no}' not found.")
-                
+                    raise ValueError(f"Quotation '{quotation_no}' not found in database.")
+
                 q_id = header[0] if isinstance(header, (tuple, list)) else header["id"]
 
                 # 2. Mutating structural properties data
@@ -183,13 +181,13 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                         job_type = %s, customer_name = %s, attention = %s, tel = %s,
                         carrier = %s, pol = %s, pod = %s, quotation_date = %s,
                         validity_date = %s, payment_term = %s, commodity = %s,
-                        subject = %s, terms_conditions = %s
+                        subject = %s, terms_conditions = %s, updated_by = %s
                     WHERE id = %s;
                 """, (
                     data.get("job_type"), data.get("customer_name"), data.get("attention"), data.get("tel"),
                     data.get("carrier"), data.get("pol"), data.get("pod"), data.get("quotation_date"),
                     data.get("validity_date"), data.get("payment_term"), data.get("commodity"),
-                    data.get("subject"), data.get("terms_conditions"), q_id
+                    data.get("subject"), data.get("terms_conditions"), data.get("updated_by", "system"), q_id
                 ))
 
                 # 3. Purging historical items lines rows to overwrite safely
@@ -210,7 +208,7 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                 conn.commit()
             except Exception as e:
                 conn.rollback()
-                raise RuntimeError(f"Failed executing PostgreSQL rewrite update transaction: {str(e)}")
+                raise RuntimeError(f"Failed executing update transaction: {str(e)}")
 
 
 def duplicate_quotation(quotation_no: str) -> str:
@@ -219,9 +217,9 @@ def duplicate_quotation(quotation_no: str) -> str:
     """
     source_data = get_quotation_by_no(quotation_no)
     if not source_data:
-        raise ValueError(f"Source file instance index code reference '{quotation_no}' non-existent.")
-        
+        raise ValueError(f"Source quotation '{quotation_no}' not found.")
+
     source_data["quotation_date"] = datetime.now().strftime("%Y-%m-%d")
     source_data["validity_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-    
+
     return create_quotation(source_data, source_data.get("items", []))
