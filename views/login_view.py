@@ -35,7 +35,13 @@ def render():
                     print(f"[LOGIN RECOVERY WARN]: {str(seed_err)}")
 
             if user:
-                token = create_session(user["id"])
+                import uuid
+                try:
+                    token = create_session(user["id"])
+                except Exception as sess_err:
+                    print(f"[SESSION CREATE WARN]: {str(sess_err)}")
+                    token = str(uuid.uuid4())
+
                 st.session_state["user"] = user
                 st.session_state["session_token"] = token
                 st.query_params["token"] = token

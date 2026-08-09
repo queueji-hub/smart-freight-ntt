@@ -204,9 +204,18 @@ def init_database():
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
                         token TEXT UNIQUE NOT NULL,
+                        expires_at TIMESTAMP,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
+
+                try:
+                    cur.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;")
+                except Exception:
+                    try:
+                        cur.execute("ALTER TABLE sessions ADD COLUMN expires_at TIMESTAMP;")
+                    except Exception:
+                        pass
 
                 cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_sessions_token
