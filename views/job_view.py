@@ -179,3 +179,12 @@ def get_dashboard_stats() -> Dict[str, Any]:
         """).fetchone()
 
         return dict(row) if row else {}
+
+
+# =========================
+# ROUTER ENTRYPOINT ALIAS
+# =========================
+def render():
+    """Delegates UI rendering to views.shipment_view"""
+    from views.shipment_view import render as render_shipment
+    render_shipment()

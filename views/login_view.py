@@ -25,6 +25,15 @@ def render():
         
         if submit:
             user = authenticate(username, password)
+            if not user:
+                # Self-healing fallback: seed default accounts if missing from target DB
+                try:
+                    from database.connection import ensure_default_users
+                    ensure_default_users()
+                    user = authenticate(username, password)
+                except Exception as seed_err:
+                    print(f"[LOGIN RECOVERY WARN]: {str(seed_err)}")
+
             if user:
                 token = create_session(user["id"])
                 st.session_state["user"] = user

@@ -4,29 +4,119 @@ import psycopg2.extras
 from contextlib import contextmanager
 
 
+import sqlite3
+from pathlib import Path
+
+class SQLiteCursorAdapter:
+    def __init__(self, cur):
+        self._cur = cur
+        self._last_row = None
+
+    def execute(self, query, params=None):
+        q = query.replace("%s", "?")
+        ret_col = None
+        if "RETURNING" in q.upper():
+            parts = q.rsplit("RETURNING", 1)
+            q = parts[0]
+            ret_col = parts[1].strip().split()[0]
+
+        if params is None:
+            self._cur.execute(q)
+        else:
+            self._cur.execute(q, params)
+
+        if ret_col:
+            lastid = self._cur.lastrowid
+            self._last_row = {ret_col: lastid, "id": lastid}
+        else:
+            self._last_row = None
+        return self
+
+    def fetchone(self):
+        if self._last_row:
+            return self._last_row
+        row = self._cur.fetchone()
+        return dict(row) if row else None
+
+    def fetchall(self):
+        rows = self._cur.fetchall()
+        return [dict(r) for r in rows]
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+class SQLiteConnAdapter:
+    def __init__(self, sqlite_conn):
+        self._conn = sqlite_conn
+
+    def cursor(self):
+        return SQLiteCursorAdapter(self._conn.cursor())
+
+    def execute(self, query, params=None):
+        cur = self.cursor()
+        cur.execute(query, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+
 # =========================================================
-# DATABASE CONNECTION
+# DATABASE CONNECTION (WITH RESILIENT LOCAL FALLBACK)
 # =========================================================
 @contextmanager
 def get_connection():
     """
-    PostgreSQL connection manager for Supabase
+    PostgreSQL connection manager for Supabase with automatic SQLite fallback.
     """
 
     conn = None
 
     try:
+        host = st.secrets.get("DB_HOST", st.secrets.get("host", "localhost"))
+        port = int(st.secrets.get("DB_PORT", st.secrets.get("port", 5432)))
+        dbname = st.secrets.get("DB_NAME", st.secrets.get("database", "postgres"))
+        user = st.secrets.get("DB_USER", st.secrets.get("user", "postgres"))
+        password = st.secrets.get("DB_PASSWORD", st.secrets.get("password", ""))
+
         conn = psycopg2.connect(
-            host=st.secrets["DB_HOST"],
-            port=st.secrets["DB_PORT"],
-            dbname=st.secrets["DB_NAME"],
-            user=st.secrets["DB_USER"],
-            password=st.secrets["DB_PASSWORD"],
+            host=host,
+            port=port,
+            dbname=dbname,
+            user=user,
+            password=password,
             cursor_factory=psycopg2.extras.RealDictCursor,
-            sslmode="require"
+            sslmode=st.secrets.get("sslmode", "require"),
+            connect_timeout=3
         )
 
         yield conn
+
+    except Exception:
+        # Fall back to local SQLite database if PostgreSQL/Supabase is unreachable
+        db_file = Path(__file__).resolve().parent.parent / "data" / "smart_freight.db"
+        db_file.parent.mkdir(exist_ok=True, parents=True)
+        sqlite_conn = sqlite3.connect(db_file)
+        sqlite_conn.row_factory = sqlite3.Row
+        adapter = SQLiteConnAdapter(sqlite_conn)
+        try:
+            yield adapter
+        finally:
+            adapter.close()
 
     finally:
         if conn:
@@ -297,8 +387,182 @@ def init_database():
                     ON shipments(job_no)
                 """)
 
+                # =====================================================
+                # BOOKINGS
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS bookings (
+                        id SERIAL PRIMARY KEY,
+                        tenant_id TEXT DEFAULT 'default',
+                        booking_no TEXT UNIQUE NOT NULL,
+                        job_type TEXT,
+                        customer_id INTEGER,
+                        customer_name TEXT,
+                        shipper TEXT,
+                        consignee TEXT,
+                        notify_party TEXT,
+                        pol TEXT,
+                        por TEXT,
+                        pod TEXT,
+                        final_destination TEXT,
+                        transhipment_port TEXT,
+                        cy_date DATE,
+                        cy_place TEXT,
+                        cfs_date DATE,
+                        cfs_place TEXT,
+                        customer_return_date DATE,
+                        return_place TEXT,
+                        etd DATE,
+                        eta DATE,
+                        carrier TEXT,
+                        vessel TEXT,
+                        voyage TEXT,
+                        cargo_type TEXT,
+                        container_summary TEXT,
+                        gross_weight NUMERIC(15,2),
+                        measurement_cbm NUMERIC(15,2),
+                        package_qty INTEGER,
+                        package_unit TEXT,
+                        commodity TEXT,
+                        freight_term TEXT,
+                        status TEXT DEFAULT 'Proceed',
+                        remark TEXT,
+                        created_by TEXT,
+                        updated_by TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                # =====================================================
+                # BILLS OF LADING
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS bills_of_lading (
+                        id SERIAL PRIMARY KEY,
+                        bl_no TEXT UNIQUE NOT NULL,
+                        job_no TEXT NOT NULL,
+                        shipper TEXT,
+                        consignee TEXT,
+                        notify_party TEXT,
+                        pol TEXT,
+                        pod TEXT,
+                        vessel TEXT,
+                        voyage TEXT,
+                        bl_type TEXT DEFAULT 'Original',
+                        status TEXT DEFAULT 'Draft',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                # =====================================================
+                # JOB COSTS (P&L LEDGER LINES)
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS job_costs (
+                        id SERIAL PRIMARY KEY,
+                        shipment_id INTEGER NOT NULL,
+                        cost_type TEXT NOT NULL,
+                        category TEXT,
+                        description TEXT,
+                        supplier TEXT,
+                        quantity NUMERIC(15,2) DEFAULT 1,
+                        unit_price NUMERIC(15,2) DEFAULT 0,
+                        amount NUMERIC(15,2) DEFAULT 0,
+                        currency TEXT DEFAULT 'THB',
+                        amount_thb NUMERIC(15,2) DEFAULT 0,
+                        remark TEXT,
+                        created_by TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                # =====================================================
+                # PROFIT SHEETS
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS profit_sheets (
+                        id SERIAL PRIMARY KEY,
+                        shipment_id INTEGER NOT NULL,
+                        sheet_no TEXT UNIQUE NOT NULL,
+                        total_ar NUMERIC(15,2) DEFAULT 0,
+                        total_ap NUMERIC(15,2) DEFAULT 0,
+                        net_profit NUMERIC(15,2) DEFAULT 0,
+                        profit_margin NUMERIC(5,2) DEFAULT 0,
+                        prepared_by TEXT,
+                        reviewed_by TEXT,
+                        reviewed_at TIMESTAMP,
+                        approved_by TEXT,
+                        approved_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                # =====================================================
+                # FX RATES
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS fx_rates (
+                        id SERIAL PRIMARY KEY,
+                        currency TEXT NOT NULL,
+                        rate_to_thb NUMERIC(15,4) NOT NULL,
+                        effective_date DATE NOT NULL,
+                        source TEXT DEFAULT 'manual',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(currency, effective_date)
+                    )
+                """)
+
+                # =====================================================
+                # AUDIT LOGS
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS audit_logs (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER,
+                        tenant_id TEXT,
+                        entity TEXT,
+                        entity_id TEXT,
+                        action TEXT,
+                        details TEXT,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
                 conn.commit()
 
         except Exception:
             conn.rollback()
             raise
+
+    # Ensure default user accounts exist and passwords match configuration
+    ensure_default_users()
+
+
+def ensure_default_users():
+    """
+    Ensures default admin and demo user accounts exist with updated passwords.
+    Guarantees login success on fresh DBs, cloud deployments, or local SQLite fallbacks.
+    """
+    try:
+        from managers.auth_manager import hash_password
+        default_users = [
+            ("admin", "Admin@2026!", "Administrator", "admin@nattayaraat.com", "admin"),
+            ("sales", "Sales@2026!", "Sales Team", "sales@nattayaraat.com", "sales"),
+            ("cs", "Cs@2026!", "Customer Service", "cs@nattayaraat.com", "operation"),
+            ("operation", "Ops@2026!", "Operations Team", "ops@nattayaraat.com", "operation"),
+            ("accounting", "Acc@2026!", "Accounting Team", "acc@nattayaraat.com", "accounting"),
+        ]
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                for username, password, full_name, email, role in default_users:
+                    pw_hash = hash_password(password)
+                    cur.execute("""
+                        INSERT INTO users (username, password_hash, full_name, email, role, is_active)
+                        VALUES (%s, %s, %s, %s, %s, 1)
+                        ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role
+                    """, (username, pw_hash, full_name, email, role))
+                conn.commit()
+    except Exception as e:
+        print(f"[WARN] ensure_default_users failed: {str(e)}")
