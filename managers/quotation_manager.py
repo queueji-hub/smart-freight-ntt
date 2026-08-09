@@ -47,9 +47,9 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                         quotation_no, job_type, customer_name, attention, tel,
                         carrier, pol, pod, quotation_date, validity_date,
                         payment_term, commodity, subject, terms_conditions,
-                        status, created_by, created_at
+                        status, created_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP);
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP);
                 """, (
                     quotation_no,
                     job_type,
@@ -65,8 +65,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     data.get("commodity", ""),
                     data.get("subject", ""),
                     data.get("terms_conditions", ""),
-                    "ACTIVE",
-                    data.get("created_by", "system")
+                    "ACTIVE"
                 ))
 
                 cur.execute("SELECT id FROM quotations WHERE quotation_no = %s LIMIT 1;", (quotation_no,))
@@ -181,13 +180,13 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                         job_type = %s, customer_name = %s, attention = %s, tel = %s,
                         carrier = %s, pol = %s, pod = %s, quotation_date = %s,
                         validity_date = %s, payment_term = %s, commodity = %s,
-                        subject = %s, terms_conditions = %s, updated_by = %s
+                        subject = %s, terms_conditions = %s
                     WHERE id = %s;
                 """, (
                     data.get("job_type"), data.get("customer_name"), data.get("attention"), data.get("tel"),
                     data.get("carrier"), data.get("pol"), data.get("pod"), data.get("quotation_date"),
                     data.get("validity_date"), data.get("payment_term"), data.get("commodity"),
-                    data.get("subject"), data.get("terms_conditions"), data.get("updated_by", "system"), q_id
+                    data.get("subject"), data.get("terms_conditions"), q_id
                 ))
 
                 # 3. Purging historical items lines rows to overwrite safely
