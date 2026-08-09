@@ -72,3 +72,33 @@ def list_rates(currency: Optional[str] = None, limit: int = 100) -> List[Dict[st
 def latest_rates() -> Dict[str, float]:
     """Get the latest rate for each supported currency."""
     return {cur: get_rate(cur) for cur in SUPPORTED_CURRENCIES}
+
+
+def calculate_fx_gain_loss(
+    billed_amount_foreign: float,
+    booking_fx_rate: float,
+    settlement_fx_rate: float,
+    currency: str = "USD"
+) -> Dict[str, Any]:
+    """
+    Calculates Realized FX Gain or Loss upon AR/AP settlement compared to invoice issuance rate.
+    Formula: Realized Gain/Loss (THB) = Amount_Foreign * (Settlement_Rate - Billed_Rate)
+    """
+    if currency.upper() == BASE_CURRENCY:
+        return {
+            "billed_thb": round(billed_amount_foreign, 2),
+            "settled_thb": round(billed_amount_foreign, 2),
+            "fx_gain_loss_thb": 0.0,
+            "status": "NEUTRAL"
+        }
+
+    billed_thb = billed_amount_foreign * booking_fx_rate
+    settled_thb = billed_amount_foreign * settlement_fx_rate
+    diff_thb = settled_thb - billed_thb
+
+    return {
+        "billed_thb": round(billed_thb, 2),
+        "settled_thb": round(settled_thb, 2),
+        "fx_gain_loss_thb": round(diff_thb, 2),
+        "status": "GAIN" if diff_thb > 0 else ("LOSS" if diff_thb < 0 else "NEUTRAL")
+    }
