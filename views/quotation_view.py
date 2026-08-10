@@ -177,6 +177,14 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
     """
     d = defaults or {}
 
+    def _safe_str(val): return "" if val is None else str(val)
+    def _safe_float(val): 
+        try: return float(val) if val is not None else 0.0
+        except: return 0.0
+    def _safe_int(val):
+        try: return int(val) if val is not None else 0
+        except: return 0
+
     q_date = date.today()
     v_date = date.today() + timedelta(days=30)
     try:
@@ -203,23 +211,23 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
                     help="SE=Sea Export, SI=Sea Import, AE=Air Export, AI=Air Import"
                 )
                 customer_name = st.text_input(
-                    "Customer Name *", value=d.get("customer_name", ""),
+                    "Customer Name *", value=_safe_str(d.get("customer_name")),
                     key=f"{prefix}_cust", placeholder="e.g. KUMIKI CO.,LTD.",
                     help="Type the full registered company name of the client."
                 )
                 customer_address = st.text_area(
-                    "Customer Address", value=d.get("customer_address", ""),
+                    "Customer Address", value=_safe_str(d.get("customer_address")),
                     key=f"{prefix}_caddr", placeholder="123 Street, City, Country", height=68
                 )
                 attention = st.text_input(
-                    "Attention (Contact Person)", value=d.get("attention", ""),
+                    "Attention (Contact Person)", value=_safe_str(d.get("attention")),
                     key=f"{prefix}_attn", help="The person at the client who should receive this document."
                 )
                 tel = st.text_input(
-                    "Telephone", value=d.get("tel", ""), key=f"{prefix}_tel"
+                    "Telephone", value=_safe_str(d.get("tel")), key=f"{prefix}_tel"
                 )
                 customer_email = st.text_input(
-                    "Email", value=d.get("customer_email", ""), key=f"{prefix}_email"
+                    "Email", value=_safe_str(d.get("customer_email")), key=f"{prefix}_email"
                 )
 
             with c2:
@@ -231,16 +239,18 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
                     "Validity Date *", v_date, key=f"{prefix}_vdate",
                     help="Rate guarantee expires after this date. Must be >= Issue Date."
                 )
+                salesperson_val = d.get("salesperson") if d.get("salesperson") else _current_user()
                 salesperson = st.text_input(
-                    "Salesperson *", value=d.get("salesperson", _current_user()),
+                    "Salesperson *", value=_safe_str(salesperson_val),
                     key=f"{prefix}_sales", help="The sales representative for this quote."
                 )
+                payment_term_val = d.get("payment_term") if d.get("payment_term") else "Net 30"
                 payment_term = st.text_input(
-                    "Payment Terms", value=d.get("payment_term", "Net 30"),
+                    "Payment Terms", value=_safe_str(payment_term_val),
                     key=f"{prefix}_pay", help="e.g. Net 30, COD, TT in advance."
                 )
                 subject = st.text_input(
-                    "Subject / Heading", value=d.get("subject", ""),
+                    "Subject / Heading", value=_safe_str(d.get("subject")),
                     key=f"{prefix}_subj", placeholder="e.g. Ocean Freight proposal Q3-2026"
                 )
 
@@ -250,46 +260,47 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
             r1, r2, r3 = st.columns(3)
             
             with r1:
-                shipper = st.text_input("Shipper", value=d.get("shipper", ""), key=f"{prefix}_ship")
-                origin = st.text_input("Origin", value=d.get("origin", ""), key=f"{prefix}_origin", placeholder="City/Country")
-                pol = st.text_input("Port of Loading (POL)", value=d.get("pol", ""), key=f"{prefix}_pol", placeholder="THLCH")
+                shipper = st.text_input("Shipper", value=_safe_str(d.get("shipper")), key=f"{prefix}_ship")
+                origin = st.text_input("Origin", value=_safe_str(d.get("origin")), key=f"{prefix}_origin", placeholder="City/Country")
+                pol = st.text_input("Port of Loading (POL)", value=_safe_str(d.get("pol")), key=f"{prefix}_pol", placeholder="THLCH")
                 service_type = st.selectbox(
                     "Service Type", options=["", "FCL", "LCL", "AIR", "LTL", "FTL", "RO-RO"], 
                     index=["", "FCL", "LCL", "AIR", "LTL", "FTL", "RO-RO"].index(d.get("service_type")) if d.get("service_type") in ["", "FCL", "LCL", "AIR", "LTL", "FTL", "RO-RO"] else 0,
                     key=f"{prefix}_srv"
                 )
-                commodity = st.text_input("Commodity", value=d.get("commodity", ""), key=f"{prefix}_cmdty", placeholder="General Cargo")
-                quantity = st.number_input("Quantity", value=float(d.get("quantity") or 0.0), key=f"{prefix}_qty", step=1.0)
+                commodity = st.text_input("Commodity", value=_safe_str(d.get("commodity")), key=f"{prefix}_cmdty", placeholder="General Cargo")
+                quantity = st.number_input("Quantity", value=_safe_float(d.get("quantity")), key=f"{prefix}_qty", step=1.0)
 
             with r2:
-                consignee = st.text_input("Consignee", value=d.get("consignee", ""), key=f"{prefix}_cnee")
-                destination = st.text_input("Destination", value=d.get("destination", ""), key=f"{prefix}_dest", placeholder="City/Country")
-                pod = st.text_input("Port of Discharge (POD)", value=d.get("pod", ""), key=f"{prefix}_pod", placeholder="JPNAH")
+                consignee = st.text_input("Consignee", value=_safe_str(d.get("consignee")), key=f"{prefix}_cnee")
+                destination = st.text_input("Destination", value=_safe_str(d.get("destination")), key=f"{prefix}_dest", placeholder="City/Country")
+                pod = st.text_input("Port of Discharge (POD)", value=_safe_str(d.get("pod")), key=f"{prefix}_pod", placeholder="JPNAH")
                 incoterm = st.selectbox(
                     "Incoterm", options=["", "EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DDP", "DDU"], 
                     index=["", "EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DDP", "DDU"].index(d.get("incoterm")) if d.get("incoterm") in ["", "EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DDP", "DDU"] else 0,
                     key=f"{prefix}_inco"
                 )
-                hs_code = st.text_input("HS Code", value=d.get("hs_code", ""), key=f"{prefix}_hs")
-                package_type = st.text_input("Package Type", value=d.get("package_type", ""), key=f"{prefix}_pkg", placeholder="Cartons, Pallets")
+                hs_code = st.text_input("HS Code", value=_safe_str(d.get("hs_code")), key=f"{prefix}_hs")
+                package_type = st.text_input("Package Type", value=_safe_str(d.get("package_type")), key=f"{prefix}_pkg", placeholder="Cartons, Pallets")
 
             with r3:
-                carrier = st.text_input("Carrier / Line", value=d.get("carrier", ""), key=f"{prefix}_carrier", placeholder="Maersk")
+                carrier = st.text_input("Carrier / Line", value=_safe_str(d.get("carrier")), key=f"{prefix}_carrier", placeholder="Maersk")
                 freight_term = st.selectbox(
                     "Freight Term", options=["", "PREPAID", "COLLECT"], 
                     index=["", "PREPAID", "COLLECT"].index(d.get("freight_term")) if d.get("freight_term") in ["", "PREPAID", "COLLECT"] else 0,
                     key=f"{prefix}_frt"
                 )
-                weight_kg = st.number_input("Weight (KGs)", value=float(d.get("weight_kg") or 0.0), key=f"{prefix}_wgt", step=10.0)
-                volume_cbm = st.number_input("Volume (CBM)", value=float(d.get("volume_cbm") or 0.0), key=f"{prefix}_vol", step=1.0)
-                container_type = st.text_input("Container Type", value=d.get("container_type", ""), key=f"{prefix}_cnt", placeholder="20'GP, 40'HC")
-                container_quantity = st.number_input("Container Qty", value=int(d.get("container_quantity") or 0), key=f"{prefix}_cntq", step=1)
+                weight_kg = st.number_input("Weight (KGs)", value=_safe_float(d.get("weight_kg")), key=f"{prefix}_wgt", step=10.0)
+                volume_cbm = st.number_input("Volume (CBM)", value=_safe_float(d.get("volume_cbm")), key=f"{prefix}_vol", step=1.0)
+                container_type = st.text_input("Container Type", value=_safe_str(d.get("container_type")), key=f"{prefix}_cnt", placeholder="20'GP, 40'HC")
+                container_quantity = st.number_input("Container Qty", value=_safe_int(d.get("container_quantity")), key=f"{prefix}_cntq", step=1)
                 is_dg = st.checkbox("Dangerous Goods (DG)", value=bool(d.get("is_dg") or False), key=f"{prefix}_dg")
 
         # ── Terms & Conditions ──────────────────────────────
+        terms_val = d.get("terms_conditions") if d.get("terms_conditions") is not None else DEFAULT_TERMS
         terms = st.text_area(
             "Terms & Conditions",
-            value=d.get("terms_conditions", DEFAULT_TERMS),
+            value=_safe_str(terms_val),
             key=f"{prefix}_terms", height=100,
             help="Legal clauses printed at the bottom of the quotation PDF."
         )
@@ -345,35 +356,35 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
     # Build payload (always returned; caller checks `submitted`)
     payload = {
         "job_type": job_type,
-        "customer_name": customer_name.strip(),
-        "customer_address": customer_address.strip(),
-        "attention": attention.strip(),
-        "tel": tel.strip(),
-        "customer_email": customer_email.strip(),
-        "salesperson": salesperson.strip(),
-        "carrier": carrier.strip(),
-        "pol": pol.strip(),
-        "pod": pod.strip(),
-        "quotation_date": quotation_date.isoformat(),
-        "validity_date": validity_date.isoformat(),
-        "payment_term": payment_term.strip(),
-        "commodity": commodity.strip(),
-        "subject": subject.strip(),
-        "terms_conditions": terms.strip(),
-        "shipper": shipper.strip(),
-        "consignee": consignee.strip(),
-        "service_type": service_type.strip(),
-        "origin": origin.strip(),
-        "destination": destination.strip(),
-        "incoterm": incoterm.strip(),
-        "freight_term": freight_term.strip(),
-        "hs_code": hs_code.strip(),
-        "quantity": float(quantity),
-        "package_type": package_type.strip(),
-        "weight_kg": float(weight_kg),
-        "volume_cbm": float(volume_cbm),
-        "container_type": container_type.strip(),
-        "container_quantity": int(container_quantity),
+        "customer_name": _safe_str(customer_name).strip(),
+        "customer_address": _safe_str(customer_address).strip(),
+        "attention": _safe_str(attention).strip(),
+        "tel": _safe_str(tel).strip(),
+        "customer_email": _safe_str(customer_email).strip(),
+        "salesperson": _safe_str(salesperson).strip(),
+        "carrier": _safe_str(carrier).strip(),
+        "pol": _safe_str(pol).strip(),
+        "pod": _safe_str(pod).strip(),
+        "quotation_date": quotation_date.isoformat() if quotation_date else None,
+        "validity_date": validity_date.isoformat() if validity_date else None,
+        "payment_term": _safe_str(payment_term).strip(),
+        "commodity": _safe_str(commodity).strip(),
+        "subject": _safe_str(subject).strip(),
+        "terms_conditions": _safe_str(terms).strip(),
+        "shipper": _safe_str(shipper).strip(),
+        "consignee": _safe_str(consignee).strip(),
+        "service_type": _safe_str(service_type).strip(),
+        "origin": _safe_str(origin).strip(),
+        "destination": _safe_str(destination).strip(),
+        "incoterm": _safe_str(incoterm).strip(),
+        "freight_term": _safe_str(freight_term).strip(),
+        "hs_code": _safe_str(hs_code).strip(),
+        "quantity": _safe_float(quantity),
+        "package_type": _safe_str(package_type).strip(),
+        "weight_kg": _safe_float(weight_kg),
+        "volume_cbm": _safe_float(volume_cbm),
+        "container_type": _safe_str(container_type).strip(),
+        "container_quantity": _safe_int(container_quantity),
         "is_dg": bool(is_dg),
         "created_by": _current_user(),
         "updated_by": _current_user(),

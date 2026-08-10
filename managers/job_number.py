@@ -22,13 +22,17 @@ def generate_job_number(job_type: str, ref_date=None,
     
     with get_connection() as conn:
         # Atomic increment
-        row = conn.execute("""
+        conn.execute("""
             INSERT INTO job_counters (job_type, yymm, last_running)
             VALUES (%s, %s, 1)
             ON CONFLICT (job_type, yymm) 
             DO UPDATE SET last_running = job_counters.last_running + 1
-            RETURNING last_running
-        """, (job_type, yymm)).fetchone()
+        """, (job_type, yymm))
+        
+        row = conn.execute(
+            "SELECT last_running FROM job_counters WHERE job_type=%s AND yymm=%s", 
+            (job_type, yymm)
+        ).fetchone()
         
         conn.commit() # มั่นใจว่าบันทึกค่าลงตารางจริง
         running_val = row['last_running']

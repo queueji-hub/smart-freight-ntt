@@ -608,6 +608,47 @@ def init_database():
                     )
                 """)
 
+                # Add missing B/L fields safely
+                alter_bl_columns = [
+                    "shipment_id INTEGER",
+                    "place_of_receipt TEXT",
+                    "place_of_delivery TEXT",
+                    "final_destination TEXT",
+                    "bl_date DATE",
+                    "place_of_issue TEXT",
+                    "number_of_originals TEXT",
+                    "freight_term TEXT",
+                    "freight_payment TEXT",
+                    "marks_numbers TEXT",
+                    "package_quantity INTEGER DEFAULT 0",
+                    "package_type TEXT",
+                    "description_of_goods TEXT",
+                    "gross_weight NUMERIC(15,2) DEFAULT 0",
+                    "measurement_cbm NUMERIC(15,2) DEFAULT 0",
+                    "hs_code TEXT",
+                    "remarks TEXT",
+                    "special_instructions TEXT",
+                    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                ]
+                for col_def in alter_bl_columns:
+                    try:
+                        cur.execute(f"ALTER TABLE bills_of_lading ADD COLUMN {col_def}")
+                    except Exception:
+                        pass
+                
+                # =====================================================
+                # BL CONTAINERS (JUNCTION)
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS bl_containers (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        bl_id INTEGER NOT NULL REFERENCES bills_of_lading(id) ON DELETE CASCADE,
+                        container_id INTEGER NOT NULL REFERENCES containers(id) ON DELETE CASCADE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(bl_id, container_id)
+                    )
+                """)
+
                 # =====================================================
                 # CONTAINERS
                 # =====================================================

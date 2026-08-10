@@ -101,16 +101,18 @@ def _info_table(b, styles):
         ("Notify Party", b.get("notify_party", "")),
         ("Cargo Type", b.get("cargo_type", "")),
         ("Commodity", b.get("commodity", "")),
-        ("Quantity", b.get("quantity", "")),
+        ("Weight / CBM", f"{b.get('gross_weight') or ''} KG / {b.get('measurement_cbm') or ''} CBM"),
+        ("Packages", f"{b.get('package_qty') or ''} {b.get('package_unit') or ''}"),
     ]
     rows_right = [
         ("Job Type", b.get("job_type", "")),
         ("ETD", _fmt(b.get("etd"))),
         ("ETA", _fmt(b.get("eta"))),
-        ("Carrier", b.get("carrier", "")),
+        ("Carrier / Liner", f"{b.get('carrier', '')} / {b.get('liner', '')}"),
+        ("Vessel / Voy", f"{b.get('vessel', '')} {b.get('voyage', '')}"),
         ("M.Vessel", b.get("m_vessel", "")),
-        ("Feeder", b.get("feeder", "")),
-        ("Liner", b.get("liner", "")),
+        ("Containers", b.get("container_summary", "")),
+        ("Freight Term", b.get("freight_term", "")),
         ("Closing Time", b.get("closing_time", "")),
     ]
     

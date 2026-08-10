@@ -108,11 +108,18 @@ def update_shipment(job_no: str, data: Dict[str, Any]) -> bool:
         return False
         
     target = get_shipment(job_no)
+    
+    # 1. Status Validation
     if "status" in allowed:
         old_status = target.get("status", "Proceed")
         new_status = allowed["status"]
         if old_status != new_status:
             _validate_status_transition(old_status, new_status, target, allowed)
+            
+    # 2. Date Validation
+    merged = {**target, **allowed}
+    if "actual_departure" in allowed or "actual_arrival" in allowed or "etd" in allowed:
+        _validate_dates(merged)
 
     sets = ", ".join([f"{k}=%s" for k in allowed.keys()])
     values = list(allowed.values())
@@ -141,8 +148,10 @@ def update_shipment(job_no: str, data: Dict[str, Any]) -> bool:
 def _validate_status_transition(old_status: str, new_status: str, current_data: Dict, patch_data: Dict):
     """Enforces the Freight Forwarding State Machine."""
     allowed = {
-        "Proceed": ["Finished", "Canceled"],
-        "Finished": ["Closed", "Canceled"],
+        "Proceed": ["In Transit", "Canceled"],
+        "In Transit": ["Arrived", "Canceled"],
+        "Arrived": ["Finished"],
+        "Finished": ["Closed"],
         "Closed": [],
         "Canceled": ["Proceed"] # Reopen
     }
@@ -152,12 +161,46 @@ def _validate_status_transition(old_status: str, new_status: str, current_data: 
         
     merged = {**current_data, **patch_data}
     
+    if new_status == "In Transit":
+        if not merged.get("actual_departure"):
+            raise ValueError("Cannot mark as In Transit: Missing Actual Departure.")
+    if new_status == "Arrived":
+        if not merged.get("actual_arrival"):
+            raise ValueError("Cannot mark as Arrived: Missing Actual Arrival.")
     if new_status == "Finished":
-        if not merged.get("actual_departure") and not merged.get("actual_arrival"):
-            raise ValueError("Cannot mark as Finished: Missing Actual Departure or Actual Arrival.")
+        if not merged.get("actual_departure") or not merged.get("actual_arrival"):
+            raise ValueError("Cannot mark as Finished: Missing Actual Dates.")
     if new_status == "Closed":
         if not merged.get("actual_arrival"):
             raise ValueError("Cannot mark as Closed: Missing Actual Arrival.")
+            
+def _validate_dates(merged_data: Dict):
+    """Validates operational dates against planned dates."""
+    from datetime import date, datetime
+    def to_date(val):
+        if not val:
+            return None
+        if isinstance(val, date) and not isinstance(val, datetime):
+            return val
+        if isinstance(val, datetime):
+            return val.date()
+        try:
+            return datetime.strptime(str(val)[:10], "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+    etd = to_date(merged_data.get("etd"))
+    actual_departure = to_date(merged_data.get("actual_departure"))
+    actual_arrival = to_date(merged_data.get("actual_arrival"))
+    
+    if actual_departure and etd:
+        if actual_departure < etd:
+            # Optionally block, or allow with override. We enforce blocking unless override logic exists.
+            raise ValueError("Actual Departure cannot be earlier than ETD.")
+            
+    if actual_arrival and actual_departure:
+        if actual_arrival < actual_departure:
+            raise ValueError("Actual Arrival cannot be earlier than Actual Departure.")
 
 def delete_shipment(job_no: str) -> bool:
     with get_connection() as conn:
@@ -191,6 +234,21 @@ def get_dashboard_stats() -> Dict[str, Any]:
             return dict(row) if row else {}
 
 # =========================
+# JOB STATUS LOCK
+# =========================
+def _ensure_job_unlocked(job_no: str):
+    """Enforces J3 Status Locking rules. Locked if Finished, Closed, or Canceled."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status FROM shipments WHERE job_no = %s", (job_no,))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Shipment not found.")
+            status = row["status"]
+            if status in ["Finished", "Closed", "Canceled"]:
+                raise ValueError(f"Job is locked (Status: {status}). Modification is forbidden.")
+
+# =========================
 # SHIPMENT MILESTONES
 # =========================
 
@@ -205,14 +263,17 @@ def list_milestones(job_no: str) -> List[Dict]:
 
 def add_milestone(data: Dict[str, Any]) -> bool:
     job_no = data.get("job_no")
-    code = data.get("milestone_code")
-    date_str = str(data.get("event_date"))[:10] # compare day
+    _ensure_job_unlocked(job_no)
     
-    # Check for duplicates on same day
+    code = data.get("milestone_code")
+    date_str = str(data.get("event_date"))[:16] # compare to the minute
+    location = data.get("location", "")
+    
+    # Check for exact duplicates
     existing = list_milestones(job_no)
     for m in existing:
-        if m.get("milestone_code") == code and str(m.get("event_date"))[:10] == date_str:
-            raise ValueError(f"Duplicate milestone: {code} already logged on {date_str}")
+        if m.get("milestone_code") == code and str(m.get("event_date"))[:16] == date_str and (m.get("location") or "") == location:
+            raise ValueError(f"Duplicate milestone: {code} already logged at this time and location.")
 
     cols = list(data.keys())
     vals = list(data.values())
@@ -225,6 +286,14 @@ def add_milestone(data: Dict[str, Any]) -> bool:
                 f"INSERT INTO shipment_milestones ({columns}) VALUES ({placeholders})",
                 tuple(vals)
             )
+            conn.commit()
+            return cur.rowcount > 0
+            
+def delete_milestone(milestone_id: int, job_no: str) -> bool:
+    _ensure_job_unlocked(job_no)
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM shipment_milestones WHERE id = %s AND job_no = %s", (milestone_id, job_no))
             conn.commit()
             return cur.rowcount > 0
 
@@ -242,24 +311,49 @@ def list_job_containers(job_no: str) -> List[Dict]:
             return [dict(r) for r in cur.fetchall()]
 
 def add_job_container(data: Dict[str, Any]) -> bool:
+    job_no = data.get("job_no")
+    _ensure_job_unlocked(job_no)
+    
+    # Validation
+    vgm = float(data.get("vgm_kg", 0.0) or 0.0)
+    tare = float(data.get("tare_weight", 0.0) or 0.0)
+    gross = float(data.get("gross_weight", 0.0) or 0.0)
+    
+    if vgm < 0 or tare < 0 or gross < 0:
+        raise ValueError("Container weights (VGM, Tare, Gross) must be >= 0.")
+        
+    c_no = data.get("container_no", "").strip().upper()
+    if not c_no:
+        raise ValueError("Container Number cannot be empty.")
+    data["container_no"] = c_no
+    
     cols = list(data.keys())
     vals = list(data.values())
     placeholders = ", ".join(["%s"] * len(cols))
     columns = ", ".join(cols)
 
+    import sqlite3
     with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"INSERT INTO containers ({columns}) VALUES ({placeholders})",
-                tuple(vals)
-            )
-            conn.commit()
-            return cur.rowcount > 0
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"INSERT INTO containers ({columns}) VALUES ({placeholders})",
+                    tuple(vals)
+                )
+                conn.commit()
+                return cur.rowcount > 0
+        except sqlite3.IntegrityError:
+            raise ValueError(f"Duplicate Container: {c_no} is already attached to this shipment.")
+        except Exception as e:
+            if "UNIQUE constraint" in str(e):
+                raise ValueError(f"Duplicate Container: {c_no} is already attached to this shipment.")
+            raise e
 
-def delete_job_container(container_id: int) -> bool:
+def delete_job_container(container_id: int, job_no: str) -> bool:
+    _ensure_job_unlocked(job_no)
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM containers WHERE id = %s", (container_id,))
+            cur.execute("DELETE FROM containers WHERE id = %s AND job_no = %s", (container_id, job_no))
             conn.commit()
             return cur.rowcount > 0
 
