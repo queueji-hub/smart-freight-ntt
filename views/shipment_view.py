@@ -24,6 +24,21 @@ from managers.shipment_manager import (
     add_milestone,
     delete_milestone,
 )
+from managers.bl_manager import (
+    BL_STATUS_FLOW,
+    BL_TYPES,
+    LOCKED_STATUSES,
+    create_bl,
+    get_bl,
+    list_bls,
+    update_bl,
+    update_bl_status,
+    delete_bl,
+    list_bl_containers,
+    add_bl_container,
+    remove_bl_container,
+    can_transition_bl_status,
+)
 from managers.customer_manager import list_customers
 from core.audit import log_action
 
@@ -204,6 +219,240 @@ def render_milestone_tab(job, allow_edit):
                 except Exception as e:
                     st.error(str(e))
 
+
+def _s(val, default=""):
+    """NULL-safe string. Never returns literal 'None'."""
+    if val is None:
+        return default
+    v = str(val).strip()
+    return v if v and v.lower() != "none" else default
+
+
+def render_bl_tab(job, allow_edit):
+    """J4: Bill of Lading Data Module — B/L Ledger + Workspace + Container Mapping."""
+    st.subheader("Bill of Lading Documents")
+    job_no = job["job_no"]
+    user = st.session_state.get("user", {})
+
+    # --- B/L LEDGER ---
+    bls = list_bls(job_no)
+    if bls:
+        ledger_rows = []
+        for b in bls:
+            ledger_rows.append({
+                "ID":        b.get("id"),
+                "B/L No":    _s(b.get("bl_no"), "—"),
+                "Type":      _s(b.get("bl_type"), "—"),
+                "Status":    _s(b.get("status"), "Draft"),
+                "Shipper":   _s(b.get("shipper"), "—"),
+                "Consignee": _s(b.get("consignee"), "—"),
+                "POL":       _s(b.get("port_of_loading"), "—"),
+                "POD":       _s(b.get("port_of_discharge"), "—"),
+                "Vessel":    _s(b.get("vessel"), "—"),
+                "Voyage":    _s(b.get("voyage"), "—"),
+            })
+        df_bl = pd.DataFrame(ledger_rows)
+        st.dataframe(df_bl, use_container_width=True, hide_index=True)
+    else:
+        st.info("No B/L documents for this Job yet.")
+
+    if allow_edit:
+        st.markdown("#### Create New B/L from Job")
+        with st.form("form_create_bl"):
+            bl_type = st.selectbox("B/L Type", list(BL_TYPES))
+            sub_create = st.form_submit_button("Create B/L (prefill from Job)")
+            if sub_create:
+                try:
+                    new_id = create_bl(job_no, bl_type, user)
+                    st.success(f"B/L created (id={new_id})")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+
+    # --- B/L WORKSPACE (select one) ---
+    if not bls:
+        return
+
+    bl_options = {b["id"]: f"{_s(b.get('bl_no'))} [{_s(b.get('bl_type'))}] — {_s(b.get('status'))}" for b in bls}
+    selected_bl_id = st.selectbox(
+        "Select B/L to View / Edit",
+        options=list(bl_options.keys()),
+        format_func=lambda x: bl_options[x]
+    )
+    if not selected_bl_id:
+        return
+
+    bl = get_bl(selected_bl_id)
+    if not bl:
+        st.error("Could not load B/L record.")
+        return
+
+    bl_status = _s(bl.get("status"), "Draft")
+    bl_locked = bl_status in LOCKED_STATUSES
+    can_edit_bl = allow_edit and not bl_locked
+
+    if bl_locked:
+        st.warning(f"This B/L is **{bl_status}** and is locked from edits.")
+    else:
+        st.info(f"B/L Status: **{bl_status}**")
+
+    # --- STATUS ACTIONS ---
+    next_statuses = BL_STATUS_FLOW.get(bl_status, [])
+    if can_edit_bl and next_statuses:
+        action_cols = st.columns(len(next_statuses))
+        for idx, ns in enumerate(next_statuses):
+            with action_cols[idx]:
+                if st.button(f"→ {ns}", key=f"bl_status_{selected_bl_id}_{ns}"):
+                    try:
+                        update_bl_status(selected_bl_id, ns)
+                        st.success(f"B/L status changed to {ns}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
+
+    # Delete button (Draft only)
+    if can_edit_bl and bl_status == "Draft":
+        if st.button("Delete This B/L (Draft only)", key=f"del_bl_{selected_bl_id}"):
+            try:
+                delete_bl(selected_bl_id)
+                st.success("B/L deleted.")
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
+
+    st.markdown("---")
+
+    # --- B/L EDIT FORM ---
+    with st.expander("Document Details", expanded=True):
+        with st.form(f"form_edit_bl_{selected_bl_id}"):
+            c1, c2, c3 = st.columns(3)
+            bl_date  = c1.date_input("B/L Date",       value=_safe_date(bl.get("bl_date")),       disabled=not can_edit_bl)
+            bl_place = c2.text_input("Place of Issue",  value=_s(bl.get("place_of_issue")),         disabled=not can_edit_bl)
+            bl_orig  = c3.text_input("No. of Originals",value=_s(bl.get("number_of_originals")),   disabled=not can_edit_bl)
+
+            st.markdown("**Parties**")
+            shipper    = st.text_input("Shipper",      value=_s(bl.get("shipper")),      disabled=not can_edit_bl)
+            consignee  = st.text_input("Consignee",    value=_s(bl.get("consignee")),    disabled=not can_edit_bl)
+            notify     = st.text_input("Notify Party", value=_s(bl.get("notify_party")), disabled=not can_edit_bl)
+
+            st.markdown("**Routing**")
+            r1, r2 = st.columns(2)
+            por = r1.text_input("Place of Receipt",    value=_s(bl.get("place_of_receipt")),  disabled=not can_edit_bl)
+            pol = r2.text_input("Port of Loading",     value=_s(bl.get("port_of_loading")),   disabled=not can_edit_bl)
+            r3, r4 = st.columns(2)
+            pod = r3.text_input("Port of Discharge",   value=_s(bl.get("port_of_discharge")), disabled=not can_edit_bl)
+            pde = r4.text_input("Place of Delivery",   value=_s(bl.get("place_of_delivery")), disabled=not can_edit_bl)
+            fds = st.text_input("Final Destination",   value=_s(bl.get("final_destination")), disabled=not can_edit_bl)
+
+            st.markdown("**Vessel / Voyage**")
+            v1, v2 = st.columns(2)
+            vessel = v1.text_input("Vessel", value=_s(bl.get("vessel")), disabled=not can_edit_bl)
+            voyage = v2.text_input("Voyage", value=_s(bl.get("voyage")), disabled=not can_edit_bl)
+
+            st.markdown("**Freight**")
+            f1, f2 = st.columns(2)
+            fterm = f1.text_input("Freight Term",       value=_s(bl.get("freight_term")),       disabled=not can_edit_bl)
+            fpay  = f2.text_input("Freight Payable At", value=_s(bl.get("freight_payable_at")), disabled=not can_edit_bl)
+
+            st.markdown("**Cargo**")
+            g1, g2, g3 = st.columns(3)
+            pkg_qty = g1.number_input("Package Qty", value=max(0, int(bl.get("package_qty") or 0)),
+                                      step=1, min_value=0, disabled=not can_edit_bl)
+            gw  = g2.number_input("Gross Weight (kg)", value=max(0.0, float(bl.get("gross_weight") or 0.0)),
+                                   step=0.01, disabled=not can_edit_bl)
+            cbm = g3.number_input("Measurement (CBM)",  value=max(0.0, float(bl.get("measurement_cbm") or 0.0)),
+                                   step=0.001, disabled=not can_edit_bl)
+
+            pkg_type = st.text_input("Package Type",        value=_s(bl.get("package_type")),        disabled=not can_edit_bl)
+            goods    = st.text_area("Description of Goods", value=_s(bl.get("description_of_goods")), disabled=not can_edit_bl)
+            marks    = st.text_area("Marks & Numbers",      value=_s(bl.get("marks_numbers")),        disabled=not can_edit_bl)
+            hs       = st.text_input("HS Code",             value=_s(bl.get("hs_code")),              disabled=not can_edit_bl)
+
+            st.markdown("**Remarks**")
+            remarks = st.text_area("Remarks",              value=_s(bl.get("remarks")),              disabled=not can_edit_bl)
+            special = st.text_area("Special Instructions", value=_s(bl.get("special_instructions")), disabled=not can_edit_bl)
+
+            sub_edit = st.form_submit_button("Save B/L", disabled=not can_edit_bl)
+            if sub_edit:
+                try:
+                    update_bl(selected_bl_id, {
+                        "bl_date": bl_date, "place_of_issue": bl_place, "number_of_originals": bl_orig,
+                        "shipper": shipper, "consignee": consignee, "notify_party": notify,
+                        "place_of_receipt": por, "port_of_loading": pol,
+                        "port_of_discharge": pod, "place_of_delivery": pde, "final_destination": fds,
+                        "vessel": vessel, "voyage": voyage,
+                        "freight_term": fterm, "freight_payable_at": fpay,
+                        "package_qty": pkg_qty, "gross_weight": gw, "measurement_cbm": cbm,
+                        "package_type": pkg_type, "description_of_goods": goods,
+                        "marks_numbers": marks, "hs_code": hs,
+                        "remarks": remarks, "special_instructions": special,
+                    })
+                    st.success("B/L saved!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+
+    # --- CONTAINER MAPPING ---
+    with st.expander("Container Mapping", expanded=False):
+        st.caption("Link existing Job containers to this B/L. Editing mappings does NOT modify the container records.")
+
+        # Containers linked to this B/L
+        linked = list_bl_containers(selected_bl_id)
+        linked_ids = {c["id"] for c in linked}
+
+        if linked:
+            st.markdown("**Linked Containers:**")
+            df_linked = pd.DataFrame([{
+                "Container No": _s(c.get("container_no"), "—"),
+                "Size":         _s(c.get("container_size"), "—"),
+                "Type":         _s(c.get("container_type"), "—"),
+                "Seal":         _s(c.get("seal_no"), "—"),
+                "VGM":          c.get("vgm_kg", 0),
+                "Junct.ID":     c.get("junction_id"),
+                "Cont.ID":      c.get("id"),
+            } for c in linked])
+            st.dataframe(df_linked, use_container_width=True, hide_index=True)
+
+            if can_edit_bl:
+                unlink_id = st.selectbox(
+                    "Select container to unlink",
+                    options=[c["id"] for c in linked],
+                    format_func=lambda x: next((_s(c.get("container_no")) for c in linked if c["id"] == x), str(x)),
+                    key=f"unlink_sel_{selected_bl_id}"
+                )
+                if st.button("Unlink Container", key=f"unlink_btn_{selected_bl_id}"):
+                    try:
+                        remove_bl_container(selected_bl_id, unlink_id)
+                        st.success("Container unlinked.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
+        else:
+            st.info("No containers linked to this B/L.")
+
+        if can_edit_bl:
+            # Show all Job containers not yet linked
+            job_ctrs = list_job_containers(job_no)
+            available = [c for c in job_ctrs if c["id"] not in linked_ids]
+            if available:
+                st.markdown("**Available Job Containers (select to link):**")
+                link_id = st.selectbox(
+                    "Select container to link",
+                    options=[c["id"] for c in available],
+                    format_func=lambda x: next((_s(c.get("container_no")) for c in available if c["id"] == x), str(x)),
+                    key=f"link_sel_{selected_bl_id}"
+                )
+                if st.button("Link Container to B/L", key=f"link_btn_{selected_bl_id}"):
+                    try:
+                        add_bl_container(selected_bl_id, link_id)
+                        st.success("Container linked!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
+            else:
+                st.info("All Job containers are already linked, or no containers exist on this Job.")
+
+
 def render_job_workspace(job, can_edit):
     st.markdown(f"### Job Workspace: {job['job_no']} ({job['status']})")
     
@@ -324,7 +573,7 @@ def render_job_workspace(job, can_edit):
     with t7:
         render_milestone_tab(job, allow_edit)
     with t8:
-        st.info("🚧 Documents (B/L, etc.) will be implemented in a future phase.")
+        render_bl_tab(job, allow_edit)
     with t9:
         st.info("🚧 Financials (AP/AR) will be implemented in a future phase.")
 

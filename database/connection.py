@@ -611,16 +611,21 @@ def init_database():
                 # Add missing B/L fields safely
                 alter_bl_columns = [
                     "shipment_id INTEGER",
+                    "booking_no TEXT",
                     "place_of_receipt TEXT",
+                    "port_of_loading TEXT",
+                    "port_of_discharge TEXT",
                     "place_of_delivery TEXT",
                     "final_destination TEXT",
+                    "etd DATE",
+                    "eta DATE",
                     "bl_date DATE",
                     "place_of_issue TEXT",
                     "number_of_originals TEXT",
                     "freight_term TEXT",
-                    "freight_payment TEXT",
+                    "freight_payable_at TEXT",
                     "marks_numbers TEXT",
-                    "package_quantity INTEGER DEFAULT 0",
+                    "package_qty INTEGER DEFAULT 0",
                     "package_type TEXT",
                     "description_of_goods TEXT",
                     "gross_weight NUMERIC(15,2) DEFAULT 0",
@@ -628,6 +633,7 @@ def init_database():
                     "hs_code TEXT",
                     "remarks TEXT",
                     "special_instructions TEXT",
+                    "created_by TEXT",
                     "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
                 ]
                 for col_def in alter_bl_columns:
