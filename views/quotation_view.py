@@ -1,6 +1,6 @@
 """
 Quotation Management View — Enterprise Grade
-Smart Freight NTT, — Full Rewrite with st.form, Validation, Audit, PDF, UX
+FreightFlow NTT, — Full Rewrite with st.form, Validation, Audit, PDF, UX
 """
 
 import re

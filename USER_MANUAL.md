@@ -1,4 +1,4 @@
-# 📘 คู่มือการใช้งาน Smart Freight NTT
+# 📘 คู่มือการใช้งาน FreightFlow NTT
 
 ระบบบริหารจัดการ Freight Forwarding แบบครบวงจร — เวอร์ชัน 1.0
 
@@ -539,7 +539,7 @@ port = 587
 username = "you@example.com"
 password = "your-app-password"
 from_email = "you@example.com"
-from_name = "Smart Freight NTT"
+from_name = "FreightFlow NTT"
 ```
 
 **Gmail:** สร้าง [App Password](https://myaccount.google.com/apppasswords) (ไม่ใช้ password ปกติ)

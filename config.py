@@ -1,6 +1,6 @@
 """
 Application Configuration
-Smart Freight NTT,
+FreightFlow NTT,
 Production-ready configuration file
 """
 
@@ -25,7 +25,7 @@ for directory in [DATA_DIR, OUTPUT_DIR, ASSETS_DIR, TEMP_DIR, LOG_DIR]:
 # =========================================================
 # APPLICATION INFO
 # =========================================================
-APP_NAME = "Smart Freight NTT,"
+APP_NAME = "FreightFlow NTT,"
 APP_VERSION = "3.0.0"
 APP_DESCRIPTION = "Enterprise Freight Forwarding Operating System"
 DEFAULT_CURRENCY = "THB"

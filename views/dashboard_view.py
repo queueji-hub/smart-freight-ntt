@@ -34,7 +34,7 @@ def safe_int(val, default=0):
 # =========================================================
 def render():
     st.markdown("<p style='color: #38BDF8; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;'>Enterprise Executive Intelligence</p>", unsafe_allow_html=True)
-    st.markdown("<h2 style='margin-top: 0px; font-weight: 800; color:#F8FAFC;'>🚢 Smart Freight Enterprise Control Tower</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='margin-top: 0px; font-weight: 800; color:#F8FAFC;'>🚢 FreightFlow Enterprise Control Tower</h2>", unsafe_allow_html=True)
     
     tab_ops, tab_dash, tab_360 = st.tabs([
         "🗼 Operational Logistics Tower",

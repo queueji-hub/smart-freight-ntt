@@ -32,7 +32,7 @@ def send_email(to: str, subject: str, body: str,
     
     try:
         msg = MIMEMultipart()
-        msg["From"] = f"{cfg.get('from_name', 'Smart Freight NTT')} <{cfg['from_email']}>"
+        msg["From"] = f"{cfg.get('from_name', 'FreightFlow NTT')} <{cfg['from_email']}>"
         msg["To"] = to
         if cc: msg["Cc"] = cc
         msg["Subject"] = subject

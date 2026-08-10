@@ -298,7 +298,7 @@ def generate_bl_pdf(bl_source: Any, output_path: str = None) -> str:
         leftMargin=12*mm, rightMargin=12*mm,
         topMargin=12*mm, bottomMargin=16*mm,
         title=f"{bl_type} {bl_no}",
-        author=COMPANY.get("name", "Smart Freight NTT"),
+        author=COMPANY.get("name", "FreightFlow NTT"),
     )
 
     styles = _get_styles()

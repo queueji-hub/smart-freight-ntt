@@ -113,7 +113,7 @@ def render():
             
             st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
             with st.expander("🛠️ Gateway Connectivity Diagnostic Tool"):
-                test_email = st.text_input("Destination Account for Test Payload", placeholder="operator@smartfreight.com", key="settings_smtp_test_dest")
+                test_email = st.text_input("Destination Account for Test Payload", placeholder="operator@freightflow.com", key="settings_smtp_test_dest")
                 if st.button("⚡ Dispatch Diagnostic Test Frame", type="secondary", use_container_width=True):
                     st.toast("Diagnostic payload creation dispatched to pipeline queues.", icon="⚡")
         else:

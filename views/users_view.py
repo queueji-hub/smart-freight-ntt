@@ -196,7 +196,7 @@ def render():
 
                 with c2:
                     fn = st.text_input("Full Employee Identity Name", placeholder="e.g., James Knight")
-                    em = st.text_input("Corporate Operational Email Address", placeholder="e.g., james.k@smartfreight.com")
+                    em = st.text_input("Corporate Operational Email Address", placeholder="e.g., james.k@freightflow.com")
 
                 st.markdown("---")
                 rl = st.selectbox("Assigned Roles Matrix Group Authorization Target", options=list(PERMISSIONS.keys()))

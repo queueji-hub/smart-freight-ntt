@@ -368,7 +368,7 @@ def generate_invoice_pdf(invoice: Dict[str, Any],
 
         canvas.setFont(THAI_FONT, 8)
         canvas.setFillColor(colors.grey)
-        canvas.drawString(15 * mm, 10 * mm, "Smart Freight NTT, — Enterprise Tax Invoice Engine")
+        canvas.drawString(15 * mm, 10 * mm, "FreightFlow NTT, — Enterprise Tax Invoice Engine")
         canvas.drawRightString(A4[0] - 15 * mm, 10 * mm, f"Page {doc.page}")
         canvas.restoreState()
 

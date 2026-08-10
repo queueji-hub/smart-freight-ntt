@@ -317,7 +317,7 @@ def _cover_page(styles) -> List:
             pass
     
     flowables.append(Paragraph("📘 USER MANUAL", styles["title"]))
-    flowables.append(Paragraph("Smart Freight NTT", styles["subtitle"]))
+    flowables.append(Paragraph("FreightFlow NTT", styles["subtitle"]))
     flowables.append(Spacer(1, 4*mm))
     flowables.append(Paragraph(
         "Freight Forwarding Operating System", styles["subtitle"]))
@@ -354,7 +354,7 @@ def _page_decoration(canvas, doc):
     canvas.setFillColor(colors.grey)
     
     # Footer
-    canvas.drawString(15*mm, 10*mm, "Smart Freight NTT — User Manual")
+    canvas.drawString(15*mm, 10*mm, "FreightFlow NTT — User Manual")
     canvas.drawRightString(A4[0] - 15*mm, 10*mm, f"Page {doc.page}")
     
     # Top line
@@ -382,7 +382,7 @@ def generate_manual_pdf(output_path: str = None) -> str:
         output_path, pagesize=A4,
         leftMargin=15*mm, rightMargin=15*mm,
         topMargin=18*mm, bottomMargin=18*mm,
-        title="Smart Freight NTT - User Manual",
+        title="FreightFlow NTT - User Manual",
         author=COMPANY["name"],
     )
     

@@ -1,4 +1,4 @@
-# 🚢 Smart Freight NTT,
+# 🚢 FreightFlow NTT,
 
 ระบบจัดการ Freight Forwarder สำหรับ Nattayaraat Co., Ltd.
 ใช้ Python Streamlit + SQLite — ใช้งานง่าย, deploy เร็ว
