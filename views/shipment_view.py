@@ -317,8 +317,23 @@ def render_bl_tab(job, allow_edit):
                 delete_bl(selected_bl_id)
                 st.success("B/L deleted.")
                 st.rerun()
-            except Exception as e:
-                st.error(str(e))
+    # --- PDF DOWNLOAD ACTION ---
+    try:
+        from pdf.bl_pdf import generate_bl_pdf
+        pdf_path = generate_bl_pdf(selected_bl_id)
+        if pdf_path and os.path.exists(pdf_path):
+            with open(pdf_path, "rb") as pdf_file:
+                st.download_button(
+                    label=f"📥 Download {bl.get('bl_type', 'B/L')} PDF ({bl.get('bl_no', '')})",
+                    data=pdf_file.read(),
+                    file_name=os.path.basename(pdf_path),
+                    mime="application/pdf",
+                    key=f"dl_bl_pdf_{selected_bl_id}",
+                    use_container_width=True,
+                    type="primary"
+                )
+    except Exception as pdf_err:
+        st.error(f"B/L PDF Compiler Warning: {pdf_err}")
 
     st.markdown("---")
 

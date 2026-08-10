@@ -326,6 +326,14 @@ def add_job_container(data: Dict[str, Any]) -> bool:
     if not c_no:
         raise ValueError("Container Number cannot be empty.")
     data["container_no"] = c_no
+
+    if "shipment_id" not in data and job_no:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM shipments WHERE job_no = %s", (job_no,))
+                srow = cur.fetchone()
+                if srow:
+                    data["shipment_id"] = srow["id"]
     
     cols = list(data.keys())
     vals = list(data.values())

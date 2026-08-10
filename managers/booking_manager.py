@@ -244,12 +244,9 @@ def update_booking(booking_no: str, data: Dict[str, Any], tenant_id: str = "defa
         if not allowed:
             raise ValueError(reason)
 
-    # Restrict fields for CONFIRMED
-    if current_status == "CONFIRMED" and set(data.keys()) - {"status"}:
-        restricted = {"pol", "pod", "customer_id", "job_type", "freight_term"}
-        attempted_restricted = restricted.intersection(data.keys())
-        if attempted_restricted:
-             raise ValueError(f"Cannot modify critical routing/commercial fields ({', '.join(attempted_restricted)}) while CONFIRMED.")
+    # Restrict fields for CONFIRMED (Require Controlled Revision for field changes)
+    if current_status == "CONFIRMED" and set(data.keys()) - {"status", "job_no"}:
+        raise ValueError("Cannot modify fields on a CONFIRMED booking directly. Create a Controlled Revision first.")
 
     allowed_fields = {
         "customer_id", "customer_name", "shipper", "consignee",
