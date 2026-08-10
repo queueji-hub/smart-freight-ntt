@@ -128,8 +128,8 @@ def _ledger_view(tenant_id, can_edit, user):
         )
     with c_f3:
         search_query = st.text_input(
-            "Search (No / Customer / POL / POD)",
-            placeholder="e.g. BK2608 or Customer",
+            "Search (Booking / Job / Customer / POL / POD / Vessel)",
+            placeholder="e.g. BK2608, SE2608, Customer",
             key="bk_ledger_search",
         )
     with c_f4:
@@ -138,49 +138,43 @@ def _ledger_view(tenant_id, can_edit, user):
         if st.button("🔄 Refresh Data", use_container_width=True, key="bk_ledger_refresh"):
             st.rerun()
 
-    # Load data
+    # Load data via manager
     filter_status = None if status_filter == "All Statuses" else status_filter
     try:
-        rows = list_bookings(tenant_id=tenant_id, status=filter_status, limit=200) or []
+        rows = list_bookings(
+            tenant_id=tenant_id,
+            status=filter_status,
+            job_type=job_type_filter,
+            search_query=search_query,
+            limit=200
+        ) or []
     except Exception as e:
         st.error(f"Failed to fetch bookings: {e}")
         rows = []
-
-    if job_type_filter != "All Types":
-        rows = [r for r in rows if r.get("job_type") == job_type_filter]
-
-    if search_query and search_query.strip():
-        q_lower = search_query.strip().lower()
-        filtered = []
-        for r in rows:
-            haystack = f"{r.get('booking_no','')} {r.get('customer_name','')} {r.get('pol','')} {r.get('pod','')} {r.get('shipper','')} {r.get('consignee','')}".lower()
-            if q_lower in haystack:
-                filtered.append(r)
-        rows = filtered
 
     if not rows:
         st.info("ℹ️ No booking records match the selected filter criteria.")
         return
 
-    # Dataframe display with full Phase B fields
+    # Dataframe display matching exact spec:
+    # BOOKING NO | REV | CUSTOMER | POL | POD | VESSEL | ETD | ETA | STATUS | JOB NO
     ledger_display = []
     for r in rows:
         rev_no = r.get("revision_no", 0)
         rev_str = f"REV {rev_no}" if rev_no is not None else "REV 0"
+        vessel_voyage = f"{_s(r.get('vessel'))} {_s(r.get('voyage'))}".strip() or "—"
+        
         ledger_display.append({
-            "Booking No": _s(r.get("booking_no")),
-            "Revision": rev_str,
-            "Customer": _s(r.get("customer_name")),
-            "Job Type": _s(r.get("job_type")),
-            "Shipper": _s(r.get("shipper"), "—"),
-            "Consignee": _s(r.get("consignee"), "—"),
+            "BOOKING NO": _s(r.get("booking_no")),
+            "REV": rev_str,
+            "CUSTOMER": _s(r.get("customer_name")),
             "POL": _s(r.get("pol"), "—"),
             "POD": _s(r.get("pod"), "—"),
-            "Vessel / Flight": f"{_s(r.get('vessel'))} {_s(r.get('voyage'))}".strip() or "—",
+            "VESSEL": vessel_voyage,
             "ETD": _s(r.get("etd"), "—"),
             "ETA": _s(r.get("eta"), "—"),
-            "Status": _s(r.get("status")),
-            "Updated At": _s(r.get("updated_at") or r.get("created_at"), "—"),
+            "STATUS": _s(r.get("status")),
+            "JOB NO": _s(r.get("job_no"), "—"),
         })
 
     df_display = pd.DataFrame(ledger_display)

@@ -229,114 +229,66 @@ def _render_360_inspector():
 # =========================================================
 
 def _render_operational_tower():
-    from database.connection import get_connection
-    from datetime import date, timedelta
+    st.markdown("<h3 style='font-size:18px; color:#F1F5F9; font-weight:700; margin-bottom:12px;'>🗼 Master Operational Control Tower</h3>", unsafe_allow_html=True)
+    st.caption("Real-Time Operational Pipeline Intelligence across Quotations, Bookings, Jobs, Containers, B/Ls, Schedule, and Exception Monitoring.")
 
-    st.markdown("<h3 style='font-size:18px; color:#F1F5F9; font-weight:700; margin-bottom:12px;'>🗼 Freight Pipeline & Operational Control Tower</h3>", unsafe_allow_html=True)
-
-    # 1. Multi-module KPI metrics
-    c_q, c_b, c_j, c_bl = st.columns(4)
-
-    counts = {
-        "q_total": 0, "bk_total": 0, "job_total": 0, "bl_total": 0,
-        "bk_confirmed": 0, "job_active": 0, "bl_issued": 0, "overdue_eta": 0
-    }
-    today_str = date.today().isoformat()
-
+    # Data Fetching via Central Dashboard Manager
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) as c FROM quotations")
-                counts["q_total"] = cur.fetchone()["c"]
-
-                cur.execute("SELECT COUNT(*) as c FROM bookings")
-                counts["bk_total"] = cur.fetchone()["c"]
-
-                cur.execute("SELECT COUNT(*) as c FROM bookings WHERE UPPER(status) = 'CONFIRMED'")
-                counts["bk_confirmed"] = cur.fetchone()["c"]
-
-                cur.execute("SELECT COUNT(*) as c FROM shipments")
-                counts["job_total"] = cur.fetchone()["c"]
-
-                cur.execute("SELECT COUNT(*) as c FROM shipments WHERE status IN ('Proceed', 'In Transit', 'Arrived')")
-                counts["job_active"] = cur.fetchone()["c"]
-
-                cur.execute("SELECT COUNT(*) as c FROM bills_of_lading")
-                counts["bl_total"] = cur.fetchone()["c"]
-
-                cur.execute("SELECT COUNT(*) as c FROM bills_of_lading WHERE status = 'Issued'")
-                counts["bl_issued"] = cur.fetchone()["c"]
-
-                cur.execute("SELECT COUNT(*) as c FROM shipments WHERE eta < %s AND status NOT IN ('Finished', 'Closed', 'Canceled')", (today_str,))
-                counts["overdue_eta"] = cur.fetchone()["c"]
+        from managers.dashboard_manager import get_operational_control_tower_stats
+        tower_stats = get_operational_control_tower_stats()
     except Exception as e:
-        pass
+        st.error(f"Failed to load operational control tower stats: {e}")
+        tower_stats = {}
 
-    c_q.metric("Quotations", counts["q_total"], "Commercial Pipeline")
-    c_b.metric("Bookings", counts["bk_total"], f"{counts['bk_confirmed']} Confirmed", delta_color="normal")
-    c_j.metric("Active Jobs", counts["job_active"], f"Out of {counts['job_total']} total")
-    c_bl.metric("Bill of Ladings", counts["bl_total"], f"{counts['bl_issued']} Issued", delta_color="normal")
+    q_s = tower_stats.get("quotation", {})
+    b_s = tower_stats.get("booking", {})
+    j_s = tower_stats.get("job", {})
+    c_s = tower_stats.get("container", {})
+    bl_s = tower_stats.get("bl", {})
+    sch_s = tower_stats.get("schedule", {})
+    ex_s = tower_stats.get("exceptions", {})
 
-    st.markdown("<div style='margin: 20px 0;'></div>", unsafe_allow_html=True)
+    # ---------------------------------------------------------
+    # 1. CORE MODULE METRICS GRID
+    # ---------------------------------------------------------
+    st.markdown("<h4 style='font-size:15px; color:#38BDF8; font-weight:700; margin-top:10px;'>📊 Pipeline Volume & Lifecycle Statuses</h4>", unsafe_allow_html=True)
+    m1, m2, m3, m4, m5 = st.columns(5)
 
-    # 2. Upcoming Schedule (Next 14 Days)
-    st.markdown("<h4 style='font-size:16px; color:#F1F5F9; font-weight:700;'>📅 Upcoming Operations (Next 14 Days Schedule)</h4>", unsafe_allow_html=True)
-    next_14 = (date.today() + timedelta(days=14)).isoformat()
+    with m1:
+        st.metric("Commercial Quotations", q_s.get("total", 0), f"Active: {q_s.get('active', 0)} | Converted: {q_s.get('converted', 0)}")
+    with m2:
+        st.metric("Freight Bookings", b_s.get("total", 0), f"Confirmed: {b_s.get('confirmed', 0)} | Rev: {b_s.get('revised', 0)}")
+    with m3:
+        st.metric("Master Jobs", j_s.get("total", 0), f"Proceed: {j_s.get('proceed', 0)} | In Transit: {j_s.get('in_transit', 0)}")
+    with m4:
+        st.metric("Containers Manifested", c_s.get("total_containers", 0), f"Jobs w/ Ctr: {c_s.get('jobs_with_containers', 0)}")
+    with m5:
+        st.metric("Bill of Ladings (B/L)", bl_s.get("total", 0), f"Issued: {bl_s.get('issued', 0)} | Draft: {bl_s.get('draft', 0)}")
 
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT job_no, customer_name, pol, pod, vessel, voyage, etd, eta, status
-                    FROM shipments
-                    WHERE etd BETWEEN %s AND %s OR eta BETWEEN %s AND %s
-                    ORDER BY etd ASC LIMIT 10
-                """, (today_str, next_14, today_str, next_14))
-                rows = [dict(r) for r in cur.fetchall()]
+    st.markdown("<div style='margin: 15px 0;'></div>", unsafe_allow_html=True)
 
-        if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-        else:
-            st.info("ℹ️ No upcoming shipments scheduled for departure/arrival in the next 14 days.")
-    except Exception as e:
-        st.warning(f"Unable to query schedule: {e}")
+    # ---------------------------------------------------------
+    # 2. DATE & SCHEDULE CONTROL
+    # ---------------------------------------------------------
+    st.markdown("<h4 style='font-size:15px; color:#38BDF8; font-weight:700;'>📅 Date Control & Schedule Monitoring</h4>", unsafe_allow_html=True)
+    d1, d2, d3, d4, d5, d6 = st.columns(6)
 
-    st.markdown("<div style='margin: 20px 0;'></div>", unsafe_allow_html=True)
+    d1.metric("ETD Departure Today", sch_s.get("etd_today", 0), "POL Departure")
+    d2.metric("ETD Next 7 Days", sch_s.get("etd_7d", 0), "Upcoming Departures")
+    d3.metric("ETD Next 14 Days", sch_s.get("etd_14d", 0), "Two-Week Schedule")
+    d4.metric("ETA Arrival Today", sch_s.get("eta_today", 0), "POD Arrival")
+    d5.metric("ETA Next 7 Days", sch_s.get("eta_7d", 0), "Upcoming Arrivals")
+    d6.metric("Overdue ETA Alerts", sch_s.get("overdue_eta", 0), "- Attention Needed", delta_color="inverse")
 
-    # 3. Exception Monitor
-    st.markdown("<h4 style='font-size:16px; color:#F1F5F9; font-weight:700;'>⚠️ Operational Exception & Warning Monitor</h4>", unsafe_allow_html=True)
-    ex1, ex2, ex3 = st.columns(3)
+    st.markdown("<div style='margin: 15px 0;'></div>", unsafe_allow_html=True)
 
-    ex1.metric("Overdue ETAs", counts["overdue_eta"], "Action Required", delta_color="inverse")
-    
-    # Confirmed Bookings without Job
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) as c FROM bookings WHERE UPPER(status) = 'CONFIRMED'")
-                unconverted_bks = cur.fetchone()["c"]
-        ex2.metric("Confirmed Bookings Awaiting Job", unconverted_bks, "Pending Conversion")
-    except Exception:
-        ex2.metric("Confirmed Bookings Awaiting Job", 0)
+    # ---------------------------------------------------------
+    # 3. EXCEPTION MONITORING (WARNING BOTTLENECKS)
+    # ---------------------------------------------------------
+    st.markdown("<h4 style='font-size:15px; color:#EF4444; font-weight:700;'>⚠️ Operational Exception & Warning Monitor</h4>", unsafe_allow_html=True)
+    ex1, ex2, ex3, ex4 = st.columns(4)
 
-    # Jobs without containers
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT COUNT(*) as c FROM shipments s
-                    WHERE s.status IN ('Proceed', 'In Transit')
-                      AND s.id NOT IN (SELECT DISTINCT shipment_id FROM containers)
-                """)
-                no_ctr_jobs = cur.fetchone()["c"]
-        ex3.metric("Active Jobs Missing Containers", no_ctr_jobs, "Container Setup Needed", delta_color="inverse")
-    except Exception:
-        ex3.metric("Active Jobs Missing Containers", 0)
-
-
-        with t_audit:
-            st.markdown("##### Complete Audit Trail & Timestamped Operator History")
-            if logs:
-                st.dataframe(pd.DataFrame(logs)[["timestamp", "username", "action", "entity", "entity_id", "details"]], use_container_width=True, hide_index=True)
-            else:
-                st.info("No recorded security audit logs found for this reference identifier.")
+    ex1.metric("Confirmed Booking w/o Job", ex_s.get("unconverted_confirmed_booking", 0), "Pending Job Conversion", delta_color="inverse")
+    ex2.metric("Active Jobs w/o Container", ex_s.get("job_without_container", 0), "Container Setup Needed", delta_color="inverse")
+    ex3.metric("Active Jobs w/o B/L", ex_s.get("job_without_bl", 0), "B/L Draft Needed", delta_color="inverse")
+    ex4.metric("Jobs Missing ETD/ETA", ex_s.get("missing_etd", 0) + ex_s.get("missing_eta", 0), "Routing Date Missing", delta_color="inverse")

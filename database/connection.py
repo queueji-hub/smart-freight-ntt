@@ -499,6 +499,21 @@ def init_database():
                     ON shipments(job_no)
                 """)
 
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_shipments_booking_no
+                    ON shipments(booking_no)
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_shipments_etd
+                    ON shipments(etd)
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_shipments_eta
+                    ON shipments(eta)
+                """)
+
                 # =====================================================
                 # JOB COUNTERS (FOR ID GENERATION)
                 # =====================================================
@@ -603,6 +618,21 @@ def init_database():
                         cur.execute(f"ALTER TABLE bookings ADD COLUMN {col_def}")
                     except Exception:
                         pass
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_bookings_booking_no
+                    ON bookings(booking_no)
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_bookings_etd
+                    ON bookings(etd)
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_bookings_eta
+                    ON bookings(eta)
+                """)
 
                 # =====================================================
                 # BOOKING REVISIONS

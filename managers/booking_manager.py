@@ -164,8 +164,14 @@ def get_booking(booking_no: str, tenant_id: str = "default") -> Optional[Dict[st
 def list_bookings(
     tenant_id: str = "default",
     status: str = None,
+    job_type: str = None,
     customer_id: int = None,
-    limit: int = 100
+    search_query: str = None,
+    etd_start: Any = None,
+    etd_end: Any = None,
+    eta_start: Any = None,
+    eta_end: Any = None,
+    limit: int = 200
 ) -> List[Dict[str, Any]]:
 
     sql = """
@@ -176,13 +182,48 @@ def list_bookings(
 
     params = [tenant_id]
 
-    if status:
+    if status and status != "All Statuses":
         sql += " AND status=%s"
         params.append(status)
+
+    if job_type and job_type != "All Types":
+        sql += " AND job_type=%s"
+        params.append(job_type)
 
     if customer_id:
         sql += " AND customer_id=%s"
         params.append(customer_id)
+
+    if etd_start:
+        sql += " AND etd >= %s"
+        params.append(str(etd_start))
+
+    if etd_end:
+        sql += " AND etd <= %s"
+        params.append(str(etd_end))
+
+    if eta_start:
+        sql += " AND eta >= %s"
+        params.append(str(eta_start))
+
+    if eta_end:
+        sql += " AND eta <= %s"
+        params.append(str(eta_end))
+
+    if search_query and search_query.strip():
+        q = f"%{search_query.strip().lower()}%"
+        sql += """ AND (
+            LOWER(booking_no) LIKE %s OR 
+            LOWER(COALESCE(job_no, '')) LIKE %s OR 
+            LOWER(customer_name) LIKE %s OR 
+            LOWER(pol) LIKE %s OR 
+            LOWER(pod) LIKE %s OR 
+            LOWER(shipper) LIKE %s OR 
+            LOWER(consignee) LIKE %s OR 
+            LOWER(vessel) LIKE %s OR 
+            LOWER(voyage) LIKE %s
+        )"""
+        params.extend([q] * 9)
 
     sql += " ORDER BY created_at DESC LIMIT %s"
     params.append(limit)

@@ -317,6 +317,8 @@ def render_bl_tab(job, allow_edit):
                 delete_bl(selected_bl_id)
                 st.success("B/L deleted.")
                 st.rerun()
+            except Exception as e:
+                st.error(str(e))
     # --- PDF DOWNLOAD ACTION ---
     try:
         from pdf.bl_pdf import generate_bl_pdf
@@ -468,8 +470,97 @@ def render_bl_tab(job, allow_edit):
                 st.info("All Job containers are already linked, or no containers exist on this Job.")
 
 
+def render_job_ledger(jobs):
+    if not jobs:
+        st.info("ℹ️ No jobs found for the selected filter criteria.")
+        return
+
+    ledger_display = []
+    for j in jobs:
+        vessel_voyage = f"{_s(j.get('vessel'))} {_s(j.get('voyage'))}".strip() or "—"
+        ledger_display.append({
+            "JOB NO": _s(j.get("job_no")),
+            "BOOKING NO": _s(j.get("booking_no"), "—"),
+            "CUSTOMER": _s(j.get("customer_name")),
+            "POL": _s(j.get("pol"), "—"),
+            "POD": _s(j.get("pod"), "—"),
+            "VESSEL": vessel_voyage,
+            "ETD": _s(j.get("etd"), "—"),
+            "ETA": _s(j.get("eta"), "—"),
+            "STATUS": _s(j.get("status")),
+        })
+
+    df_display = pd.DataFrame(ledger_display)
+    st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+
+def render_container_tab(job, allow_edit):
+    st.subheader("Containers")
+    job_no = job['job_no']
+    
+    # List Existing
+    containers = list_job_containers(job_no)
+    if containers:
+        df_c = pd.DataFrame(containers)
+        df_c = df_c[['id', 'container_no', 'container_size', 'container_type', 'seal_no', 'vgm_kg', 'tare_weight', 'gross_weight', 'status']]
+        st.dataframe(df_c, use_container_width=True, hide_index=True)
+        
+        if allow_edit:
+            del_id = st.selectbox("Select Container to Delete", options=[c['id'] for c in containers], format_func=lambda x: next((c['container_no'] for c in containers if c['id'] == x), str(x)))
+            if st.button("Delete Container"):
+                try:
+                    delete_job_container(del_id, job_no)
+                    st.success("Deleted!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+    else:
+        st.info("No containers attached.")
+        
+    # Add New
+    if allow_edit:
+        st.markdown("#### Add Container")
+        with st.form("form_add_container"):
+            c1, c2, c3 = st.columns(3)
+            c_no = c1.text_input("Container No*")
+            c_sz = c2.selectbox("Size", ["20GP", "40GP", "40HC", "45HC", "LCL"])
+            c_ty = c3.selectbox("Type", ["GP", "HQ", "RF", "OT", "FR", "TK"])
+            
+            c4, c5, c6, c7 = st.columns(4)
+            seal = c4.text_input("Seal No")
+            vgm = c5.number_input("VGM (kg)", min_value=0.0, step=100.0)
+            tare = c6.number_input("Tare Weight", min_value=0.0, step=100.0)
+            gross = c7.number_input("Gross Weight", min_value=0.0, step=100.0)
+            
+            sub = st.form_submit_button("Add Container")
+            if sub:
+                try:
+                    add_job_container({
+                        "job_no": job_no,
+                        "shipment_id": job['id'],
+                        "container_no": c_no,
+                        "container_size": c_sz,
+                        "container_type": c_ty,
+                        "seal_no": seal,
+                        "vgm_kg": vgm,
+                        "tare_weight": tare,
+                        "gross_weight": gross
+                    })
+                    st.success("Container Added!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+
+
 def render_job_workspace(job, can_edit):
-    st.markdown(f"### Job Workspace: {job['job_no']} ({job['status']})")
+    # Prominently display JOB NO as primary reference and BOOKING NO clearly visible
+    st.markdown(
+        f"<div style='padding:14px; background:#0F172A; border:1px solid #334155; border-radius:10px; margin-bottom:15px;'>"
+        f"<h3 style='margin:0; color:#38BDF8;'>📦 Master Job: <code>{job['job_no']}</code> &nbsp; <span style='font-size:16px; color:#94A3B8;'>| Ref Booking: <code>{_s(job.get('booking_no'), 'N/A')}</code></span></h3>"
+        f"<p style='margin:4px 0 0 0; color:#CBD5E1; font-size:13px;'>Status: <b>{job['status']}</b> &nbsp;|&nbsp; Mode: <b>{job.get('job_type', 'N/A')}</b> &nbsp;|&nbsp; Customer: <b>{_s(job.get('customer_name'))}</b></p>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
     
     # Edit Lock Logic
     is_locked = job['status'] in ["Finished", "Closed", "Canceled"]
@@ -478,9 +569,9 @@ def render_job_workspace(job, can_edit):
     if is_locked:
         st.warning(f"🔒 This Job is {job['status']} and is protected from routine operational edits.")
         
-    t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs([
-        "Overview", "Parties", "Routing", "Vessel/Voyage", 
-        "Cargo", "Containers", "Milestones", "Documents", "Financials"
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10 = st.tabs([
+        "Overview", "Parties", "Routing", "Vessel / Voyage", 
+        "Cargo", "Containers", "Milestones", "Documents / B/L", "Commercial", "Audit / History"
     ])
     
     with t1:
@@ -531,17 +622,22 @@ def render_job_workspace(job, can_edit):
             pod = c2.text_input("POD", value=job.get('pod', ''), disabled=not allow_edit)
             
             c3, c4 = st.columns(2)
-            etd = c3.date_input("ETD (Planned)", value=_safe_date(job.get('etd')), disabled=not allow_edit)
-            eta = c4.date_input("ETA (Planned)", value=_safe_date(job.get('eta')), disabled=not allow_edit)
-            
+            por = c3.text_input("Place of Receipt (POR)", value=job.get('place_of_receipt', ''), disabled=not allow_edit)
+            fdes = c4.text_input("Final Destination", value=job.get('final_destination', ''), disabled=not allow_edit)
+
             c5, c6 = st.columns(2)
-            atd = c5.date_input("Actual Departure", value=_safe_date(job.get('actual_departure')), disabled=not can_edit)
-            ata = c6.date_input("Actual Arrival", value=_safe_date(job.get('actual_arrival')), disabled=not can_edit)
+            etd = c5.date_input("ETD (Planned)", value=_safe_date(job.get('etd')), disabled=not allow_edit)
+            eta = c6.date_input("ETA (Planned)", value=_safe_date(job.get('eta')), disabled=not allow_edit)
+            
+            c7, c8 = st.columns(2)
+            atd = c7.date_input("Actual Departure (ATD)", value=_safe_date(job.get('actual_departure')), disabled=not can_edit)
+            ata = c8.date_input("Actual Arrival (ATA)", value=_safe_date(job.get('actual_arrival')), disabled=not can_edit)
             
             sub = st.form_submit_button("Update Routing", disabled=not can_edit)
             if sub:
                 payload = {
                     "pol": pol, "pod": pod,
+                    "place_of_receipt": por, "final_destination": fdes,
                     "etd": etd, "eta": eta,
                     "actual_departure": atd,
                     "actual_arrival": ata
@@ -571,7 +667,7 @@ def render_job_workspace(job, can_edit):
         st.subheader("Cargo")
         with st.form("form_cargo"):
             c1, c2, c3 = st.columns(3)
-            gross = c1.number_input("Gross Weight", value=float(job.get('gross_weight') or 0.0), disabled=not allow_edit)
+            gross = c1.number_input("Gross Weight (kg)", value=float(job.get('gross_weight') or 0.0), disabled=not allow_edit)
             cbm = c2.number_input("CBM", value=float(job.get('cbm') or 0.0), disabled=not allow_edit)
             qty = c3.number_input("Package Qty", value=int(job.get('package_quantity') or 0), disabled=not allow_edit)
             
@@ -590,7 +686,16 @@ def render_job_workspace(job, can_edit):
     with t8:
         render_bl_tab(job, allow_edit)
     with t9:
-        st.info("🚧 Financials (AP/AR) will be implemented in a future phase.")
+        st.subheader("Commercial Terms")
+        st.info(f" Quotation Ref: `{_s(job.get('quotation_no'), 'None')}` | Incoterm: `{_s(job.get('incoterm'), 'FOB')}` | Freight Term: `{_s(job.get('freight_term'), 'Prepaid')}`")
+    with t10:
+        st.subheader("Audit & History")
+        st.json({
+            "Created By": _s(job.get("created_by"), "System"),
+            "Created At": _s(job.get("created_at")),
+            "Updated By": _s(job.get("updated_by"), "System"),
+            "Updated At": _s(job.get("updated_at")),
+        })
 
 def render():
     user = st.session_state.get("user", {})
@@ -598,13 +703,29 @@ def render():
     can_edit = can_write(role, "shipment")
 
     st.markdown("<h2 style='margin-top: 0px; font-weight: 800;'>📦 Job Control Center</h2>", unsafe_allow_html=True)
-    st.caption("Phase J2 - Operational CRUD and Job Ledger")
+    st.caption("Phase J2/C - Master Operational Control Desk")
 
-    # Load Jobs
-    filter_status = st.selectbox("Filter Status", options=STATUS_OPTIONS, index=0)
-    
+    # --- FILTERS ROW ---
+    c_f1, c_f2, c_f3, c_f4 = st.columns(4)
+    with c_f1:
+        filter_status = st.selectbox("Status Filter", options=STATUS_OPTIONS, index=0, key="job_ledger_status")
+    with c_f2:
+        filter_mode = st.selectbox("Job Type Filter", options=["All Types"] + list(JOB_TYPES.keys()), index=0, key="job_ledger_mode")
+    with c_f3:
+        search_query = st.text_input("Search (Job / Booking / Customer / POL / POD / Vessel)", placeholder="e.g. SE2608, BK2608", key="job_ledger_search")
+    with c_f4:
+        st.write("")
+        st.write("")
+        if st.button("🔄 Refresh Jobs", use_container_width=True, key="job_ledger_refresh"):
+            st.rerun()
+
     try:
-        jobs = list_shipments(status=None if filter_status == "All" else filter_status)
+        jobs = list_shipments(
+            status=filter_status,
+            job_type=filter_mode,
+            search_query=search_query,
+            limit=200
+        )
     except Exception as e:
         jobs = []
         st.error(f"Failed to load jobs: {e}")
@@ -615,11 +736,11 @@ def render():
     
     if jobs:
         st.subheader("Job Detail Workspace")
-        selected_job_no = st.selectbox("Select Job to Edit/View", options=[j['job_no'] for j in jobs])
+        selected_job_no = st.selectbox("Select Target Operational Job to Open", options=[j['job_no'] for j in jobs], key="job_workspace_selector")
         
         if selected_job_no:
             job_data = get_shipment(selected_job_no)
             if job_data:
                 render_job_workspace(job_data, can_edit)
             else:
-                st.error("Could not load job details.")
+                st.error("Could not load target job details.")

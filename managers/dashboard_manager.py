@@ -37,6 +37,153 @@ def get_monthly_flow():
 
 
 # =========================
+# OPERATIONAL CONTROL TOWER STATS (PHASE B)
+# =========================
+
+def get_operational_control_tower_stats() -> dict:
+    """Calculates complete Operational Control Tower metrics across Quotations, Bookings, Jobs, Containers, B/Ls, Schedules, and Exceptions."""
+    stats = {
+        "quotation": {"draft": 0, "active": 0, "converted": 0, "expired": 0, "total": 0},
+        "booking": {"draft": 0, "submitted": 0, "confirmed": 0, "revised": 0, "converted": 0, "unconverted_confirmed": 0, "total": 0},
+        "job": {"proceed": 0, "in_transit": 0, "arrived": 0, "finished": 0, "closed": 0, "cancelled": 0, "total": 0},
+        "container": {"total_containers": 0, "jobs_with_containers": 0, "jobs_missing_containers": 0},
+        "bl": {"draft": 0, "issued": 0, "cancelled": 0, "total": 0},
+        "schedule": {"etd_today": 0, "etd_7d": 0, "etd_14d": 0, "eta_today": 0, "eta_7d": 0, "eta_14d": 0, "overdue_eta": 0},
+        "exceptions": {"unconverted_confirmed_booking": 0, "job_without_container": 0, "job_without_bl": 0, "overdue_eta": 0, "missing_etd": 0, "missing_eta": 0, "missing_vessel": 0}
+    }
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # 1. Quotation Stats
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN LOWER(status) = 'draft' THEN 1 ELSE 0 END) as draft,
+                        SUM(CASE WHEN LOWER(status) = 'active' THEN 1 ELSE 0 END) as active,
+                        SUM(CASE WHEN LOWER(status) = 'converted' THEN 1 ELSE 0 END) as converted,
+                        SUM(CASE WHEN LOWER(status) = 'expired' THEN 1 ELSE 0 END) as expired
+                    FROM quotations
+                """)
+                row = cur.fetchone()
+                if row:
+                    q_dict = dict(row) if hasattr(row, "keys") else dict(zip(["total", "draft", "active", "converted", "expired"], row))
+                    stats["quotation"] = {k: int(v or 0) for k, v in q_dict.items()}
+
+                # 2. Booking Stats
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN LOWER(status) = 'draft' THEN 1 ELSE 0 END) as draft,
+                        SUM(CASE WHEN LOWER(status) = 'submitted' THEN 1 ELSE 0 END) as submitted,
+                        SUM(CASE WHEN LOWER(status) = 'confirmed' THEN 1 ELSE 0 END) as confirmed,
+                        SUM(CASE WHEN LOWER(status) = 'converted_to_job' OR LOWER(status) = 'converted to job' THEN 1 ELSE 0 END) as converted,
+                        SUM(CASE WHEN revision_no > 0 THEN 1 ELSE 0 END) as revised,
+                        SUM(CASE WHEN LOWER(status) = 'confirmed' AND (job_no IS NULL OR job_no = '') THEN 1 ELSE 0 END) as unconverted_confirmed
+                    FROM bookings
+                """)
+                row = cur.fetchone()
+                if row:
+                    b_cols = ["total", "draft", "submitted", "confirmed", "converted", "revised", "unconverted_confirmed"]
+                    b_dict = dict(row) if hasattr(row, "keys") else dict(zip(b_cols, row))
+                    stats["booking"] = {k: int(v or 0) for k, v in b_dict.items()}
+                    stats["booking"]["unconverted_confirmed"] = int(b_dict.get("unconverted_confirmed") or 0)
+
+                # 3. Job Stats
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN LOWER(status) = 'proceed' THEN 1 ELSE 0 END) as proceed,
+                        SUM(CASE WHEN LOWER(status) = 'in_transit' OR LOWER(status) = 'in transit' THEN 1 ELSE 0 END) as in_transit,
+                        SUM(CASE WHEN LOWER(status) = 'arrived' THEN 1 ELSE 0 END) as arrived,
+                        SUM(CASE WHEN LOWER(status) = 'finished' THEN 1 ELSE 0 END) as finished,
+                        SUM(CASE WHEN LOWER(status) = 'closed' THEN 1 ELSE 0 END) as closed,
+                        SUM(CASE WHEN LOWER(status) = 'cancelled' OR LOWER(status) = 'canceled' THEN 1 ELSE 0 END) as cancelled
+                    FROM shipments
+                """)
+                row = cur.fetchone()
+                if row:
+                    j_cols = ["total", "proceed", "in_transit", "arrived", "finished", "closed", "cancelled"]
+                    j_dict = dict(row) if hasattr(row, "keys") else dict(zip(j_cols, row))
+                    stats["job"] = {k: int(v or 0) for k, v in j_dict.items()}
+
+                # 4. Container Stats
+                cur.execute("SELECT COUNT(*) FROM containers")
+                total_ctrs = cur.fetchone()
+                stats["container"]["total_containers"] = int(total_ctrs[0] if total_ctrs else 0)
+
+                cur.execute("SELECT COUNT(DISTINCT job_no) FROM containers WHERE job_no IS NOT NULL AND job_no != ''")
+                jobs_w_ctrs = cur.fetchone()
+                stats["container"]["jobs_with_containers"] = int(jobs_w_ctrs[0] if jobs_w_ctrs else 0)
+                stats["container"]["jobs_missing_containers"] = max(0, stats["job"]["total"] - stats["container"]["jobs_with_containers"])
+
+                # 5. B/L Stats
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN LOWER(status) = 'draft' THEN 1 ELSE 0 END) as draft,
+                        SUM(CASE WHEN LOWER(status) = 'issued' THEN 1 ELSE 0 END) as issued,
+                        SUM(CASE WHEN LOWER(status) = 'cancelled' THEN 1 ELSE 0 END) as cancelled
+                    FROM bills_of_lading
+                """)
+                row = cur.fetchone()
+                if row:
+                    bl_cols = ["total", "draft", "issued", "cancelled"]
+                    bl_dict = dict(row) if hasattr(row, "keys") else dict(zip(bl_cols, row))
+                    stats["bl"] = {k: int(v or 0) for k, v in bl_dict.items()}
+
+                # 6. Schedule & Exception Stats
+                cur.execute("""
+                    SELECT
+                        SUM(CASE WHEN etd = CURRENT_DATE THEN 1 ELSE 0 END) as etd_today,
+                        SUM(CASE WHEN etd >= CURRENT_DATE AND etd <= CURRENT_DATE + INTERVAL '7 days' THEN 1 ELSE 0 END) as etd_7d,
+                        SUM(CASE WHEN etd >= CURRENT_DATE AND etd <= CURRENT_DATE + INTERVAL '14 days' THEN 1 ELSE 0 END) as etd_14d,
+                        SUM(CASE WHEN eta = CURRENT_DATE THEN 1 ELSE 0 END) as eta_today,
+                        SUM(CASE WHEN eta >= CURRENT_DATE AND eta <= CURRENT_DATE + INTERVAL '7 days' THEN 1 ELSE 0 END) as eta_7d,
+                        SUM(CASE WHEN eta >= CURRENT_DATE AND eta <= CURRENT_DATE + INTERVAL '14 days' THEN 1 ELSE 0 END) as eta_14d,
+                        SUM(CASE WHEN eta < CURRENT_DATE AND LOWER(status) NOT IN ('finished', 'closed', 'cancelled') THEN 1 ELSE 0 END) as overdue_eta,
+                        SUM(CASE WHEN (etd IS NULL OR etd = '') AND LOWER(status) NOT IN ('finished', 'closed', 'cancelled') THEN 1 ELSE 0 END) as missing_etd,
+                        SUM(CASE WHEN (eta IS NULL OR eta = '') AND LOWER(status) NOT IN ('finished', 'closed', 'cancelled') THEN 1 ELSE 0 END) as missing_eta,
+                        SUM(CASE WHEN (vessel IS NULL OR vessel = '') AND LOWER(status) NOT IN ('finished', 'closed', 'cancelled') THEN 1 ELSE 0 END) as missing_vessel
+                    FROM shipments
+                """)
+                row = cur.fetchone()
+                if row:
+                    s_cols = ["etd_today", "etd_7d", "etd_14d", "eta_today", "eta_7d", "eta_14d", "overdue_eta", "missing_etd", "missing_eta", "missing_vessel"]
+                    s_dict = dict(row) if hasattr(row, "keys") else dict(zip(s_cols, row))
+                    
+                    stats["schedule"] = {
+                        "etd_today": int(s_dict.get("etd_today") or 0),
+                        "etd_7d": int(s_dict.get("etd_7d") or 0),
+                        "etd_14d": int(s_dict.get("etd_14d") or 0),
+                        "eta_today": int(s_dict.get("eta_today") or 0),
+                        "eta_7d": int(s_dict.get("eta_7d") or 0),
+                        "eta_14d": int(s_dict.get("eta_14d") or 0),
+                        "overdue_eta": int(s_dict.get("overdue_eta") or 0)
+                    }
+                    
+                    # 7. Exceptions Compilation
+                    cur.execute("SELECT COUNT(DISTINCT job_no) FROM bills_of_lading WHERE job_no IS NOT NULL AND job_no != ''")
+                    jobs_w_bl = cur.fetchone()
+                    count_bl = int(jobs_w_bl[0] if jobs_w_bl else 0)
+
+                    stats["exceptions"] = {
+                        "unconverted_confirmed_booking": stats["booking"]["unconverted_confirmed"],
+                        "job_without_container": stats["container"]["jobs_missing_containers"],
+                        "job_without_bl": max(0, stats["job"]["total"] - count_bl),
+                        "overdue_eta": int(s_dict.get("overdue_eta") or 0),
+                        "missing_etd": int(s_dict.get("missing_etd") or 0),
+                        "missing_eta": int(s_dict.get("missing_eta") or 0),
+                        "missing_vessel": int(s_dict.get("missing_vessel") or 0)
+                    }
+
+    except Exception as e:
+        print(f"[WARN] get_operational_control_tower_stats failed: {str(e)}")
+
+    return stats
+
+
+# =========================
 # FINANCE KPI
 # =========================
 

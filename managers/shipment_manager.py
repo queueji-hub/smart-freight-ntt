@@ -64,13 +64,57 @@ def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
 # LIST JOBS
 # =========================
 
-def list_shipments(status: Optional[str] = None, limit: int = 200) -> List[Dict]:
+def list_shipments(
+    status: Optional[str] = None,
+    job_type: Optional[str] = None,
+    search_query: Optional[str] = None,
+    etd_start: Optional[Any] = None,
+    etd_end: Optional[Any] = None,
+    eta_start: Optional[Any] = None,
+    eta_end: Optional[Any] = None,
+    limit: int = 200
+) -> List[Dict]:
     sql = "SELECT * FROM shipments WHERE 1=1"
     params = []
 
-    if status:
+    if status and status != "All":
         sql += " AND status = %s"
         params.append(status)
+
+    if job_type and job_type != "All Types":
+        sql += " AND job_type = %s"
+        params.append(job_type)
+
+    if etd_start:
+        sql += " AND etd >= %s"
+        params.append(str(etd_start))
+
+    if etd_end:
+        sql += " AND etd <= %s"
+        params.append(str(etd_end))
+
+    if eta_start:
+        sql += " AND eta >= %s"
+        params.append(str(eta_start))
+
+    if eta_end:
+        sql += " AND eta <= %s"
+        params.append(str(eta_end))
+
+    if search_query and search_query.strip():
+        q = f"%{search_query.strip().lower()}%"
+        sql += """ AND (
+            LOWER(job_no) LIKE %s OR 
+            LOWER(booking_no) LIKE %s OR 
+            LOWER(customer_name) LIKE %s OR 
+            LOWER(pol) LIKE %s OR 
+            LOWER(pod) LIKE %s OR 
+            LOWER(vessel) LIKE %s OR 
+            LOWER(voyage) LIKE %s OR 
+            LOWER(hbl_no) LIKE %s OR 
+            LOWER(mbl_no) LIKE %s
+        )"""
+        params.extend([q] * 9)
 
     sql += " ORDER BY created_at DESC LIMIT %s"
     params.append(limit)
