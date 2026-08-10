@@ -1,0 +1,72 @@
+# AGENT AUTH AUDIT
+
+## Password/Hash related code:
+- .\managers\auth_manager.py:3 -> Secure Cryptographic Hashing & SQL Data Access Handlers โ€” 100% Professional ERP Grade
+- .\managers\auth_manager.py:81 -> def hash_password(password: str) -> str:
+- .\database\connection.py:102 -> password=password,
+- .\managers\auth_manager.py:79 -> # CRYPTOGRAPHIC CRYPTO PASSWORD HELPERS
+- .\database\connection.py:95 -> password = st.secrets.get("DB_PASSWORD", st.secrets.get("password", ""))
+- .\database\connection.py:876 -> # Ensure default user accounts exist and passwords match configuration
+- .\managers\auth_manager.py:238 -> (clean_username, password_hash, full_name.strip(), email.strip(), clean_role, 1)
+- .\managers\auth_manager.py:261 -> print(f"โ… SECURITY RECORD MUTATION: Password cipher data successfully changed: '{clean_username}'")
+- .\managers\auth_manager.py:86 -> bcrypt.gensalt(rounds=12) # Standard production security cost parameter
+- .\views\users_view.py:12 -> update_user_password,
+- .\views\users_view.py:111 -> "Define New Secure Password Structure",
+- .\views\users_view.py:195 -> p = st.text_input("Temporary Assignment Password *", type="password", placeholder="Provide strong alphanumeric block...")
+- .\managers\auth_manager.py:263 -> print(f"๐จ SECURITY LAYER FAULT: Password mutation sequence blocked structural record update: {str(update_fault)}")
+- .\database\connection.py:902 -> ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role
+- .\managers\auth_manager.py:112 -> if not clean_username or not clean_password:
+- .\managers\auth_manager.py:216 -> def create_user(username: str, password: str, full_name: str = "", email: str = "", role: str = "sales") -> None:
+- .\config.py:105 -> "smtp_username": "", "smtp_password": "", "use_tls": True,
+- .\views\users_view.py:106 -> st.markdown("<p style='font-weight:700; color:#F1F5F9; margin-bottom:8px;'>🔐 Rotate Account Password</p>", unsafe_allow_html=True)
+- .\database\connection.py:897 -> for username, password, full_name, email, role in default_users:
+- .\views\login_view.py:27 -> user = authenticate(username, password)
+- .\views\users_view.py:208 -> st.error("⚠️ Validation Refusal: Username and Password parameters are strictly mandatory fields.")
+- .\managers\auth_manager.py:92 -> if not password or not hashed:
+- .\managers\auth_manager.py:143 -> if not stored_hash:
+- .\managers\auth_manager.py:144 -> print("[AUTH CRITICAL] Blocked authentication sequence. Target identity missing password hashes tokens.")
+- .\database\connection.py:898 -> pw_hash = hash_password(password)
+- .\database\connection.py:900 -> INSERT INTO users (username, password_hash, full_name, email, role, is_active)
+- .\managers\auth_manager.py:84 -> return bcrypt.hashpw(
+- .\managers\auth_manager.py:89 -> def verify_password(password: str, hashed: str) -> bool:
+- .\managers\auth_manager.py:119 -> SELECT id, username, password_hash, full_name, email, role, is_active
+- .\managers\auth_manager.py:225 -> password_hash = hash_password(password)
+- .\managers\auth_manager.py:255 -> "UPDATE users SET password_hash = %s WHERE LOWER(username) = %s",
+- .\managers\email_manager.py:54 -> server.login(cfg["username"], cfg["password"])
+- .\managers\auth_manager.py:188 -> user_data.pop("password_hash", None)
+- .\managers\db_persistence.py:24 -> if not force and current_hash == _LAST_PUSH_HASH:
+- .\managers\auth_manager.py:98 -> return bcrypt.checkpw(password_bytes, hashed_bytes)
+- .\database\connection.py:903 -> """, (username, pw_hash, full_name, email, role))
+- .\managers\auth_manager.py:139 -> cols = ["id", "username", "password_hash", "full_name", "email", "role", "is_active"]
+- .\managers\auth_manager.py:85 -> password_str.encode("utf-8"),
+- .\managers\auth_manager.py:95 -> password_bytes = password.strip().encode("utf-8")
+- .\managers\auth_manager.py:256 -> (password_hash, clean_username)
+- .\managers\auth_manager.py:235 -> INSERT INTO users (username, password_hash, full_name, email, role, is_active)
+- .\managers\db_persistence.py:5 -> import hashlib
+- .\managers\auth_manager.py:247 -> """Intercepts and updates system records password keys using salted blowfish encryptions."""
+- .\managers\auth_manager.py:106 -> def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
+- .\database\connection.py:886 -> from managers.auth_manager import hash_password
+- .\managers\auth_manager.py:249 -> password_hash = hash_password(new_password)
+- .\managers\db_persistence.py:23 -> current_hash = _file_hash()
+- .\managers\auth_manager.py:6 -> import bcrypt
+- .\managers\auth_manager.py:147 -> if not verify_password(clean_password, stored_hash):
+- .\managers\auth_manager.py:110 -> clean_password = (password or "").strip()
+- .\managers\auth_manager.py:246 -> def update_user_password(username: str, new_password: str) -> None:
+- .\managers\auth_manager.py:142 -> stored_hash = user_data.get("password_hash")
+- .\managers\db_persistence.py:16 -> global _LAST_PUSH_AT, _LAST_PUSH_HASH
+- .\views\users_view.py:210 -> st.error("⚠️ Policy Rejection: Assigned provisioning temporary password length does not satisfy security minimums (6 chars).")
+- .\managers\auth_manager.py:96 -> hashed_bytes = hashed.strip().encode("utf-8")
+- .\views\login_view.py:33 -> user = authenticate(username, password)
+- .\database\connection.py:882 -> Ensures default admin and demo user accounts exist with updated passwords.
+- .\config.py:100 -> PASSWORD_MIN_LENGTH = 6
+- .\managers\auth_manager.py:155 -> user_data.pop("password_hash", None)
+- .\managers\db_persistence.py:50 -> _LAST_PUSH_HASH = current_hash
+- .\views\users_view.py:120 -> st.error("⚠️ Policy Rejection: Assigned corporate password does not satisfy complexity threshold (min 6 chars).")
+- .\views\users_view.py:124 -> update_user_password(target["username"], new_pwd.strip())
+- .\managers\auth_manager.py:83 -> password_str = (password or "").strip()
+- .\views\users_view.py:109 -> with st.form(key=f"iam_password_form_block_{target['username']}"):
+- .\database\connection.py:190 -> password_hash TEXT NOT NULL,
+- .\views\users_view.py:112 -> type="password",
+- .\managers\auth_manager.py:82 -> """Generates secure cryptographic password hashes using blowfish cipher keys."""
+- .\views\login_view.py:23 -> password = st.text_input("Password", type="password")
+- .\managers\auth_manager.py:90 -> """Verifies clear text passwords against their encrypted storage tokens."""

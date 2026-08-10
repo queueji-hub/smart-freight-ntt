@@ -1,6 +1,7 @@
+from managers.tenant_context import get_current_tenant_id
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
-from managers.job_number import generate_job_number
+from managers.document_numbering_service import generate_document_number, normalize_doc_no
 
 # =========================
 # CONFIG
@@ -24,6 +25,8 @@ SHIPMENT_FIELDS = [
     "customs_declaration_no", "customs_status", 
     "customs_broker", "customs_clearance_date",
     "customer_paid", "remark",
+    "reporting_date", "reporting_month", "reporting_year",
+    "financial_status", "document_status", "mode", "closed_at", "closed_by",
     "created_by", "updated_by"
 ]
 
@@ -35,16 +38,41 @@ STATUS_FLOW = ["Proceed", "In Transit", "Arrived", "Finished", "Closed", "Cancel
 # =========================
 
 def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
-    job_no = generate_job_number(
-        data.get("job_type", "SE"),
-        data.get("etd"),
-        company_prefix
+    tenant_id = get_current_tenant_id()
+    job_no = generate_document_number(
+        "JOB",
+        data.get("etd")
     )
+    
+    # ETD / ETA Business Logic
+    job_type = str(data.get("job_type", "")).upper()
+    mode = str(data.get("mode", "Sea")).upper()
+    
+    reporting_date = None
+    if "EXPORT" in job_type:
+        reporting_date = data.get("etd")
+    elif "IMPORT" in job_type:
+        reporting_date = data.get("eta")
+    else:
+        reporting_date = data.get("etd") or data.get("eta")
+        
+    if reporting_date:
+        try:
+            from datetime import datetime
+            if isinstance(reporting_date, str):
+                rd = datetime.strptime(reporting_date[:10], "%Y-%m-%d")
+            else:
+                rd = reporting_date
+            data["reporting_date"] = rd.strftime("%Y-%m-%d")
+            data["reporting_month"] = rd.strftime("%Y-%m")
+            data["reporting_year"] = rd.strftime("%Y")
+        except:
+            pass
 
     data = {k: v for k, v in data.items() if k in SHIPMENT_FIELDS}
 
-    cols = ["job_no"] + list(data.keys())
-    vals = [job_no] + list(data.values())
+    cols = ["job_no", "tenant_id"] + list(data.keys())
+    vals = [job_no, tenant_id] + list(data.values())
 
     placeholders = ", ".join(["%s"] * len(cols))
     columns = ", ".join(cols)
@@ -74,8 +102,9 @@ def list_shipments(
     eta_end: Optional[Any] = None,
     limit: int = 200
 ) -> List[Dict]:
-    sql = "SELECT * FROM shipments WHERE 1=1"
-    params = []
+    tenant_id = get_current_tenant_id()
+    sql = "SELECT * FROM shipments WHERE tenant_id = %s"
+    params = [tenant_id]
 
     if status and status != "All":
         sql += " AND status = %s"
@@ -102,8 +131,10 @@ def list_shipments(
         params.append(str(eta_end))
 
     if search_query and search_query.strip():
+        normalized_search = normalize_doc_no(search_query)
         q = f"%{search_query.strip().lower()}%"
         sql += """ AND (
+            REPLACE(REPLACE(UPPER(job_no), '-', ''), ' ', '') LIKE %s OR
             LOWER(job_no) LIKE %s OR 
             LOWER(booking_no) LIKE %s OR 
             LOWER(customer_name) LIKE %s OR 
@@ -114,7 +145,7 @@ def list_shipments(
             LOWER(hbl_no) LIKE %s OR 
             LOWER(mbl_no) LIKE %s
         )"""
-        params.extend([q] * 9)
+        params.extend([f"%{normalized_search}%", q, q, q, q, q, q, q, q, q])
 
     sql += " ORDER BY created_at DESC LIMIT %s"
     params.append(limit)
@@ -131,11 +162,12 @@ def list_shipments(
 # =========================
 
 def get_shipment(job_no: str) -> Optional[Dict]:
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT * FROM shipments WHERE job_no = %s",
-                (job_no,)
+                "SELECT * FROM shipments WHERE job_no = %s AND tenant_id = %s",
+                (job_no, tenant_id)
             )
             row = cur.fetchone()
             return dict(row) if row else None
@@ -152,6 +184,8 @@ def update_shipment(job_no: str, data: Dict[str, Any]) -> bool:
         return False
         
     target = get_shipment(job_no)
+    if not target:
+        return False
     
     # 1. Status Validation
     if "status" in allowed:
@@ -160,15 +194,40 @@ def update_shipment(job_no: str, data: Dict[str, Any]) -> bool:
         if old_status != new_status:
             _validate_status_transition(old_status, new_status, target, allowed)
             
-    # 2. Date Validation
+    # 2. Date Validation & ETD / ETA Business Logic
     merged = {**target, **allowed}
     if "actual_departure" in allowed or "actual_arrival" in allowed or "etd" in allowed:
         _validate_dates(merged)
+
+    # Recalculate Reporting Date if ETD/ETA changed
+    if "etd" in allowed or "eta" in allowed or "job_type" in allowed:
+        job_type = str(merged.get("job_type", "")).upper()
+        reporting_date = None
+        if "EXPORT" in job_type:
+            reporting_date = merged.get("etd")
+        elif "IMPORT" in job_type:
+            reporting_date = merged.get("eta")
+        else:
+            reporting_date = merged.get("etd") or merged.get("eta")
+            
+        if reporting_date:
+            try:
+                from datetime import datetime
+                if isinstance(reporting_date, str):
+                    rd = datetime.strptime(reporting_date[:10], "%Y-%m-%d")
+                else:
+                    rd = reporting_date
+                allowed["reporting_date"] = rd.strftime("%Y-%m-%d")
+                allowed["reporting_month"] = rd.strftime("%Y-%m")
+                allowed["reporting_year"] = rd.strftime("%Y")
+            except:
+                pass
 
     sets = ", ".join([f"{k}=%s" for k in allowed.keys()])
     values = list(allowed.values())
 
     values.append(job_no)
+    values.append(get_current_tenant_id())
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -177,7 +236,7 @@ def update_shipment(job_no: str, data: Dict[str, Any]) -> bool:
                 UPDATE shipments
                 SET {sets},
                     updated_at = CURRENT_TIMESTAMP
-                WHERE job_no = %s
+                WHERE job_no = %s AND tenant_id = %s
                 """,
                 tuple(values)
             )
@@ -247,15 +306,18 @@ def _validate_dates(merged_data: Dict):
             raise ValueError("Actual Arrival cannot be earlier than Actual Departure.")
 
 def delete_shipment(job_no: str) -> bool:
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "DELETE FROM shipments WHERE job_no = %s",
-                (job_no,)
+                "DELETE FROM shipments WHERE job_no = %s AND tenant_id = %s",
+                (job_no, tenant_id)
             )
-            conn.commit()
-
-    return True
+            affected = cur.rowcount
+            if affected > 0:
+                conn.commit()
+                return True
+            return False
 
 
 # =========================
@@ -263,6 +325,7 @@ def delete_shipment(job_no: str) -> bool:
 # =========================
 
 def get_dashboard_stats() -> Dict[str, Any]:
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -273,7 +336,8 @@ def get_dashboard_stats() -> Dict[str, Any]:
                     COALESCE(SUM(CASE WHEN status='Closed' THEN 1 ELSE 0 END), 0) as closed,
                     COALESCE(SUM(CASE WHEN status='Canceled' THEN 1 ELSE 0 END), 0) as canceled
                 FROM shipments
-            """)
+                WHERE tenant_id = %s
+            """, (tenant_id,))
             row = cur.fetchone()
             return dict(row) if row else {}
 
@@ -282,9 +346,10 @@ def get_dashboard_stats() -> Dict[str, Any]:
 # =========================
 def _ensure_job_unlocked(job_no: str):
     """Enforces J3 Status Locking rules. Locked if Finished, Closed, or Canceled."""
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT status FROM shipments WHERE job_no = %s", (job_no,))
+            cur.execute("SELECT status FROM shipments WHERE job_no = %s AND tenant_id = %s", (job_no, tenant_id))
             row = cur.fetchone()
             if not row:
                 raise ValueError("Shipment not found.")
@@ -297,124 +362,80 @@ def _ensure_job_unlocked(job_no: str):
 # =========================
 
 def list_milestones(job_no: str) -> List[Dict]:
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM shipment_milestones WHERE job_no = %s ORDER BY event_date ASC",
-                (job_no,)
-            )
-            return [dict(r) for r in cur.fetchall()]
+    from managers.milestone_manager import list_milestones as _canon_list_milestones
+    return _canon_list_milestones(job_no)
 
 def add_milestone(data: Dict[str, Any]) -> bool:
     job_no = data.get("job_no")
     _ensure_job_unlocked(job_no)
     
+    # Resolve shipment_id
+    shipment_id = None
+    if "shipment_id" in data:
+        shipment_id = data["shipment_id"]
+    elif job_no:
+        tenant_id = get_current_tenant_id()
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM shipments WHERE job_no = %s AND tenant_id = %s", (job_no, tenant_id))
+                srow = cur.fetchone()
+                if srow:
+                    shipment_id = srow["id"]
+                    
     code = data.get("milestone_code")
-    date_str = str(data.get("event_date"))[:16] # compare to the minute
+    name = data.get("milestone_name")
+    date_str = str(data.get("event_date"))[:16] if data.get("event_date") else None
     location = data.get("location", "")
+    remark = data.get("remark", "")
     
-    # Check for exact duplicates
-    existing = list_milestones(job_no)
-    for m in existing:
-        if m.get("milestone_code") == code and str(m.get("event_date"))[:16] == date_str and (m.get("location") or "") == location:
-            raise ValueError(f"Duplicate milestone: {code} already logged at this time and location.")
-
-    cols = list(data.keys())
-    vals = list(data.values())
-    placeholders = ", ".join(["%s"] * len(cols))
-    columns = ", ".join(cols)
-    
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"INSERT INTO shipment_milestones ({columns}) VALUES ({placeholders})",
-                tuple(vals)
-            )
-            conn.commit()
-            return cur.rowcount > 0
+    from managers.milestone_manager import add_milestone as _canon_add_milestone
+    _canon_add_milestone(shipment_id, job_no, code, name, date_str, location, remark)
+    return True
             
 def delete_milestone(milestone_id: int, job_no: str) -> bool:
     _ensure_job_unlocked(job_no)
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM shipment_milestones WHERE id = %s AND job_no = %s", (milestone_id, job_no))
-            conn.commit()
-            return cur.rowcount > 0
+    from managers.milestone_manager import delete_milestone as _canon_del_milestone
+    return _canon_del_milestone(milestone_id, job_no)
 
 # =========================
 # CONTAINERS
 # =========================
 
 def list_job_containers(job_no: str) -> List[Dict]:
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM containers WHERE job_no = %s ORDER BY created_at ASC",
-                (job_no,)
-            )
-            return [dict(r) for r in cur.fetchall()]
+    from managers.container_manager import list_containers
+    return list_containers(job_no=job_no)
 
 def add_job_container(data: Dict[str, Any]) -> bool:
     job_no = data.get("job_no")
     _ensure_job_unlocked(job_no)
     
-    # Validation
-    vgm = float(data.get("vgm_kg", 0.0) or 0.0)
-    tare = float(data.get("tare_weight", 0.0) or 0.0)
-    gross = float(data.get("gross_weight", 0.0) or 0.0)
-    
-    if vgm < 0 or tare < 0 or gross < 0:
-        raise ValueError("Container weights (VGM, Tare, Gross) must be >= 0.")
-        
     c_no = data.get("container_no", "").strip().upper()
     if not c_no:
         raise ValueError("Container Number cannot be empty.")
-    data["container_no"] = c_no
-
+    
     if "shipment_id" not in data and job_no:
+        tenant_id = get_current_tenant_id()
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id FROM shipments WHERE job_no = %s", (job_no,))
+                cur.execute("SELECT id FROM shipments WHERE job_no = %s AND tenant_id = %s", (job_no, tenant_id))
                 srow = cur.fetchone()
                 if srow:
                     data["shipment_id"] = srow["id"]
-    
-    cols = list(data.keys())
-    vals = list(data.values())
-    placeholders = ", ".join(["%s"] * len(cols))
-    columns = ", ".join(cols)
-
-    import sqlite3
-    with get_connection() as conn:
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"INSERT INTO containers ({columns}) VALUES ({placeholders})",
-                    tuple(vals)
-                )
-                conn.commit()
-                return cur.rowcount > 0
-        except sqlite3.IntegrityError:
-            raise ValueError(f"Duplicate Container: {c_no} is already attached to this shipment.")
-        except Exception as e:
-            if "UNIQUE constraint" in str(e):
-                raise ValueError(f"Duplicate Container: {c_no} is already attached to this shipment.")
-            raise e
+                    
+    from managers.container_manager import add_container
+    return add_container(data)
 
 def delete_job_container(container_id: int, job_no: str) -> bool:
     _ensure_job_unlocked(job_no)
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM containers WHERE id = %s AND job_no = %s", (container_id, job_no))
-            conn.commit()
-            return cur.rowcount > 0
+    from managers.container_manager import delete_container
+    return delete_container(container_id, job_no)
 
 # =========================
 # FINANCIALS
 # =========================
 
 def get_job_financial_summary(shipment_id: int) -> Dict[str, float]:
-    """Calculates Revenue, Cost, and Profit based on job_costs."""
+    """Calculates Revenue, Cost, and Profit based on legacy job_costs + posted ap_vouchers."""
     summary = {
         "total_revenue_thb": 0.0,
         "total_cost_thb": 0.0,
@@ -422,27 +443,121 @@ def get_job_financial_summary(shipment_id: int) -> Dict[str, float]:
         "margin_percent": 0.0
     }
     
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # 1. Fetch Legacy Job Costs
             cur.execute(
-                "SELECT cost_type, amount, exchange_rate, amount_thb FROM job_costs WHERE shipment_id = %s",
-                (shipment_id,)
+                """
+                SELECT c.cost_type, c.amount, c.exchange_rate, c.amount_thb 
+                FROM job_costs c
+                JOIN shipments s ON c.shipment_id = s.id
+                WHERE c.shipment_id = %s AND s.tenant_id = %s
+                """,
+                (shipment_id, tenant_id)
             )
             costs = cur.fetchall()
-            if not costs:
-                return summary
-                
-            for row in costs:
-                ctype = str(row['cost_type']).upper() if isinstance(row, dict) else str(row[2]).upper()
-                amt_thb = float(row['amount_thb']) if isinstance(row, dict) else float(row[5])
-                
-                if ctype in ['REVENUE', 'AR']:
-                    summary["total_revenue_thb"] += amt_thb
-                elif ctype in ['COST', 'AP']:
-                    summary["total_cost_thb"] += amt_thb
+            if costs:
+                for row in costs:
+                    ctype = str(row['cost_type']).upper() if isinstance(row, dict) else str(row[2]).upper()
+                    amt_thb = float(row['amount_thb']) if isinstance(row, dict) else float(row[5])
+                    
+                    if ctype in ['REVENUE', 'AR']:
+                        summary["total_revenue_thb"] += amt_thb
+                    elif ctype in ['COST', 'AP']:
+                        summary["total_cost_thb"] += amt_thb
+            
+            # 2. Fetch Posted AP Vouchers (D63)
+            cur.execute("""
+                SELECT ap.total, ap.exchange_rate
+                FROM ap_vouchers ap
+                JOIN shipments s ON ap.job_no = s.job_no
+                WHERE s.id = %s AND ap.tenant_id = %s AND ap.status IN ('POSTED', 'PARTIALLY_PAID', 'PAID')
+            """, (shipment_id, tenant_id))
+            
+            ap_costs = cur.fetchall()
+            if ap_costs:
+                for row in ap_costs:
+                    total = float(row['total']) if isinstance(row, dict) else float(row[0])
+                    ex_rate = float(row['exchange_rate']) if isinstance(row, dict) else float(row[1])
+                    summary["total_cost_thb"] += (total * ex_rate)
+                    
+            # 3. Fetch AR from Invoices (D64)
+            cur.execute("""
+                SELECT i.subtotal, 1.0 AS exchange_rate
+                FROM invoices i
+                JOIN shipments s ON i.job_no = s.job_no
+                WHERE s.id = %s AND i.tenant_id = %s AND i.payment_status IN ('APPROVED', 'PARTIALLY_PAID', 'PAID')
+            """, (shipment_id, tenant_id))
+            
+            ar_rev = cur.fetchall()
+            if ar_rev:
+                for row in ar_rev:
+                    total = float(row['subtotal']) if isinstance(row, dict) else float(row[0])
+                    ex_rate = float(row.get('exchange_rate', 1.0)) if isinstance(row, dict) else (float(row[1]) if len(row) > 1 and row[1] else 1.0)
+                    summary["total_revenue_thb"] += (total * ex_rate)
                     
     summary["gross_profit_thb"] = summary["total_revenue_thb"] - summary["total_cost_thb"]
     if summary["total_revenue_thb"] > 0:
         summary["margin_percent"] = (summary["gross_profit_thb"] / summary["total_revenue_thb"]) * 100
         
     return summary
+
+# =========================
+# MILESTONES
+# =========================
+
+def add_milestone(job_no: str, milestone_code: str, milestone_name: str, planned_date: str = None) -> bool:
+    tenant_id = get_current_tenant_id()
+    target = get_shipment(job_no)
+    if not target:
+        return False
+        
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO shipment_milestones (tenant_id, shipment_id, milestone_code, milestone_name, planned_date)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (tenant_id, target['id'], milestone_code, milestone_name, planned_date)
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+def update_milestone(milestone_id: int, actual_date: str, status: str = 'COMPLETED', remarks: str = None) -> bool:
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE shipment_milestones
+                SET actual_date = %s, status = %s, remarks = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s AND tenant_id = %s
+                """,
+                (actual_date, status, remarks, milestone_id, tenant_id)
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+def get_milestones(job_no: str) -> List[Dict]:
+    tenant_id = get_current_tenant_id()
+    target = get_shipment(job_no)
+    if not target:
+        return []
+        
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT * FROM shipment_milestones 
+                WHERE shipment_id = %s AND tenant_id = %s
+                ORDER BY id ASC
+                """,
+                (target['id'], tenant_id)
+            )
+            rows = cur.fetchall()
+            if not rows:
+                return []
+            cols = [desc[0] for desc in cur.description]
+            return [dict(zip(cols, row)) for row in rows]

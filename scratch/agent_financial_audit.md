@@ -1,0 +1,35 @@
+# AGENT FINANCIAL AUDIT
+
+## Risky float() conversions in financial contexts:
+- .\managers\finance_manager.py:194 -> new_outstanding = float(row["outstanding"]) - float(amount)
+- .\managers\profit_manager.py:32 -> return float(amount)
+- .\managers\invoice_manager.py:267 -> paid = float(row[1] if isinstance(row, (tuple, list)) else row["total_paid"])
+- .\managers\dashboard_manager.py:282 -> ap = sum(float(c.get("amount_thb", 0) or 0) for c in costs if c.get("cost_type") == "AP")
+- .\managers\invoice_manager.py:130 -> price = float(item.get("unit_price", 0))
+- .\utils\number_to_words.py:82 -> amount = float(amount)
+- .\views\quotation_view.py:163 -> p = float(item.get("price", 0))
+- .\managers\lcl_manager.py:21 -> total_basis = sum(float(h.get(prorate_by, 0) or 0) for h in house_shipments)
+- .\managers\invoice_manager.py:47 -> unit_price = float(item.get("unit_price", 0))
+- .\managers\quotation_manager.py:246 -> unit_rate = float(item.get("unit_rate") or item.get("price") or 0.0)
+- .\pdf\invoice_pdf.py:308 -> total_val = float(invoice.get("total_amount", 0) or 0)
+- .\managers\profit_manager.py:39 -> amount = float(data.get("amount") or (qty * unit_price))
+- .\managers\quotation_manager.py:103 -> unit_rate = float(item.get("unit_rate") or item.get("price") or 0.0)
+- .\managers\dashboard_manager.py:281 -> ar = sum(float(c.get("amount_thb", 0) or 0) for c in costs if c.get("cost_type") == "AR")
+- .\pdf\quotation_pdf.py:214 -> rate = float(item.get("unit_rate") or amount)
+- .\views\finance.py:174 -> value=float(row["unit_price"]),
+- .\managers\fx_manager.py:49 -> if from_cur == to_cur: return float(amount)
+- .\managers\invoice_manager.py:195 -> amount = float(payload.get("amount", 0.0))
+- .\managers\shipment_manager.py:391 -> amt_thb = float(row['amount_thb']) if isinstance(row, dict) else float(row[5])
+- .\views\quotation_view.py:62 -> "price": float(row.get("price", 0)), # Display amount
+- .\utils\number_to_words.py:15 -> amount = float(amount)
+- .\managers\finance_manager.py:38 -> amount = float(item.get("amount", 0))
+- .\managers\invoice_manager.py:266 -> billed = float(row[0] if isinstance(row, (tuple, list)) else row["total_billed"])
+- .\managers\invoice_manager.py:48 -> amount = float(item.get("amount", qty * unit_price))
+- .\exports\pdy.py:27 -> total += float(item["price"])
+- .\views\billing_view.py:214 -> value=float(item["unit_price"]),
+- .\managers\profit_manager.py:27 -> return float(amount)
+- .\managers\profit_manager.py:65 -> new_amt = float(data.get("amount", row['amount']))
+- .\managers\invoice_manager.py:268 -> outstanding = float(row[2] if isinstance(row, (tuple, list)) else row["total_outstanding"])
+- .\pdf\quotation_pdf.py:213 -> amount = float(item.get("amount") or item.get("price") or 0)
+- .\managers\profit_manager.py:38 -> unit_price = float(data.get("unit_price") or 0)
+- .\views\billing_view.py:363 -> amount = st.number_input("Payment Amount", min_value=0.01, value=float(inv.get("grand_total", 0.0)), step=100.0)

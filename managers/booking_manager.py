@@ -1,8 +1,9 @@
+from managers.tenant_context import get_current_tenant_id
 from typing import List, Dict, Any, Optional
 import json
 from datetime import datetime, date
 from database.connection import get_connection
-from managers.job_number import generate_job_number
+from managers.document_numbering_service import generate_document_number, normalize_doc_no
 from core.audit import log_action
 from managers.shipment_manager import create_shipment
 
@@ -16,21 +17,16 @@ def create_booking(data: Dict[str, Any], user: Dict[str, Any] = None) -> str:
     Create booking from quotation
     SaaS version (tenant-safe + audit)
     """
+    tenant_id = get_current_tenant_id()
+    
     if user is None:
-        user = {"tenant_id": "default", "id": 1}
-
-    tenant_id = user.get("tenant_id", "default")
+        user = {"id": 1}
 
     provided_bno = (data.get("booking_no") or "").strip()
     if provided_bno:
         booking_no = provided_bno
     else:
-        prefix = "NTT" if tenant_id in ("default", "NTT", "ntt") else tenant_id
-        booking_no = generate_job_number(
-            data.get("job_type", "SE"),
-            data.get("created_at"),
-            prefix
-        )
+        booking_no = generate_document_number("BK", data.get("created_at"))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -144,8 +140,8 @@ def create_booking(data: Dict[str, Any], user: Dict[str, Any] = None) -> str:
 # GET BOOKING
 # =========================================================
 
-def get_booking(booking_no: str, tenant_id: str = "default") -> Optional[Dict[str, Any]]:
-
+def get_booking(booking_no: str, tenant_id: str = None) -> Optional[Dict[str, Any]]:
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -162,7 +158,7 @@ def get_booking(booking_no: str, tenant_id: str = "default") -> Optional[Dict[st
 # =========================================================
 
 def list_bookings(
-    tenant_id: str = "default",
+    tenant_id: str = None,
     status: str = None,
     job_type: str = None,
     customer_id: int = None,
@@ -173,6 +169,8 @@ def list_bookings(
     eta_end: Any = None,
     limit: int = 200
 ) -> List[Dict[str, Any]]:
+
+    tenant_id = get_current_tenant_id()
 
     sql = """
         SELECT *
@@ -211,8 +209,11 @@ def list_bookings(
         params.append(str(eta_end))
 
     if search_query and search_query.strip():
+        normalized_search = normalize_doc_no(search_query)
         q = f"%{search_query.strip().lower()}%"
+        nq = f"%{normalized_search.lower()}%"
         sql += """ AND (
+            REPLACE(REPLACE(UPPER(booking_no), '-', ''), ' ', '') LIKE %s OR
             LOWER(booking_no) LIKE %s OR 
             LOWER(COALESCE(job_no, '')) LIKE %s OR 
             LOWER(customer_name) LIKE %s OR 
@@ -223,7 +224,7 @@ def list_bookings(
             LOWER(vessel) LIKE %s OR 
             LOWER(voyage) LIKE %s
         )"""
-        params.extend([q] * 9)
+        params.extend([f"%{normalized_search}%", q, q, q, q, q, q, q, q, q])
 
     sql += " ORDER BY created_at DESC LIMIT %s"
     params.append(limit)
@@ -270,8 +271,9 @@ def can_transition_booking_status(current_status: str, new_status: str) -> tuple
     return False, f"Invalid transition from {c} to {n}."
 
 
-def update_booking(booking_no: str, data: Dict[str, Any], tenant_id: str = "default") -> bool:
+def update_booking(booking_no: str, data: Dict[str, Any], tenant_id: str = None) -> bool:
     
+    tenant_id = get_current_tenant_id()
     existing = get_booking(booking_no, tenant_id)
     if not existing:
         return False
@@ -337,8 +339,9 @@ def update_booking(booking_no: str, data: Dict[str, Any], tenant_id: str = "defa
 # DELETE BOOKING
 # =========================================================
 
-def delete_booking(booking_no: str, tenant_id: str = "default") -> bool:
-
+def delete_booking(booking_no: str, tenant_id: str = None) -> bool:
+    
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -363,7 +366,7 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
     Copies all relevant routing and cargo fields.
     Updates the booking status to 'CONVERTED TO JOB'.
     """
-    tenant_id = user.get("tenant_id", "default")
+    tenant_id = get_current_tenant_id()
     
     # 1. Quick read check to get job_type & etd for job_no generation outside transaction
     existing = get_booking(booking_no, tenant_id)
@@ -382,9 +385,9 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
     if str(existing.get("status", "")).upper() != "CONFIRMED":
         raise ValueError("Only CONFIRMED bookings can be converted to a Job.")
 
-    from managers.job_number import generate_job_number
-    job_no = generate_job_number(
-        existing.get("job_type", "SE"),
+    from managers.document_numbering_service import generate_document_number
+    job_no = generate_document_number(
+        "JOB",
         existing.get("etd")
     )
     
@@ -451,24 +454,24 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                 )
                 
                 # Fetch shipment ID
-                cur.execute("SELECT id FROM shipments WHERE job_no = %s", (job_no,))
+                cur.execute("SELECT id FROM shipments WHERE job_no = %s AND tenant_id = %s", (job_no, tenant_id))
                 ship_row_new = cur.fetchone()
                 if ship_row_new:
                     shipment_id = ship_row_new["id"]
                     # Idempotent JOB CREATED milestone insert
                     cur.execute(
-                        "SELECT id FROM shipment_milestones WHERE job_no = %s AND milestone_code = 'JOB_CREATED'",
-                        (job_no,)
+                        "SELECT id FROM shipment_milestones WHERE job_no = %s AND milestone_code = 'JOB_CREATED' AND tenant_id = %s",
+                        (job_no, tenant_id)
                     )
                     if not cur.fetchone():
                         from datetime import datetime
                         cur.execute(
                             """
                             INSERT INTO shipment_milestones 
-                            (shipment_id, job_no, milestone_code, milestone_name, event_date, remark, created_by) 
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            (shipment_id, job_no, milestone_code, milestone_name, event_date, remark, created_by, tenant_id) 
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                             """,
-                            (shipment_id, job_no, "JOB_CREATED", "Job Created from Booking", datetime.now(), f"Auto-generated from booking {booking_no}", user.get("username", "system"))
+                            (shipment_id, job_no, "JOB_CREATED", "Job Created from Booking", datetime.now(), f"Auto-generated from booking {booking_no}", user.get("username", "system"), tenant_id)
                         )
 
                 conn.commit()
@@ -497,7 +500,7 @@ def create_booking_revision(
     booking_no: str,
     revision_reason: str,
     user: Dict[str, Any],
-    tenant_id: str = "default"
+    tenant_id: str = None
 ) -> int:
     """
     Creates a controlled revision of a Booking.
@@ -508,6 +511,7 @@ def create_booking_revision(
     if not revision_reason or not revision_reason.strip():
         raise ValueError("Revision reason is required.")
 
+    tenant_id = get_current_tenant_id()
     booking = get_booking(booking_no, tenant_id)
     if not booking:
         raise ValueError("Booking not found.")
@@ -529,10 +533,10 @@ def create_booking_revision(
             # 1. Insert snapshot into booking_revisions
             cur.execute("""
                 INSERT INTO booking_revisions (
-                    booking_no, revision_no, revised_by, revision_reason, snapshot
+                    booking_no, revision_no, revised_by, revision_reason, snapshot, tenant_id
                 )
-                VALUES (%s, %s, %s, %s, %s)
-            """, (booking_no, curr_rev_no, rev_by, revision_reason.strip(), snapshot_json))
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (booking_no, curr_rev_no, rev_by, revision_reason.strip(), snapshot_json, tenant_id))
 
             # 2. Increment revision_no and set status back to DRAFT for editing
             new_rev_no = curr_rev_no + 1
@@ -562,14 +566,15 @@ def create_booking_revision(
 
 def get_revision_history(booking_no: str) -> List[Dict[str, Any]]:
     """Fetches full revision history snapshots for a given booking_no."""
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, booking_no, revision_no, revised_by, revised_at, revision_reason, snapshot, created_at
                 FROM booking_revisions
-                WHERE booking_no = %s
+                WHERE booking_no = %s AND tenant_id = %s
                 ORDER BY revision_no DESC
-            """, (booking_no,))
+            """, (booking_no, tenant_id))
             rows = cur.fetchall()
             results = []
             for r in rows:
@@ -585,12 +590,13 @@ def get_revision_history(booking_no: str) -> List[Dict[str, Any]]:
 
 def get_booking_revision(booking_no: str, revision_no: int) -> Optional[Dict[str, Any]]:
     """Fetches a specific historical revision snapshot."""
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT * FROM booking_revisions
-                WHERE booking_no = %s AND revision_no = %s
-            """, (booking_no, revision_no))
+                WHERE booking_no = %s AND revision_no = %s AND tenant_id = %s
+            """, (booking_no, revision_no, tenant_id))
             row = cur.fetchone()
             if row:
                 row_dict = dict(row)

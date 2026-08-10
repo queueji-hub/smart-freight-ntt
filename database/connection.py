@@ -6,6 +6,10 @@ from contextlib import contextmanager
 
 import sqlite3
 from pathlib import Path
+from decimal import Decimal
+
+# Register adapter for Decimal so local SQLite testing doesn't crash
+sqlite3.register_adapter(Decimal, float)
 
 class SQLiteCursorAdapter:
     def __init__(self, cur):
@@ -14,27 +18,24 @@ class SQLiteCursorAdapter:
 
     def execute(self, query, params=None):
         q = query.replace("%s", "?")
-        ret_col = None
-        if "RETURNING" in q.upper():
-            parts = q.rsplit("RETURNING", 1)
-            q = parts[0]
-            ret_col = parts[1].strip().split()[0]
-
+        
+        # SQLite does not support FOR UPDATE
+        if "FOR UPDATE" in q.upper():
+            q = q.replace("FOR UPDATE", "")
+            q = q.replace("for update", "")
+            
+        # SQLite uses LIKE instead of ILIKE
+        q = q.replace(" ILIKE ", " LIKE ")
+        q = q.replace(" ilike ", " like ")
+            
         if params is None:
             self._cur.execute(q)
         else:
             self._cur.execute(q, params)
-
-        if ret_col:
-            lastid = self._cur.lastrowid
-            self._last_row = {ret_col: lastid, "id": lastid}
-        else:
-            self._last_row = None
+            
         return self
 
     def fetchone(self):
-        if self._last_row:
-            return self._last_row
         row = self._cur.fetchone()
         return dict(row) if row else None
 
@@ -45,6 +46,10 @@ class SQLiteCursorAdapter:
     @property
     def rowcount(self):
         return self._cur.rowcount
+
+    @property
+    def description(self):
+        return self._cur.description
 
     def __enter__(self):
         return self
@@ -106,8 +111,12 @@ def get_connection():
 
         yield conn
 
-    except Exception:
-        # Fall back to local SQLite database if PostgreSQL/Supabase is unreachable
+    except Exception as e:
+        app_env = st.secrets.get("APP_ENV", "development")
+        if app_env == "production":
+            raise RuntimeError("Database connection failed in production mode. Failing closed.") from e
+            
+        # Fall back to local SQLite database if PostgreSQL/Supabase is unreachable (dev only)
         db_file = Path(__file__).resolve().parent.parent / "data" / "smart_freight.db"
         db_file.parent.mkdir(exist_ok=True, parents=True)
         sqlite_conn = sqlite3.connect(db_file)
@@ -413,6 +422,22 @@ def init_database():
                 """)
 
                 # =====================================================
+                # INVOICE PAYMENTS
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS invoice_payments (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
+                        doc_no TEXT,
+                        payment_amount NUMERIC(15,2) DEFAULT 0,
+                        payment_method TEXT,
+                        payment_reference TEXT,
+                        payment_date DATE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                # =====================================================
                 # SHIPMENTS
                 # =====================================================
                 cur.execute("""
@@ -523,6 +548,31 @@ def init_database():
                         yymm TEXT NOT NULL,
                         last_running INTEGER NOT NULL DEFAULT 0,
                         PRIMARY KEY (job_type, yymm)
+                    )
+                """)
+
+                # =====================================================
+                # DOC COUNTERS (FOR INVOICE / AR ID GENERATION)
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS doc_counters (
+                        doc_type TEXT NOT NULL,
+                        yymm TEXT NOT NULL,
+                        last_running INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (doc_type, yymm)
+                    )
+                """)
+
+                # =====================================================
+                # NEW DOCUMENT NUMBERING SYSTEM COUNTERS (P1.X)
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS document_counters (
+                        tenant_id TEXT NOT NULL,
+                        doc_type TEXT NOT NULL,
+                        yymm TEXT NOT NULL,
+                        last_running INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (tenant_id, doc_type, yymm)
                     )
                 """)
 
@@ -831,6 +881,144 @@ def init_database():
                         action TEXT,
                         details TEXT,
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                # =====================================================
+                # DOCUMENT MANAGEMENT
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS documents (
+                        id SERIAL PRIMARY KEY,
+                        tenant_id TEXT NOT NULL,
+                        document_no TEXT NOT NULL,
+                        document_type TEXT NOT NULL,
+                        document_category TEXT NOT NULL,
+                        document_date TEXT,
+                        description TEXT,
+                        status TEXT DEFAULT 'Draft',
+                        is_deleted BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        created_by TEXT
+                    )
+                """)
+
+                # =====================================================
+                # EMAIL LOGS
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS email_log (
+                        id SERIAL PRIMARY KEY,
+                        tenant_id TEXT NOT NULL,
+                        to_email TEXT,
+                        cc TEXT,
+                        subject TEXT,
+                        body TEXT,
+                        attachments TEXT,
+                        status TEXT,
+                        error TEXT,
+                        sent_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        created_by TEXT
+                    )
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_documents_tenant 
+                    ON documents(tenant_id)
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_documents_no 
+                    ON documents(document_no)
+                """)
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS document_versions (
+                        id SERIAL PRIMARY KEY,
+                        document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                        version_number INTEGER NOT NULL,
+                        original_file_name TEXT NOT NULL,
+                        mime_type TEXT,
+                        file_size INTEGER,
+                        storage_key TEXT NOT NULL,
+                        storage_provider TEXT DEFAULT 'LOCAL',
+                        file_hash TEXT,
+                        uploaded_by TEXT,
+                        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_doc_versions_doc_id 
+                    ON document_versions(document_id)
+                """)
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS document_links (
+                        id SERIAL PRIMARY KEY,
+                        document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                        entity_type TEXT NOT NULL,
+                        entity_id TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        created_by TEXT
+                    )
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_doc_links_doc_id 
+                    ON document_links(document_id)
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_doc_links_entity 
+                    ON document_links(entity_type, entity_id)
+                """)
+
+                # =====================================================
+                # PHASE D61: VENDOR MASTER
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS vendors (
+                        id SERIAL PRIMARY KEY,
+                        tenant_id TEXT NOT NULL,
+                        vendor_code TEXT NOT NULL,
+                        legal_name TEXT NOT NULL,
+                        tax_id TEXT,
+                        country TEXT,
+                        currency TEXT DEFAULT 'THB',
+                        status TEXT DEFAULT 'Active',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        created_by TEXT,
+                        UNIQUE (tenant_id, vendor_code)
+                    )
+                """)
+
+                # =====================================================
+                # PHASE D62: ACCOUNTS PAYABLE
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS ap_vouchers (
+                        id SERIAL PRIMARY KEY,
+                        tenant_id TEXT NOT NULL,
+                        vendor_id INTEGER NOT NULL REFERENCES vendors(id),
+                        job_no TEXT,
+                        invoice_no TEXT NOT NULL,
+                        invoice_date DATE NOT NULL,
+                        due_date DATE,
+                        currency TEXT DEFAULT 'THB',
+                        exchange_rate NUMERIC(15,6) DEFAULT 1.0,
+                        subtotal NUMERIC(15,2) DEFAULT 0,
+                        tax NUMERIC(15,2) DEFAULT 0,
+                        total NUMERIC(15,2) DEFAULT 0,
+                        paid_amount NUMERIC(15,2) DEFAULT 0,
+                        status TEXT DEFAULT 'DRAFT',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        created_by TEXT,
+                        UNIQUE (tenant_id, vendor_id, invoice_no)
                     )
                 """)
 

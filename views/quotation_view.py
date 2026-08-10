@@ -312,6 +312,15 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
         initial_items = d.get("items", [])
         if not initial_items:
             initial_items = [_blank_item()]
+        else:
+            # SANITIZATION: Cast Decimal to float for Streamlit PyArrow serialization
+            for item in initial_items:
+                for k in ["quantity", "unit_rate", "price", "amount"]:
+                    if k in item and item[k] is not None:
+                        try:
+                            item[k] = float(item[k])
+                        except (ValueError, TypeError):
+                            item[k] = 0.0
             
         df_items = pd.DataFrame(initial_items)
         

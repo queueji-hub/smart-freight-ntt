@@ -1,6 +1,7 @@
+from managers.tenant_context import get_current_tenant_id
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
-from managers.job_number import generate_job_number
+from managers.document_numbering_service import generate_document_number
 from core.audit import log_action
 
 
@@ -25,10 +26,9 @@ def create_job_from_booking(booking: Dict[str, Any], user: Dict[str, Any]) -> st
 
     tenant_id = user["tenant_id"]
 
-    job_no = generate_job_number(
-        booking.get("job_type", "SE"),
-        booking.get("etd"),
-        tenant_id
+    job_no = generate_document_number(
+        "JOB",
+        booking.get("etd")
     )
 
     with get_connection() as conn:

@@ -1,3 +1,4 @@
+from managers.tenant_context import get_current_tenant_id
 """
 LCL Consolidation & De-consolidation Business Engine
 1 Master Job (MBL) <-> Multiple House Jobs (HBL) Relational Cost Prorating Engine

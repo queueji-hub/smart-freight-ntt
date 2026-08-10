@@ -265,12 +265,13 @@ def _render_bl_workspace(can_edit):
     st.markdown("---")
 
     # Multi-tab Workspace Form
-    t1, t2, t3, t4, t5 = st.tabs([
+    t1, t2, t3, t4, t5, t6 = st.tabs([
         "1. Parties & Header",
         "2. Routing & Transport",
         "3. Cargo & Commercial",
         "4. Container Manifest",
-        "5. Remarks & Legal Terms"
+        "5. Remarks & Legal Terms",
+        "6. 📎 Documents"
     ])
 
     with st.form(f"bl_ws_form_{selected_id}"):
@@ -425,6 +426,11 @@ def _render_bl_workspace(can_edit):
                             st.rerun()
                         except Exception as ex:
                             st.error(str(ex))
+
+    with t6:
+        from views.document_ui import render_document_section
+        st.subheader("📎 Documents")
+        render_document_section("HBL" if _s(bl.get("bl_type")) == "HBL" else "MBL", selected_id)
 
 
 # =========================================================

@@ -1,3 +1,4 @@
+from managers.tenant_context import get_current_tenant_id
 """
 Container Demurrage & Detention Free Time Guard Engine
 Calculates Remaining Free Days & Overdue Penalty Exposure Risks

@@ -1,3 +1,4 @@
+from managers.tenant_context import get_current_tenant_id
 """
 B/L (Bill of Lading) Manager — J4
 Handles HBL / MBL creation, CRUD, prefill from Job,
@@ -14,6 +15,7 @@ Isolation rule: B/L is a downstream snapshot.
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date
 from database.connection import get_connection
+from managers.document_numbering_service import generate_document_number, normalize_doc_no
 
 # =========================================================
 # CONSTANTS
@@ -214,7 +216,7 @@ def create_bl(
 
     # Generate B/L number if not provided
     if not data.get("bl_no"):
-        data["bl_no"] = generate_bl_number(bl_type, _safe_date(data.get("etd")))
+        data["bl_no"] = generate_document_number(bl_type, _safe_date(data.get("etd")))
 
     data["created_by"] = _s(user.get("username"), "system")
     data.setdefault("status", "Draft")
@@ -246,7 +248,7 @@ def get_bl(bl_id: int) -> Optional[Dict]:
     """Fetch a B/L record by id. Returns None if not found."""
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM bills_of_lading WHERE id = %s", (bl_id,))
+            cur.execute("SELECT * FROM bills_of_lading WHERE id = %s AND tenant_id = %s", (bl_id,))
             row = cur.fetchone()
             return dict(row) if row else None
 
@@ -301,7 +303,7 @@ def update_bl(bl_id: int, data: Dict[str, Any]) -> bool:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                f"UPDATE bills_of_lading SET {sets}, updated_at=CURRENT_TIMESTAMP WHERE id = %s",
+                f"UPDATE bills_of_lading SET {sets}, updated_at=CURRENT_TIMESTAMP WHERE id = %s AND tenant_id = %s",
                 tuple(values)
             )
             conn.commit()
@@ -317,7 +319,7 @@ def delete_bl(bl_id: int) -> bool:
     _ensure_bl_unlocked(bl_id)
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM bills_of_lading WHERE id = %s", (bl_id,))
+            cur.execute("DELETE FROM bills_of_lading WHERE id = %s AND tenant_id = %s", (bl_id,))
             conn.commit()
             return cur.rowcount > 0
 
@@ -392,7 +394,7 @@ def add_bl_container(bl_id: int, container_id: int) -> bool:
     with get_connection() as conn:
         with conn.cursor() as cur:
             # Fetch container to verify existence & same-job
-            cur.execute("SELECT job_no FROM containers WHERE id = %s", (container_id,))
+            cur.execute("SELECT job_no FROM containers WHERE id = %s AND tenant_id = %s", (container_id,))
             c_row = cur.fetchone()
             if not c_row:
                 raise ValueError(f"Container id={container_id} does not exist.")

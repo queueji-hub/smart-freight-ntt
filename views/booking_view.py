@@ -138,6 +138,21 @@ def _ledger_view(tenant_id, can_edit, user):
         if st.button("🔄 Refresh Data", use_container_width=True, key="bk_ledger_refresh"):
             st.rerun()
 
+    with st.expander("📅 Advanced Date Filters", expanded=False):
+        d_f1, d_f2, d_f3, d_f4 = st.columns(4)
+        etd_start = d_f1.date_input("ETD From", value=None, key="bk_ledger_etd_start")
+        etd_end = d_f2.date_input("ETD To", value=None, key="bk_ledger_etd_end")
+        eta_start = d_f3.date_input("ETA From", value=None, key="bk_ledger_eta_start")
+        eta_end = d_f4.date_input("ETA To", value=None, key="bk_ledger_eta_end")
+
+    if etd_start and etd_end and etd_start > etd_end:
+        st.error("⚠️ ETD From cannot be after ETD To")
+        return
+        
+    if eta_start and eta_end and eta_start > eta_end:
+        st.error("⚠️ ETA From cannot be after ETA To")
+        return
+
     # Load data via manager
     filter_status = None if status_filter == "All Statuses" else status_filter
     try:
@@ -146,6 +161,10 @@ def _ledger_view(tenant_id, can_edit, user):
             status=filter_status,
             job_type=job_type_filter,
             search_query=search_query,
+            etd_start=etd_start,
+            etd_end=etd_end,
+            eta_start=eta_start,
+            eta_end=eta_end,
             limit=200
         ) or []
     except Exception as e:
@@ -389,7 +408,7 @@ def _workspace_view(tenant_id, can_edit, user):
     st.markdown("---")
 
     # Multi-Tab Detailed Editor Workspace
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs([
+    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs([
         "1. Parties & Header",
         "2. Routing Details",
         "3. Vessel / Flight",
@@ -397,6 +416,7 @@ def _workspace_view(tenant_id, can_edit, user):
         "5. Cargo & Containers",
         "6. Commercial & Remarks",
         "7. 🕘 Revision History",
+        "8. 📎 Documents"
     ])
 
     with st.form(f"bk_ws_detail_form_{selected_no}"):
@@ -576,6 +596,11 @@ def _workspace_view(tenant_id, can_edit, user):
                             st.error(f"Historical PDF Error: {hpdf_e}")
         else:
             st.info("ℹ️ No historical revisions recorded for this Booking yet. Current active version is REV 0.")
+
+    with t8:
+        from views.document_ui import render_document_section
+        st.subheader("📎 Documents")
+        render_document_section("BOOKING", selected_no)
 
 
 # =========================================================

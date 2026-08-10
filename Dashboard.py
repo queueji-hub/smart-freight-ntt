@@ -121,40 +121,55 @@ if not user:
 # =========================================================
 # ERP REPOSITORIES & ACCESS CONTROL
 # =========================================================
-PAGES = [
-    ("dashboard", "📊 Dashboard", "dashboard"),
-    ("crm", "👥 Customers", "crm"),
-    ("quotation", "📄 Quotation", "quotation"),
-    ("booking", "📑 Booking", "booking"),
-    ("job", "📦 Shipments", "shipment"),
-    ("bl", "📜 Bill of Lading", "bl"),
-    ("tracking", "📍 Tracking", "tracking"),
-    ("billing", "💰 Billing", "billing"),
-    ("profit", "💹 Profit Analysis", "profit"),
-    ("reports", "📈 Reports", "reports"),
-    ("users", "👤 Users", "users"),
-    ("settings", "⚙️ Settings", "settings"),
-]
+# Professional ERP Hierarchy
+ERP_MODULES = {
+    "EXECUTIVE": [
+        ("dashboard", "📊 Management Dashboard", "dashboard"),
+        ("sales_perf", "📈 Sales Performance", "reports"),
+        ("company_monthly", "🏢 Company Monthly Report", "reports"),
+        ("month_end", "🔒 Month-End Closing", "billing"),
+    ],
+    "SALES": [
+        ("crm", "👥 Customers", "crm"),
+        ("quotation", "📄 Quotations", "quotation"),
+        ("booking", "📑 Booking", "booking"),
+    ],
+    "OPERATIONS": [
+        ("job_control", "🎮 Job Control Center", "shipment"),
+        ("job", "📦 Job Sheet 360", "shipment"),
+        ("tracking", "📍 Shipment Tracking", "tracking"),
+        ("bl", "📜 Bill of Lading", "bl"),
+        ("transport", "🚛 Transport Orders", "shipment"),
+    ],
+    "DOCUMENTS": [
+        ("document", "📎 Document Center", "document"),
+        ("pdf_center", "🖨️ PDF Generation", "document"),
+        ("physical_docs", "🗄️ Physical Documents", "document"),
+    ],
+    "FINANCE": [
+        ("billing", "💰 AR (Accounts Receivable)", "billing"),
+        ("ap", "💸 AP (Accounts Payable)", "ap"),
+        ("vendor", "🏢 Vendor Master", "vendor"),
+        ("profit", "💹 Job Profitability", "profit"),
+        ("commission", "💵 Sales Commission", "profit"),
+    ],
+    "COMPLIANCE": [
+        ("regulatory", "⚖️ Regulatory & Customs", "document"),
+    ],
+    "SYSTEM": [
+        ("users", "👤 Users", "users"),
+        ("settings", "⚙️ Settings", "settings"),
+    ]
+}
 
 user_role = str(user.get("role", "guest")).lower()
-allowed_pages = [p for p in PAGES if can_read(user_role, p[2])]
-
-if not allowed_pages:
-    st.error("🔒 Access Denied: Your account role does not have viewing permissions for this platform.")
-    st.stop()
-
-allowed_ids = [p[0] for p in allowed_pages]
 
 # Extract routing metadata safely
 query_params = st.query_params.to_dict()
-current_page = query_params.get("page", allowed_ids[0])
-
-if current_page not in allowed_ids:
-    current_page = allowed_ids[0]
-
+current_page = query_params.get("page", "dashboard")
 
 # =========================================================
-# SIDEBAR UI (CARGOWISE METRO STYLE)
+# SIDEBAR UI (ENTERPRISE ERP STYLE)
 # =========================================================
 with st.sidebar:
     # Corporate Identity Header Card
@@ -180,20 +195,27 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("<p style='color:#64748B; font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>Navigation Matrix</p>", unsafe_allow_html=True)
+    # Search Bar (Global Search hook placeholder)
+    st.text_input("🔍 Global Search (Job, Doc, HBL)", key="global_search", placeholder="Type and hit Enter...")
+    st.markdown("<hr style='margin-top:10px; margin-bottom:10px; opacity:0.2;'/>", unsafe_allow_html=True)
 
-    # Menu Router Action Buttons
-    for page_id, label, module in allowed_pages:
-        is_active = (current_page == page_id)
+    # Render Hierarchical Navigation
+    for category, modules in ERP_MODULES.items():
+        # Filter allowed modules based on RBAC
+        allowed_modules = [m for m in modules if can_read(user_role, m[2])]
         
-        if st.button(
-            label,
-            key=f"nav_btn_{page_id}",
-            use_container_width=True,
-            type="primary" if is_active else "secondary"
-        ):
-            st.query_params["page"] = page_id
-            st.rerun()
+        if allowed_modules:
+            with st.expander(category, expanded=any(m[0] == current_page for m in allowed_modules)):
+                for page_id, label, _ in allowed_modules:
+                    is_active = (current_page == page_id)
+                    if st.button(
+                        label,
+                        key=f"nav_btn_{page_id}",
+                        use_container_width=True,
+                        type="primary" if is_active else "secondary"
+                    ):
+                        st.query_params["page"] = page_id
+                        st.rerun()
 
     st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
     st.markdown("---")
@@ -245,7 +267,11 @@ st.markdown(f"""
 # =========================================================
 # ASYNCHRONOUS SAFE VIEW MODULE DYNAMIC ROUTER
 # =========================================================
-PAGE_ROUTES = {p[0]: (f"views.{p[2]}_view", "render") for p in PAGES}
+# Build a flat routing map from ERP_MODULES
+PAGE_ROUTES = {}
+for category, modules in ERP_MODULES.items():
+    for page_id, label, module_name in modules:
+        PAGE_ROUTES[page_id] = (f"views.{module_name}_view", "render")
 
 if current_page not in PAGE_ROUTES:
     st.error("🎯 Resource Execution Failure: Target context router location mismatch.")

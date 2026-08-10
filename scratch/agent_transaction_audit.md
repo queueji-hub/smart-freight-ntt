@@ -1,0 +1,33 @@
+# AGENT TRANSACTION AUDIT
+
+## Files with potential rollback/commit issues:
+- .\views\reports_view.py might swallow exceptions without rollback
+- .\pdf\profit_pdf.py might swallow exceptions without rollback
+- .\pdf\booking_pdf.py might swallow exceptions without rollback
+- .\views\booking_view.py might swallow exceptions without rollback
+- .\views\quotation_view.py might swallow exceptions without rollback
+- .\managers\db_persistence.py might swallow exceptions without rollback
+- .\views\dashboard_view.py might swallow exceptions without rollback
+- .\contracts\invoice_contract.py might swallow exceptions without rollback
+- .\managers\shipment_manager.py might swallow exceptions without rollback
+- .\views\profit_view.py might swallow exceptions without rollback
+- .\managers\email_manager.py might swallow exceptions without rollback
+- .\pdf\bl_pdf.py might swallow exceptions without rollback
+- .\pdf\invoice_pdf.py might swallow exceptions without rollback
+- .\Dashboard.py might swallow exceptions without rollback
+- .\views\shipment_view.py might swallow exceptions without rollback
+- .\views\settings_view.py might swallow exceptions without rollback
+- .\pdf\fonts.py might swallow exceptions without rollback
+- .\views\crm_view.py might swallow exceptions without rollback
+- .\views\login_view.py might swallow exceptions without rollback
+- .\managers\session_manager.py might swallow exceptions without rollback
+- .\views\fx_view.py might swallow exceptions without rollback
+- .\managers\dashboard_manager.py might swallow exceptions without rollback
+- .\views\bl_view.py might swallow exceptions without rollback
+- .\managers\ai_quote_parser.py might swallow exceptions without rollback
+- .\managers\auth_manager.py might swallow exceptions without rollback
+- .\views\help_view.py might swallow exceptions without rollback
+- .\pdf\manual_pdf.py might swallow exceptions without rollback
+- .\views\billing_view.py might swallow exceptions without rollback
+- .\views\users_view.py might swallow exceptions without rollback
+- .\managers\profit_manager.py might swallow exceptions without rollback

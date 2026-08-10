@@ -1,3 +1,4 @@
+from managers.tenant_context import get_current_tenant_id
 from typing import List, Dict, Any, Optional
 from database.connection import get_connection
 
@@ -25,24 +26,41 @@ STANDARD_MILESTONES_SI = [
     ("DLV", "Delivered to Consignee", "ส่งมอบลูกค้าแล้ว"),
 ]
 
-def add_milestone(shipment_id: int, code: str, name: str, occurred_at: Optional[str] = None, note: Optional[str] = None) -> int:
+def add_milestone(shipment_id: int, job_no: str, code: str, name: str, event_date: Optional[str] = None, location: Optional[str] = None, remark: Optional[str] = None) -> int:
     with get_connection() as conn:
         cur = conn.execute("""
-            INSERT INTO shipment_milestones (shipment_id, milestone_code, milestone_name, occurred_at, note)
-            VALUES (%s, %s, %s, %s, %s) RETURNING id
-        """, (shipment_id, code, name, occurred_at, note))
+            INSERT INTO shipment_milestones (shipment_id, job_no, milestone_code, milestone_name, event_date, location, remark)
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+        """, (shipment_id, job_no, code, name, event_date, location, remark))
+        row = cur.fetchone()
         conn.commit()
-        return cur.fetchone()['id']
+        return row['id']
 
-def update_milestone(milestone_id: int, occurred_at: Optional[str] = None, note: Optional[str] = None) -> bool:
+def update_milestone(milestone_id: int, event_date: Optional[str] = None, location: Optional[str] = None, remark: Optional[str] = None) -> bool:
     with get_connection() as conn:
         cur = conn.execute("""
-            UPDATE shipment_milestones SET occurred_at=%s, note=%s WHERE id=%s
-        """, (occurred_at, note, milestone_id))
+            UPDATE shipment_milestones SET event_date=%s, location=%s, remark=%s WHERE id=%s
+        """, (event_date, location, remark, milestone_id))
         conn.commit()
         return cur.rowcount > 0
 
-def init_milestones_for_shipment(shipment_id: int, job_type: str) -> None:
+def list_milestones(job_no: str) -> List[Dict]:
+    with get_connection() as conn:
+        return conn.execute("""
+            SELECT * FROM shipment_milestones
+            WHERE job_no = %s
+            ORDER BY event_date DESC, created_at DESC
+        """, (job_no,)).fetchall()
+
+def delete_milestone(milestone_id: int, job_no: str) -> bool:
+    with get_connection() as conn:
+        cur = conn.execute("""
+            DELETE FROM shipment_milestones WHERE id=%s AND job_no=%s
+        """, (milestone_id, job_no))
+        conn.commit()
+        return cur.rowcount > 0
+
+def init_milestones_for_shipment(shipment_id: int, job_no: str, job_type: str) -> None:
     with get_connection() as conn:
         # ใช้ fetchone เพื่อเช็คว่ามีอยู่แล้วหรือยัง
         row = conn.execute("SELECT COUNT(*) as cnt FROM shipment_milestones WHERE shipment_id=%s", (shipment_id,)).fetchone()
@@ -51,9 +69,9 @@ def init_milestones_for_shipment(shipment_id: int, job_type: str) -> None:
         milestones = STANDARD_MILESTONES_SI if job_type == "SI" else STANDARD_MILESTONES_SE
         for code, name_en, name_th in milestones:
             conn.execute("""
-                INSERT INTO shipment_milestones (shipment_id, milestone_code, milestone_name, occurred_at)
-                VALUES (%s, %s, %s, NULL)
-            """, (shipment_id, code, f"{name_en} ({name_th})"))
+                INSERT INTO shipment_milestones (shipment_id, job_no, milestone_code, milestone_name, event_date)
+                VALUES (%s, %s, %s, %s, NULL)
+            """, (shipment_id, job_no, code, f"{name_en} ({name_th})"))
         conn.commit()
 
 def get_progress_percentage(shipment_id: int) -> int:
@@ -61,7 +79,7 @@ def get_progress_percentage(shipment_id: int) -> int:
         row = conn.execute("""
             SELECT 
                 COUNT(*) as total,
-                COUNT(*) FILTER (WHERE occurred_at IS NOT NULL) as completed
+                COUNT(*) FILTER (WHERE event_date IS NOT NULL) as completed
             FROM shipment_milestones WHERE shipment_id=%s
         """, (shipment_id,)).fetchone()
         

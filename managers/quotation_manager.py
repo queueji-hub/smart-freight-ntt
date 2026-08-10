@@ -1,3 +1,5 @@
+from managers.tenant_context import get_current_tenant_id
+from managers.document_numbering_service import generate_document_number, normalize_doc_no
 """
 Quotation Transactional Database Manager
 PostgreSQL Stable Release - Production Ready
@@ -16,8 +18,6 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
     Inserts a quotation master record and its child lines atomically.
     Uses PostgreSQL standard placeholders (%s) and sequence generation.
     """
-    from managers.quotation_number import generate_quotation_number
-
     # Generate tracking identity
     q_date_val = data.get("quotation_date") or datetime.now().strftime("%Y-%m-%d")
     v_date_val = data.get("validity_date") or (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
@@ -36,25 +36,26 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
         mapping = {"SEA_EXP": "SE", "SEA_IMP": "SI", "AIR_EXP": "AE", "AIR_IMP": "AI", "TRK_EXP": "TE", "TRK_IMP": "TI", "FREIGHT": "SE"}
         job_type = mapping.get(job_type, "SE")
 
-    quotation_no = generate_quotation_number(job_type, q_date_obj)
+    quotation_no = generate_document_number("QT", q_date_obj)
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             try:
+                tenant_id = get_current_tenant_id()
                 # 1. Master Header Record Insertion
                 cur.execute("""
                     INSERT INTO quotations (
                         quotation_no, job_type, customer_name, attention, tel,
                         carrier, pol, pod, quotation_date, validity_date,
                         payment_term, commodity, subject, terms_conditions,
-                        status, created_at,
+                        status, created_at, tenant_id,
                         customer_address, customer_email, salesperson,
                         shipper, consignee, service_type, origin, destination,
                         incoterm, freight_term, hs_code, quantity, package_type,
                         weight_kg, volume_cbm, container_type, container_quantity, is_dg
                     )
                     VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     );
                 """, (
@@ -73,6 +74,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     data.get("subject", ""),
                     data.get("terms_conditions", ""),
                     "ACTIVE",
+                    tenant_id,
                     data.get("customer_address", ""),
                     data.get("customer_email", ""),
                     data.get("salesperson", ""),
@@ -93,7 +95,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     bool(data.get("is_dg") or False)
                 ))
 
-                cur.execute("SELECT id FROM quotations WHERE quotation_no = %s LIMIT 1;", (quotation_no,))
+                cur.execute("SELECT id FROM quotations WHERE quotation_no = %s AND tenant_id = %s LIMIT 1;", (quotation_no, tenant_id))
                 result = cur.fetchone()
                 quotation_id = result[0] if isinstance(result, (tuple, list)) else result["id"]
 
@@ -137,7 +139,9 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
 def list_quotations() -> List[Dict[str, Any]]:
     """
     Returns full array index log history sorted dynamically for dataframes.
+    Tenant-isolated.
     """
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -145,8 +149,9 @@ def list_quotations() -> List[Dict[str, Any]]:
                     quotation_no, job_type, customer_name, subject,
                     quotation_date, validity_date, status
                 FROM quotations 
+                WHERE tenant_id = %s
                 ORDER BY id DESC;
-            """)
+            """, (tenant_id,))
             rows = cur.fetchall()
             return [dict(r) for r in rows]
 
@@ -154,16 +159,18 @@ def list_quotations() -> List[Dict[str, Any]]:
 def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
     """
     Fetches aggregate data model mapping Header joined with Child Items rows.
+    Tenant-isolated.
     """
     if not quotation_no:
         return None
 
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            # Fetch Header record
+            # Fetch Header record (tenant-isolated)
             cur.execute("""
-                SELECT * FROM quotations WHERE quotation_no = %s LIMIT 1;
-            """, (quotation_no,))
+                SELECT * FROM quotations WHERE quotation_no = %s AND tenant_id = %s LIMIT 1;
+            """, (quotation_no, tenant_id))
 
             row = cur.fetchone()
             if not row:
@@ -201,8 +208,9 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
     with get_connection() as conn:
         with conn.cursor() as cur:
             try:
-                # 1. Row Lock Verification check (single fetch only)
-                cur.execute("SELECT id FROM quotations WHERE quotation_no = %s LIMIT 1;", (quotation_no,))
+                tenant_id = get_current_tenant_id()
+                # 1. Row Lock Verification check (single fetch only, tenant-isolated)
+                cur.execute("SELECT id FROM quotations WHERE quotation_no = %s AND tenant_id = %s LIMIT 1;", (quotation_no, tenant_id))
                 header = cur.fetchone()
                 if not header:
                     raise ValueError(f"Quotation '{quotation_no}' not found in database.")
@@ -220,7 +228,7 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                         shipper = %s, consignee = %s, service_type = %s, origin = %s, destination = %s,
                         incoterm = %s, freight_term = %s, hs_code = %s, quantity = %s, package_type = %s,
                         weight_kg = %s, volume_cbm = %s, container_type = %s, container_quantity = %s, is_dg = %s
-                    WHERE id = %s;
+                    WHERE id = %s AND tenant_id = %s;
                 """, (
                     data.get("job_type"), data.get("customer_name"), data.get("attention"), data.get("tel"),
                     data.get("carrier"), data.get("pol"), data.get("pod"), data.get("quotation_date"),
@@ -234,7 +242,7 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                     float(data.get("weight_kg") or 0.0), float(data.get("volume_cbm") or 0.0), 
                     data.get("container_type", ""), int(data.get("container_quantity") or 0), 
                     bool(data.get("is_dg") or False),
-                    q_id
+                    q_id, tenant_id
                 ))
 
                 # 3. Purging historical items lines rows to overwrite safely

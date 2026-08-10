@@ -1,3 +1,4 @@
+from managers.tenant_context import get_current_tenant_id
 """
 Enterprise Container Management & Operational Gatekeeper Engine
 CargoWise Standard Compliant — Auto-Calculations & Fast Batch Processing
@@ -95,10 +96,22 @@ def calculate_container_metrics(
 # =========================================================
 # ADD CONTAINER (SINGLE RECORD)
 # =========================================================
-def add_container(data: Dict[str, Any]) -> int:
+def add_container(data: Dict[str, Any]) -> bool:
     """
     Inserts a container record into database with auto-calculated VGM and Tare metrics.
     """
+    job_no = data.get("job_no")
+    shipment_id = data.get("shipment_id")
+
+    if not shipment_id and job_no:
+        with get_connection() as conn:
+            row = conn.execute("SELECT id FROM shipments WHERE job_no=%s", (job_no,)).fetchone()
+            if row:
+                shipment_id = row['id']
+
+    if not shipment_id:
+        return False  # Cannot insert without shipment_id
+
     c_size = (data.get("container_size") or "40HC").upper()
     g_weight = float(data.get("gross_weight", 0) or 0)
     n_weight = float(data.get("net_weight", 0) or 0)
@@ -109,17 +122,18 @@ def add_container(data: Dict[str, Any]) -> int:
 
     sql = """
         INSERT INTO containers (
-            job_no, bl_no, container_no, container_size, container_type,
+            shipment_id, job_no, bl_no, container_no, container_size, container_type,
             seal_no, vgm_kg, vgm_method, gross_weight, net_weight,
             tare_weight, max_payload, volume_cbm, soc_coc,
             temp_setting, temp_unit, vent_setting, genset_no,
             oog_length_cm, oog_width_cm, oog_height_cm, un_number, imo_class, status
         )
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
     """
 
     params = (
-        data.get("job_no"),
+        shipment_id,
+        job_no,
         data.get("bl_no"),
         (data.get("container_no") or "").upper().strip(),
         c_size,
@@ -127,9 +141,9 @@ def add_container(data: Dict[str, Any]) -> int:
         data.get("seal_no"),
         data.get("vgm_kg", metrics["vgm_kg"]),
         data.get("vgm_method", "Method 2"),
-        g_weight or metrics["calculated_gross_kg"],
+        metrics["calculated_gross_kg"],
         n_weight,
-        t_weight or metrics["calculated_tare_kg"],
+        metrics["calculated_tare_kg"],
         metrics["max_payload_kg"],
         vol_cbm,
         data.get("soc_coc", "COC"),
@@ -231,6 +245,17 @@ def list_containers(bl_no: str = None, job_no: str = None) -> List[Dict[str, Any
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
             return [dict(r) for r in rows]
+
+# =========================================================
+# DELETE CONTAINER
+# =========================================================
+def delete_container(container_id: int, job_no: str) -> bool:
+    sql = "DELETE FROM containers WHERE id=%s AND job_no=%s"
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (container_id, job_no))
+            conn.commit()
+            return cur.rowcount > 0
 
 
 # =========================================================

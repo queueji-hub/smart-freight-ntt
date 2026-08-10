@@ -1,185 +1,102 @@
 """
-Business Intelligence Analytics & Executive Financial Dashboard
-PostgreSQL Core Connected - 100% Professional ERP Grade Interface
+Phase 18.5, 18.6, 18.7 - Executive Reports, Sales Performance, Commission
 """
-
 import streamlit as st
 import pandas as pd
-from datetime import date, timedelta
-from managers.shipment_manager import list_shipments
-from managers.invoice_manager import list_invoices, get_outstanding_summary
-from managers.customer_manager import list_customers
+from datetime import datetime
 
-# =========================================================
-# SYSTEM VIEW ROUTER ENTRYPOINT
-# =========================================================
+from managers.report_manager import get_company_monthly_performance, get_sales_performance_report, get_salesperson_job_drilldown
+from managers.commission_manager import create_commission_draft
+
 def render():
-    st.markdown("<p style='color: #38BDF8; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;'>Corporate Decision Intelligence</p>", unsafe_allow_html=True)
-    st.markdown("<h2 style='margin-top: 0px; font-weight: 800; color:#F8FAFC;'>📊 Reports & Operational Analytics</h2>", unsafe_allow_html=True)
-    st.caption("Central Business Intelligence — Real-time tracking metrics, daily freight trends, transactional billing cycles, and client exposure matrices.")
-
-    # =========================================================
-    # GLOBAL FILTER CONTROL DESK
-    # =========================================================
-    st.markdown("<div style='padding: 14px; border: 1px solid #1E293B; background-color: #0F172A; border-radius: 12px; margin-bottom: 20px;'>", unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    start_date = col1.date_input("Analysis Window (From) *", value=date.today() - timedelta(days=30), key="bi_start_date")
-    end_date = col2.date_input("Analysis Window (To) *", value=date.today(), key="bi_end_date")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if start_date > end_date:
-        st.error("⚠️ Validation Error: 'From' date window cannot transcend 'To' final date parameters.")
-        return
-
-    # =========================================================
-    # SECTION 1: SHIPMENT PERFORMANCES (KPI GRID)
-    # =========================================================
-    st.markdown("#### 🚢 Intermodal Freight Activity Ledger")
+    st.title("📈 Management Reporting & Performance")
     
-    with st.spinner("Compiling shipment metrics data..."):
-        try:
-            all_ships = list_shipments() or []
-        except Exception as e:
-            st.error(f"Failed to extract operational shipment data frames: {str(e)}")
-            all_ships = []
-
-    # Safe dynamic conversion using Pandas vectorized features
-    if all_ships:
-        df_ships = pd.DataFrame(all_ships)
-        # Handle string parsing or datetime dynamic types safely
-        df_ships['clean_date'] = pd.to_datetime(df_ships['created_at'], errors='coerce').dt.date
-        
-        # Apply strict parameters filter range
-        filtered_mask = (df_ships['clean_date'] >= start_date) & (df_ships['clean_date'] <= end_date)
-        filtered_ships_df = df_ships[filtered_mask]
-        filtered_ships_list = filtered_ships_df.to_dict(orient="records")
-    else:
-        filtered_ships_df = pd.DataFrame()
-        filtered_ships_list = []
-
-    # Render Executive Performance Scorecard
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Total Freight Jobs", len(filtered_ships_list))
-    k2.metric("In Transit (Proceed)", sum(1 for s in filtered_ships_list if str(s.get("status")).strip() == "Proceed"))
-    k3.metric("Operation Finished", sum(1 for s in filtered_ships_list if str(s.get("status")).strip() == "Finished"))
-    k4.metric("Audited & Closed", sum(1 for s in filtered_ships_list if str(s.get("status")).strip() == "Closed"))
-
-    # Daily Freight Volume Chart
-    if not filtered_ships_df.empty:
-        st.markdown("<p style='font-size:13px; font-weight:700; color:#94A3B8; margin-top:15px; margin-bottom:5px;'>📈 Daily Booking Volume Trendline</p>", unsafe_allow_html=True)
-        # Resample logic via DataFrame group operators
-        daily_trend = filtered_ships_df.groupby('clean_date').size().rename("Bookings Counter")
-        st.line_chart(daily_trend, use_container_width=True, color="#38bdf8")
-
-        # Export Operational Shipments CSV
-        ships_csv = filtered_ships_df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 Export Operational Shipment Ledger to Excel (CSV)",
-            data=ships_csv,
-            file_name=f'shipments_activity_{start_date.isoformat()}_to_{end_date.isoformat()}.csv',
-            mime='text/csv',
-            use_container_width=True,
-            key="bi_shipment_download_trigger_btn"
-        )
-    else:
-        st.info("ℹ️ No historical shipping logs matched your specified window interval criteria.")
-
-    st.markdown("<div style='margin-top:25px;'></div>", unsafe_allow_html=True)
-    st.divider()
-
-    # =========================================================
-    # SECTION 2: FINANCIAL OPERATIONS OVERVIEW (EXPOSURE)
-    # =========================================================
-    st.markdown("#### 💰 Corporate Revenue & Accounts Receivable (AR)")
+    tabs = st.tabs([
+        "🏢 Company Monthly Report", 
+        "📈 Sales Performance", 
+        "💵 Sales Commission"
+    ])
     
-    with st.spinner("Auditing financial ledgers..."):
-        try:
-            summary = get_outstanding_summary() or {"billed": 0, "paid": 0, "outstanding": 0}
-            invs = list_invoices(doc_type="INV") or []
-        except Exception as e:
-            st.error(f"Financial subsystem blocked execution parameters: {str(e)}")
-            summary = {"billed": 0, "paid": 0, "outstanding": 0}
-            invs = []
-
-    # Financial Scorecard Overview
-    f1, f2, f3 = st.columns(3)
-    f1.metric("Gross Revenue Billed", f"฿ {summary.get('billed', 0):,.2f}")
-    f2.metric("Capital Liquidated (Paid)", f"฿ {summary.get('paid', 0):,.2f}")
-    f3.metric("Outstanding Exposure Risk", f"฿ {summary.get('outstanding', 0):,.2f}", delta=f"฿ {summary.get('outstanding', 0):,.0f}", delta_color="inverse")
-
-    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
-    st.markdown("<p style='font-size:14px; font-weight:700; color:#F1F5F9; margin-bottom:5px;'>👥 Client Exposure & Outstanding Aging Directory</p>", unsafe_allow_html=True)
-
-    if invs:
-        df_inv = pd.DataFrame(invs)
+    now = datetime.now()
+    default_month = f"{now.month:02d}"
+    default_year = str(now.year)
+    
+    # ---------------------------------------------------------
+    # TAB 1: COMPANY MONTHLY REPORT
+    # ---------------------------------------------------------
+    with tabs[0]:
+        st.subheader("Company Monthly Performance")
+        c1, c2 = st.columns(2)
+        r_month = c1.selectbox("Reporting Month", [f"{i:02d}" for i in range(1, 13)], index=int(default_month)-1, key="cm_month")
+        r_year = c2.selectbox("Reporting Year", ["2025", "2026", "2027", "2028"], index=1, key="cm_year")
         
-        # Guard against zero data columns layout failures
-        required_cols = ["customer_name", "total_amount", "paid_amount", "outstanding"]
-        for col in required_cols:
-            if col not in df_inv.columns:
-                df_inv[col] = 0.0
-
-        # Run multi-variable pivot aggregate operations safely
-        top_exposure = df_inv.groupby("customer_name").agg({
-            "total_amount": "sum",
-            "paid_amount": "sum",
-            "outstanding": "sum"
-        }).reset_index().sort_values("outstanding", ascending=False)
-
-        # Map semantic names for downstream corporate operations
-        column_configs = {
-            "customer_name": st.column_config.TextColumn("Corporate Client Identification", width="medium"),
-            "total_amount": st.column_config.NumberColumn("Total Billed Portfolio", format="฿%,.2f"),
-            "paid_amount": st.column_config.NumberColumn("Settled Capital", format="฿%,.2f"),
-            "outstanding": st.column_config.NumberColumn("Outstanding Aging Arrears", format="฿%,.2f"),
-        }
-
-        # Excel Export Pipeline Control Interface (Using UTF-8-SIG to enforce smooth Excel parsing on Windows nodes)
-        csv_payload = top_exposure.to_csv(index=False).encode('utf-8-sig')
-        
-        st.download_button(
-            label="📥 Export Financial Exposure Ledger to Excel (CSV)",
-            data=csv_payload,
-            file_name=f'ar_exposure_report_{date.today().isoformat()}.csv',
-            mime='text/csv',
-            use_container_width=True,
-            key="bi_ar_download_trigger_btn"
-        )
-
-        st.dataframe(
-            top_exposure,
-            use_container_width=True,
-            hide_index=True,
-            column_config=column_configs
-        )
-    else:
-        st.info("ℹ️ Account general registers contain zero compiled invoice documents.")
-
-    # =========================================================
-    # SECTION 3: CRM IDENTITY DIRECTORY EXTENSION
-    # =========================================================
-    st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
-    with st.expander("👥 Integrated Client CRM Base Metrics Overview", expanded=False):
-        try:
-            customers = list_customers() or []
-            st.markdown(f"**Total Registered System Trading Accounts:** `{len(customers)} Corporate Entities`")
+        if st.button("Generate Executive Report", key="btn_cm"):
+            perf = get_company_monthly_performance(r_month, r_year)
             
-            if customers:
-                df_cust = pd.DataFrame(customers)
-                safe_crm_cols = [c for c in ["code", "name", "tax_id", "credit_limit"] if c in df_cust.columns]
+            st.markdown("### Operations Overview")
+            op = perf["operations"]
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total Jobs", op["total_jobs"])
+            col2.metric("Export Jobs", op["export_jobs"])
+            col3.metric("Import Jobs", op["import_jobs"])
+            col4.metric("Won Jobs", op["won_jobs"])
+            
+            st.markdown("### Financial Overview (Strict GP Rule)")
+            rev = perf["revenue"]
+            cost = perf["cost"]
+            prof = perf["profit"]
+            
+            col5, col6, col7, col8 = st.columns(4)
+            col5.metric("Actual Revenue", f"{rev['actual_revenue']:,.2f}")
+            col6.metric("Actual Cost", f"{cost['actual_cost']:,.2f}")
+            col7.metric("Actual GP", f"{prof['actual_gp']:,.2f}")
+            col8.metric("Gross Margin", f"{prof['gross_margin_pct']}%")
+            
+            st.markdown("### Salesperson Breakdown")
+            if perf["sales"]:
+                df_sp = pd.DataFrame(perf["sales"])
+                st.dataframe(df_sp[["sales_person", "total_jobs", "export_jobs", "import_jobs", "actual_revenue", "actual_cost", "actual_gp", "gross_margin_pct"]], use_container_width=True)
+            else:
+                st.info("No sales data for this month.")
                 
-                crm_mapping = {
-                    "code": "CRM ID",
-                    "name": "Registered Company Trading Title",
-                    "tax_id": "Corporate Tax Identifier",
-                    "credit_limit": "Approved Credit Ceiling Limit"
-                }
-                
-                st.dataframe(
-                    df_cust[safe_crm_cols].rename(columns=crm_mapping),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={"Approved Credit Ceiling Limit": st.column_config.NumberColumn(format="฿%,.0f")}
-                )
-        except Exception as crm_ex:
-            st.caption(f"CRM Indexing subsystem offline: {str(crm_ex)}")
+            st.info("💡 Note: Export jobs use ETD month. Import jobs use ETA month.")
+
+    # ---------------------------------------------------------
+    # TAB 2: SALES PERFORMANCE (DRILL DOWN)
+    # ---------------------------------------------------------
+    with tabs[1]:
+        st.subheader("Salesperson Drill-down")
+        c1, c2, c3 = st.columns(3)
+        sp_month = c1.selectbox("Reporting Month", [f"{i:02d}" for i in range(1, 13)], index=int(default_month)-1, key="sp_month")
+        sp_year = c2.selectbox("Reporting Year", ["2025", "2026", "2027", "2028"], index=1, key="sp_year")
+        sp_name = c3.text_input("Salesperson Name", key="sp_name")
+        
+        if st.button("Search Jobs", key="btn_sp"):
+            if not sp_name:
+                st.warning("Please enter a salesperson name.")
+            else:
+                jobs = get_salesperson_job_drilldown(sp_month, sp_year, sp_name)
+                if jobs:
+                    st.dataframe(pd.DataFrame(jobs), use_container_width=True)
+                else:
+                    st.info("No jobs found.")
+
+    # ---------------------------------------------------------
+    # TAB 3: COMMISSION
+    # ---------------------------------------------------------
+    with tabs[2]:
+        st.subheader("Commission Draft Generation")
+        c1, c2, c3 = st.columns(3)
+        com_month = c1.selectbox("Reporting Month", [f"{i:02d}" for i in range(1, 13)], index=int(default_month)-1, key="com_month")
+        com_year = c2.selectbox("Reporting Year", ["2025", "2026", "2027", "2028"], index=1, key="com_year")
+        com_name = c3.text_input("Salesperson", key="com_name")
+        
+        if st.button("Calculate Commission", key="btn_com"):
+            if not com_name:
+                st.warning("Please enter a salesperson name.")
+            else:
+                try:
+                    c_id = create_commission_draft(com_month, com_year, com_name)
+                    st.success(f"Commission Draft Generated! Draft ID: {c_id}")
+                except Exception as e:
+                    st.error(str(e))

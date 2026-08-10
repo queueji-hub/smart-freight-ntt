@@ -1,6 +1,7 @@
+from managers.tenant_context import get_current_tenant_id
 """
 Authentication & Enterprise Role-Based Access Control (RBAC) Subsystem
-Secure Cryptographic Hashing & SQL Data Access Handlers — 100% Professional ERP Grade
+Secure Cryptographic Hashing & SQL Data Access Handlers โ€” 100% Professional ERP Grade
 """
 
 import bcrypt
@@ -97,7 +98,7 @@ def verify_password(password: str, hashed: str) -> bool:
         
         return bcrypt.checkpw(password_bytes, hashed_bytes)
     except Exception as crypto_err:
-        print(f"🚨 SECURITY LAYER ERROR: Cryptographic verification fault intercepted: {str(crypto_err)}")
+        print(f"๐จ SECURITY LAYER ERROR: Cryptographic verification fault intercepted: {str(crypto_err)}")
         return False
 
 # =========================================================
@@ -126,7 +127,7 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
                 
                 row = cur.fetchone()
                 if not row:
-                    print(f"🔒 AUTH WARNING: Sign-in attempt rejected. User record context not found: '{clean_username}'")
+                    print(f"[AUTH WARNING] Sign-in attempt rejected. User record context not found: '{clean_username}'")
                     return None
                 
                 # Safe Map Data Parameters to Dictionary Profile Object
@@ -141,22 +142,22 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
                     
                 stored_hash = user_data.get("password_hash")
                 if not stored_hash:
-                    print("🔒 AUTH CRITICAL: Blocked authentication sequence. Target identity missing password hashes tokens.")
+                    print("[AUTH CRITICAL] Blocked authentication sequence. Target identity missing password hashes tokens.")
                     return None
                     
                 if not verify_password(clean_password, stored_hash):
-                    print(f"🔒 AUTH WARNING: Validation check failed for credential identifiers: '{clean_username}'")
+                    print(f"[AUTH WARNING] Validation check failed for credential identifiers: '{clean_username}'")
                     return None
                     
                 if int(user_data.get("is_active", 1)) != 1:
-                    print(f"🔒 AUTH REJECTED: User account identity is currently administratively disabled: '{clean_username}'")
+                    print(f"[AUTH REJECTED] User account identity is currently administratively disabled: '{clean_username}'")
                     return None
                     
                 user_data.pop("password_hash", None)
                 return normalize_user(user_data)
                 
     except Exception as pipeline_fault:
-        print(f"🚨 IDENTITY CRITICAL EXCEPTION: Authentication service pipeline crash: {str(pipeline_fault)}")
+        print(f"[IDENTITY CRITICAL EXCEPTION] Authentication service pipeline crash: {str(pipeline_fault)}")
         return None
 
 # =========================================================
@@ -188,7 +189,7 @@ def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
                 user_data.pop("password_hash", None)
                 return normalize_user(user_data)
     except Exception as fetch_ex:
-        print(f"🚨 DATA RETRIEVAL EXCEPTION: Failed user profile fetch execution: {str(fetch_ex)}")
+        print(f"๐จ DATA RETRIEVAL EXCEPTION: Failed user profile fetch execution: {str(fetch_ex)}")
         return None
 
 def list_users() -> List[Dict[str, Any]]:
@@ -207,7 +208,7 @@ def list_users() -> List[Dict[str, Any]]:
                     results.append(normalize_user(r_dict))
                 return results
     except Exception as list_ex:
-        print(f"🚨 DATA RETRIEVAL EXCEPTION: Failed compilation log rows: {str(list_ex)}")
+        print(f"๐จ DATA RETRIEVAL EXCEPTION: Failed compilation log rows: {str(list_ex)}")
         return []
 
 # =========================================================
@@ -238,9 +239,9 @@ def create_user(username: str, password: str, full_name: str = "", email: str = 
                     (clean_username, password_hash, full_name.strip(), email.strip(), clean_role, 1)
                 )
                 conn.commit()
-        print(f"✅ SECURITY SYSTEM PROVISIONING: New identity account created: '{clean_username}' [{clean_role}]")
+        print(f"โ… SECURITY SYSTEM PROVISIONING: New identity account created: '{clean_username}' [{clean_role}]")
     except Exception as insert_fault:
-        print(f"🚨 MUTATION TRANSACTION CRASH: Failed to commit new system workspace record profile: {str(insert_fault)}")
+        print(f"๐จ MUTATION TRANSACTION CRASH: Failed to commit new system workspace record profile: {str(insert_fault)}")
         raise insert_fault
 
 def update_user_password(username: str, new_password: str) -> None:
@@ -258,9 +259,9 @@ def update_user_password(username: str, new_password: str) -> None:
                 conn.commit()
                 if cur.rowcount == 0:
                     raise KeyError(f"Identity context sequence identifier token not found: '{clean_username}'")
-        print(f"✅ SECURITY RECORD MUTATION: Password cipher data successfully changed: '{clean_username}'")
+        print(f"โ… SECURITY RECORD MUTATION: Password cipher data successfully changed: '{clean_username}'")
     except Exception as update_fault:
-        print(f"🚨 SECURITY LAYER FAULT: Password mutation sequence blocked structural record update: {str(update_fault)}")
+        print(f"๐จ SECURITY LAYER FAULT: Password mutation sequence blocked structural record update: {str(update_fault)}")
         raise update_fault
 
 def update_user_role(username: str, role: str) -> None:
@@ -279,9 +280,9 @@ def update_user_role(username: str, role: str) -> None:
                     (clean_role, clean_username)
                 )
                 conn.commit()
-        print(f"✅ SECURITY ACCESS LOG CHANGE: Modified role clear spectrum for account identity '{clean_username}' to [{clean_role}]")
+        print(f"โ… SECURITY ACCESS LOG CHANGE: Modified role clear spectrum for account identity '{clean_username}' to [{clean_role}]")
     except Exception as role_mut_fault:
-        print(f"🚨 ACCESS POLICY OVERWRITE FAULT: Authorization matrix write sequence failure: {str(role_mut_fault)}")
+        print(f"๐จ ACCESS POLICY OVERWRITE FAULT: Authorization matrix write sequence failure: {str(role_mut_fault)}")
         raise role_mut_fault
 
 def set_user_active(username: str, active: bool) -> None:
@@ -297,7 +298,7 @@ def set_user_active(username: str, active: bool) -> None:
                     (status_bit, clean_username)
                 )
                 conn.commit()
-        print(f"✅ SYSTEM AUDIT MODIFIER: System login availability updated for credential index '{clean_username}' -> State: [Active={active}]")
+        print(f"โ… SYSTEM AUDIT MODIFIER: System login availability updated for credential index '{clean_username}' -> State: [Active={active}]")
     except Exception as active_mut_fault:
-        print(f"🚨 IDENTITY CONTEXT OVERWRITE ERROR: Failure updating user active flag variables: {str(active_mut_fault)}")
+        print(f"๐จ IDENTITY CONTEXT OVERWRITE ERROR: Failure updating user active flag variables: {str(active_mut_fault)}")
         raise active_mut_fault
