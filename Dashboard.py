@@ -122,17 +122,17 @@ if not user:
 # ERP REPOSITORIES & ACCESS CONTROL
 # =========================================================
 PAGES = [
-    ("dashboard", "📊 Dashboard Analytics", "dashboard"),
-    ("crm", "👥 Customer Relations (CRM)", "crm"),
-    ("quotation", "📄 Quote Management", "quotation"),
-    ("booking", "📑 Booking Orders", "booking"),
-    ("job", "📦 Shipment Operations", "shipment"),
-    ("tracking", "📍 Vessel & Cargo Tracking", "tracking"),
-    ("billing", "💰 Financial Billing", "billing"),
-    ("profit", "💹 Profit & Cost Analysis", "profit"),
-    ("reports", "📈 Operational Reports", "reports"),
-    ("users", "👤 Identity Management", "users"),
-    ("settings", "⚙️ System Settings", "settings"),
+    ("dashboard", "📊 Dashboard", "dashboard"),
+    ("crm", "👥 Customers", "crm"),
+    ("quotation", "📄 Quotation", "quotation"),
+    ("booking", "📑 Booking", "booking"),
+    ("job", "📦 Shipments", "shipment"),
+    ("tracking", "📍 Tracking", "tracking"),
+    ("billing", "💰 Billing", "billing"),
+    ("profit", "💹 Profit Analysis", "profit"),
+    ("reports", "📈 Reports", "reports"),
+    ("users", "👤 Users", "users"),
+    ("settings", "⚙️ Settings", "settings"),
 ]
 
 user_role = str(user.get("role", "guest")).lower()
@@ -230,7 +230,7 @@ st.markdown(f"""
                 {page_title_text}
             </h1>
             <p style="color: #94A3B8; font-size: 13px; margin: 4px 0 0 0; letter-spacing: 0.2px;">
-                Smart Freight Enterprise Supply Chain Infrastructure Engine
+                Enterprise Logistics ERP System
             </p>
         </div>
         <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.2); padding: 6px 12px; border-radius: 20px; color: #38BDF8; font-size: 11px; font-weight: 700; text-transform: uppercase;">
@@ -253,15 +253,14 @@ if current_page not in PAGE_ROUTES:
 module_path, fn_name = PAGE_ROUTES[current_page]
 
 try:
-    with st.spinner("Executing secure pipeline operation..."):
-        view_module = importlib.import_module(module_path)
+    view_module = importlib.import_module(module_path)
+    
+    if not hasattr(view_module, fn_name):
+        st.error(f"❌ Compilation Error: View module missing expected entrypoint '{fn_name}'")
+        st.stop()
         
-        if not hasattr(view_module, fn_name):
-            st.error(f"❌ Compilation Error: View module missing expected entrypoint '{fn_name}'")
-            st.stop()
-            
-        render_target = getattr(view_module, fn_name)
-        render_target()
+    render_target = getattr(view_module, fn_name)
+    render_target()
 
 except Exception as view_exec_err:
     st.error("🚨 Critical Crash Intercepted inside Runtime Pipeline View")

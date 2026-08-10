@@ -6,8 +6,9 @@ from managers.container_manager import add_container, list_containers
 
 
 def render():
-
-    st.title("📄 Bill of Lading & Container System")
+    st.markdown("<p style='color: #38BDF8; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;'>Document Management Engine</p>", unsafe_allow_html=True)
+    st.markdown("<h2 style='margin-top: 0px; font-weight: 800; color:#F8FAFC;'>📄 Bill of Lading & Containers</h2>", unsafe_allow_html=True)
+    st.caption("Centralised HBL/MBL creation and container manifest tracking.")
 
     tabs = st.tabs(["➕ Create BL", "📦 Containers", "📋 BL List"])
 
@@ -15,53 +16,81 @@ def render():
     # CREATE BL
     # =========================
     with tabs[0]:
-        job_no = st.text_input("Job No")
-        bl_no = st.text_input("BL No")
+        with st.form("create_bl_form"):
+            st.markdown("**Create New BL**")
+            c1, c2 = st.columns(2)
+            job_no = c1.text_input("Job No *")
+            bl_no = c2.text_input("BL No *")
 
-        shipper = st.text_input("Shipper")
-        consignee = st.text_input("Consignee")
+            c3, c4 = st.columns(2)
+            shipper = c3.text_area("Shipper")
+            consignee = c4.text_area("Consignee")
 
-        pol = st.text_input("POL")
-        pod = st.text_input("POD")
+            c5, c6 = st.columns(2)
+            pol = c5.text_input("POL")
+            pod = c6.text_input("POD")
 
-        vessel = st.text_input("Vessel")
-        voyage = st.text_input("Voyage")
+            c7, c8 = st.columns(2)
+            vessel = c7.text_input("Vessel")
+            voyage = c8.text_input("Voyage")
 
-        if st.button("Create BL"):
-            create_bl({
-                "job_no": job_no,
-                "bl_no": bl_no,
-                "shipper": shipper,
-                "consignee": consignee,
-                "pol": pol,
-                "pod": pod,
-                "vessel": vessel,
-                "voyage": voyage
-            })
-            st.success("BL Created")
+            submitted = st.form_submit_button("🚀 Create BL", type="primary", use_container_width=True)
+
+        if submitted:
+            if not job_no.strip() or not bl_no.strip():
+                st.error("⚠️ Validation Error: Job No and BL No are required.")
+            else:
+                try:
+                    create_bl({
+                        "job_no": job_no.strip(),
+                        "bl_no": bl_no.strip(),
+                        "shipper": shipper.strip(),
+                        "consignee": consignee.strip(),
+                        "pol": pol.strip(),
+                        "pod": pod.strip(),
+                        "vessel": vessel.strip(),
+                        "voyage": voyage.strip()
+                    })
+                    st.success(f"✅ BL '{bl_no}' created successfully for Job '{job_no}'!")
+                except Exception as e:
+                    st.error(f"Failed to create BL: {e}")
 
     # =========================
     # CONTAINERS
     # =========================
     with tabs[1]:
-        job_no = st.text_input("Job No (for container)")
-        bl_no = st.text_input("BL No (for container)")
+        with st.form("add_container_form"):
+            st.markdown("**Add Container to Manifest**")
+            c1, c2 = st.columns(2)
+            job_no_c = c1.text_input("Job No *")
+            bl_no_c = c2.text_input("BL No")
 
-        container_no = st.text_input("Container No")
-        size = st.selectbox("Size", ["20GP", "40GP", "40HQ"])
-        ctype = st.selectbox("Type", ["FCL", "LCL", "OT", "FR"])
-        seal = st.text_input("Seal No")
+            c3, c4 = st.columns(2)
+            container_no = c3.text_input("Container No *")
+            seal = c4.text_input("Seal No")
 
-        if st.button("Add Container"):
-            add_container({
-                "job_no": job_no,
-                "bl_no": bl_no,
-                "container_no": container_no,
-                "container_size": size,
-                "container_type": ctype,
-                "seal_no": seal
-            })
-            st.success("Container Added")
+            c5, c6 = st.columns(2)
+            size = c5.selectbox("Size", ["20GP", "40GP", "40HQ"])
+            ctype = c6.selectbox("Type", ["FCL", "LCL", "OT", "FR"])
+
+            submit_cont = st.form_submit_button("📦 Add Container", type="primary", use_container_width=True)
+
+        if submit_cont:
+            if not job_no_c.strip() or not container_no.strip():
+                st.error("⚠️ Validation Error: Job No and Container No are required.")
+            else:
+                try:
+                    add_container({
+                        "job_no": job_no_c.strip(),
+                        "bl_no": bl_no_c.strip(),
+                        "container_no": container_no.strip(),
+                        "container_size": size,
+                        "container_type": ctype,
+                        "seal_no": seal.strip()
+                    })
+                    st.success(f"✅ Container '{container_no}' added to Job '{job_no_c}'!")
+                except Exception as e:
+                    st.error(f"Failed to add container: {e}")
 
     # =========================
     # LIST

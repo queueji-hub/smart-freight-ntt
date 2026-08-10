@@ -36,10 +36,10 @@ STATUS_OPTIONS = ["Proceed", "Finished", "Closed", "Canceled"]
 # =========================================================
 # PERFORMANCE & DATA INTELLIGENCE LAYER
 # =========================================================
-def get_bookings(status=None):
+def get_bookings(tenant_id="default", status=None):
     """Fetches transactional booking registries matching optional status filter."""
     try:
-        return list_bookings(status=status) or []
+        return list_bookings(tenant_id=tenant_id, status=status) or []
     except Exception as e:
         st.error(f"Failed to fetch booking indices: {str(e)}")
         return []
@@ -101,20 +101,20 @@ def _create_form(user, tenant_id):
     # --- PIPELINE INTELLIGENCE INTEGRATION (QUOTATION PULL) ---
     with st.expander("📥 Pipeline Automation — Pull Pro-Forma From Registered Quotation", expanded=False):
         try:
-            quotations = list_quotations(tenant_id) or []
-            q_options = ["-- Select Active Target Reference --"] + [str(q["quotation_no"]) for q in quotations if "quotation_no" in q]
+            quotations = list_quotations() or []
+            q_options = ["-- Select Target Reference --"] + [str(q["quotation_no"]) for q in quotations if "quotation_no" in q]
         except Exception as e:
-            st.warning(f"Unable to read commercial index tracking records: {str(e)}")
-            q_options = ["-- Select Active Target Reference --"]
+            st.warning(f"Unable to read quotations: {str(e)}")
+            q_options = ["-- Select Target Reference --"]
 
         selected_q = st.selectbox(
-            "Target Commercial Document Reference Number",
+            "Target Quotation No",
             options=q_options,
             key="booking_creation_quotation_selector"
         )
 
-        if selected_q and selected_q != "-- Select Active Target Reference --":
-            if st.button("⚡ Autopopulate Structural Parameters", key="booking_creation_pull_data_trigger", type="secondary", use_container_width=True):
+        if selected_q and selected_q != "-- Select Target Reference --":
+            if st.button("⚡ Autopopulate from Quotation", key="booking_creation_pull_data_trigger", type="secondary", use_container_width=True):
                 with st.spinner("Injecting relational parameters..."):
                     try:
                         q = get_quotation_by_no(selected_q)
@@ -132,41 +132,44 @@ def _create_form(user, tenant_id):
     # --- MAIN TRANSACTION PARAMETERS GRID ---
     with st.container(border=True):
         st.markdown("**📋 General Manifest Specifications**")
-        c1, c2, c3 = st.columns(3)
+        
+        with st.form(key="booking_creation_form"):
+            c1, c2, c3 = st.columns(3)
 
-        with c1:
-            job_type = st.selectbox(
-                "Operational Execution Vector (Job Type) *", 
-                options=list(JOB_TYPES.keys()), 
-                format_func=lambda x: JOB_TYPES.get(x, x),
-                key="booking_creation_job_type_input"
-            )
-            customer_name = st.text_input("Legal Consignor Entity (Customer) *", value=str(pre.get("customer_name", "")), key="booking_creation_customer_input")
-            shipper = st.text_input("Cargo Originator Profile (Shipper)", value=str(pre.get("shipper_cnee", "")), key="booking_creation_shipper_input")
+            with c1:
+                job_type = st.selectbox(
+                    "Job Type *", 
+                    options=list(JOB_TYPES.keys()), 
+                    format_func=lambda x: JOB_TYPES.get(x, x),
+                )
+                customer_name = st.text_input("Customer Name *", value=str(pre.get("customer_name", "")))
+                shipper = st.text_input("Shipper", value=str(pre.get("shipper", "")))
 
-        with c2:
-            pol = st.text_input("Port of Loading (POL)", value=str(pre.get("pol", "")), key="booking_creation_pol_input", placeholder="e.g., THLCH")
-            pod = st.text_input("Port of Discharge (POD)", value=str(pre.get("pod", "")), key="booking_creation_pod_input", placeholder="e.g., USLAX")
-            carrier = st.text_input("Intermodal Transport Operator (Carrier)", value=str(pre.get("carrier", "")), key="booking_creation_carrier_input")
+            with c2:
+                pol = st.text_input("POL", value=str(pre.get("pol", "")), placeholder="e.g., THLCH")
+                pod = st.text_input("POD", value=str(pre.get("pod", "")), placeholder="e.g., USLAX")
+                carrier = st.text_input("Carrier", value=str(pre.get("carrier", "")))
 
-        with c3:
-            # PostgreSQL Safe Isoformat Parsing Guard
-            pre_etd = _parse_date(pre.get("etd")) if "etd" in pre else date.today()
-            pre_eta = _parse_date(pre.get("eta")) if "eta" in pre else (date.today() + pd.Timedelta(days=14))
-            
-            etd = st.date_input("Estimated Time of Departure (ETD) *", value=pre_etd, key="booking_creation_etd_input")
-            eta = st.date_input("Estimated Time of Arrival (ETA) *", value=pre_eta, key="booking_creation_eta_input")
+            with c3:
+                # PostgreSQL Safe Isoformat Parsing Guard
+                pre_etd = _parse_date(pre.get("etd")) if "etd" in pre else date.today()
+                pre_eta = _parse_date(pre.get("eta")) if "eta" in pre else (date.today() + pd.Timedelta(days=14))
+                
+                etd = st.date_input("ETD *", value=pre_etd)
+                eta = st.date_input("ETA *", value=pre_eta)
 
-        remark = st.text_area("Operational Notes / Custom Handling Directives", value=str(pre.get("remark", "")), key="booking_creation_remark_input", placeholder="Type cross-docking instructions, special temp control requirements...")
+            remark = st.text_area("Remark", value=str(pre.get("remark", "")))
+
+            submit_btn = st.form_submit_button("🚀 Finalize and Commit Booking", type="primary", use_container_width=True)
 
     # --- TRANSACTIONAL PERSISTENCE EXECUTION ---
-    if st.button("🚀 Finalize and Commit Booking to Ledger", type="primary", key="booking_creation_commit_btn", use_container_width=True):
+    if submit_btn:
         if not customer_name.strip():
-            st.error("⚠️ Validation Failure: Legal Consignor Entity parameter is strictly required.")
+            st.error("⚠️ Validation Failure: Customer Name is required.")
             return
 
         if etd and eta and eta < etd:
-            st.warning("⚠️ Discrepancy Flagged: Estimated Departure (ETD) cannot fall after Arrival (ETA).")
+            st.warning("⚠️ ETA cannot be before ETD.")
             return
 
         with st.spinner("Committing secure operational entry transaction..."):
@@ -184,7 +187,7 @@ def _create_form(user, tenant_id):
                     "created_by": str(user.get("username", "system_actor"))
                 }
 
-                booking_no = create_booking(payload)
+                booking_no = create_booking(payload, user)
 
                 # Append secure transactional integrity trail
                 log_action(
@@ -215,9 +218,9 @@ def _list_view(tenant_id):
         key="booking_list_status_filter_input"
     )
 
-    with st.spinner("Quoting active database tables..."):
+    with st.spinner("Loading database..."):
         filter_param = None if status_filter == "All Profiles" else status_filter
-        rows = get_bookings(filter_param)
+        rows = get_bookings(tenant_id, filter_param)
 
     if not rows:
         st.info("ℹ️ No active operational logs match the provided parameters.")
@@ -289,9 +292,9 @@ def _list_view(tenant_id):
 # COMPONENT: DATA RECONCILIATION & RE-ENGINEERING
 # =========================================================
 def _edit_view(tenant_id):
-    st.markdown("<h4 style='font-size:16px; color:#F1F5F9; font-weight:700;'>✏️ Modify Existing Booking Matrix</h4>", unsafe_allow_html=True)
+    st.markdown("<h4 style='font-size:16px; color:#F1F5F9; font-weight:700;'>✏️ Modify Existing Booking</h4>", unsafe_allow_html=True)
 
-    rows = get_bookings()
+    rows = get_bookings(tenant_id)
     if not rows:
         st.info("ℹ️ Modification target paths empty: Ledger contains zero rows.")
         return
@@ -342,9 +345,10 @@ def _edit_view(tenant_id):
                         {
                             "status": status,
                             "remark": remark.strip()
-                        }
+                        },
+                        tenant_id
                     )
-                    st.toast("💾 Operational Parameters altered successfully.", icon="✅")
+                    st.toast("💾 Saved successfully.", icon="✅")
                     st.rerun()
                 except Exception as ex_save:
                     st.error(f"Database rejection caught on alteration routine: {str(ex_save)}")
@@ -352,8 +356,8 @@ def _edit_view(tenant_id):
         if delete_triggered:
             with st.spinner("Injecting purge scheme..."):
                 try:
-                    delete_booking(selected["booking_no"])
-                    st.toast("🗑️ Tracking profile cleanly removed from indexes.", icon="⚠️")
+                    delete_booking(selected["booking_no"], tenant_id)
+                    st.toast("🗑️ Deleted successfully.", icon="⚠️")
                     st.rerun()
                 except Exception as ex_del:
                     st.error(f"Database security policy rejected deletion block: {str(ex_del)}")

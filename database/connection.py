@@ -180,7 +180,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS users (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         username TEXT UNIQUE NOT NULL,
                         password_hash TEXT NOT NULL,
                         role TEXT DEFAULT 'user',
@@ -201,7 +201,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS sessions (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
                         token TEXT UNIQUE NOT NULL,
                         expires_at TIMESTAMP,
@@ -227,15 +227,18 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS customers (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         company_name TEXT NOT NULL,
-                        attention TEXT,
+                        contact_person TEXT,
                         tel TEXT,
                         email TEXT,
                         address TEXT,
                         tax_id TEXT,
+                        credit_terms_days INTEGER DEFAULT 30,
+                        notes TEXT,
                         is_active BOOLEAN DEFAULT TRUE,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
 
@@ -249,23 +252,83 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS quotations (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         quotation_no TEXT UNIQUE NOT NULL,
+                        job_type TEXT,
                         customer_name TEXT,
-                        issue_date DATE,
+                        attention TEXT,
+                        tel TEXT,
+                        carrier TEXT,
+                        pol TEXT,
+                        pod TEXT,
+                        quotation_date DATE,
                         validity_date DATE,
-
-                        subtotal NUMERIC(15,2) DEFAULT 0,
-                        vat_amount NUMERIC(15,2) DEFAULT 0,
-                        total_amount NUMERIC(15,2) DEFAULT 0,
-
-                        remark TEXT,
-                        status TEXT DEFAULT 'Draft',
-
+                        payment_term TEXT,
+                        commodity TEXT,
+                        subject TEXT,
+                        terms_conditions TEXT,
+                        status TEXT DEFAULT 'ACTIVE',
                         created_by TEXT,
+                        updated_by TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
+
+                # Add missing data completeness columns safely
+                alter_columns = [
+                    "customer_address TEXT",
+                    "customer_email TEXT",
+                    "salesperson TEXT",
+                    "shipper TEXT",
+                    "consignee TEXT",
+                    "service_type TEXT",
+                    "origin TEXT",
+                    "destination TEXT",
+                    "incoterm TEXT",
+                    "freight_term TEXT",
+                    "hs_code TEXT",
+                    "quantity NUMERIC(15,2) DEFAULT 0",
+                    "package_type TEXT",
+                    "weight_kg NUMERIC(15,2) DEFAULT 0",
+                    "volume_cbm NUMERIC(15,2) DEFAULT 0",
+                    "container_type TEXT",
+                    "container_quantity INTEGER DEFAULT 0",
+                    "is_dg BOOLEAN DEFAULT FALSE",
+                    "customer_id INTEGER REFERENCES customers(id)"
+                ]
+                for col_def in alter_columns:
+                    col_name = col_def.split()[0]
+                    try:
+                        cur.execute(f"ALTER TABLE quotations ADD COLUMN {col_def}")
+                    except Exception as e:
+                        pass # Column already exists or other error, safe to ignore for SQLite ALTER ADD
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS quotation_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        quotation_id INTEGER REFERENCES quotations(id) ON DELETE CASCADE,
+                        description TEXT,
+                        currency TEXT DEFAULT 'USD',
+                        price NUMERIC(15,2) DEFAULT 0,
+                        unit TEXT,
+                        remark TEXT,
+                        sort_order INTEGER DEFAULT 0
+                    )
+                """)
+
+                # Add V2 columns to quotation_items safely
+                alter_item_columns = [
+                    "basis TEXT",
+                    "quantity NUMERIC(15,3) DEFAULT 1",
+                    "unit_rate NUMERIC(15,2) DEFAULT 0",
+                    "amount NUMERIC(15,2) DEFAULT 0"
+                ]
+                for col_def in alter_item_columns:
+                    col_name = col_def.split()[0]
+                    try:
+                        cur.execute(f"ALTER TABLE quotation_items ADD COLUMN {col_def}")
+                    except Exception as e:
+                        pass
 
                 cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_quotations_no
@@ -277,7 +340,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS invoices (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
 
                         doc_no TEXT UNIQUE NOT NULL,
                         doc_type TEXT,
@@ -332,7 +395,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS invoice_items (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
 
                         invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
 
@@ -354,7 +417,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS shipments (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
 
                         job_no TEXT UNIQUE NOT NULL,
 
@@ -362,7 +425,14 @@ def init_database():
                         job_type TEXT,
 
                         booking_no TEXT,
+                        customer_id INTEGER REFERENCES customers(id),
                         customer_name TEXT,
+
+                        notify_party TEXT,
+                        sales_person TEXT,
+                        operations_owner TEXT,
+                        customer_reference TEXT,
+                        quotation_no TEXT,
 
                         shipper TEXT,
                         consignee TEXT,
@@ -370,14 +440,47 @@ def init_database():
                         cargo_type TEXT,
                         carrier TEXT,
 
+                        place_of_receipt TEXT,
                         pol TEXT,
+                        transshipment_port TEXT,
                         pod TEXT,
+                        place_of_delivery TEXT,
+                        final_destination TEXT,
+                        origin_country TEXT,
+                        destination_country TEXT,
 
                         etd DATE,
                         eta DATE,
+                        actual_departure DATE,
+                        actual_arrival DATE,
 
+                        mbl_no TEXT,
+                        hbl_no TEXT,
                         bl_no TEXT,
                         invoice_no TEXT,
+                        
+                        vessel TEXT,
+                        voyage TEXT,
+                        incoterm TEXT,
+                        service_type TEXT,
+                        freight_term TEXT,
+
+                        commodity TEXT,
+                        hs_code TEXT,
+                        package_type TEXT,
+                        package_quantity INTEGER DEFAULT 0,
+                        gross_weight NUMERIC(15,2) DEFAULT 0,
+                        net_weight NUMERIC(15,2) DEFAULT 0,
+                        cbm NUMERIC(15,2) DEFAULT 0,
+                        chargeable_weight NUMERIC(15,2) DEFAULT 0,
+                        is_dg BOOLEAN DEFAULT FALSE,
+                        is_temp_controlled BOOLEAN DEFAULT FALSE,
+                        special_cargo_remarks TEXT,
+
+                        customs_declaration_no TEXT,
+                        customs_status TEXT,
+                        customs_broker TEXT,
+                        customs_clearance_date DATE,
 
                         customer_paid BOOLEAN DEFAULT FALSE,
 
@@ -397,11 +500,46 @@ def init_database():
                 """)
 
                 # =====================================================
+                # JOB COUNTERS (FOR ID GENERATION)
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS job_counters (
+                        job_type TEXT NOT NULL,
+                        yymm TEXT NOT NULL,
+                        last_running INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (job_type, yymm)
+                    )
+                """)
+
+                # =====================================================
+                # SHIPMENT MILESTONES
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS shipment_milestones (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        shipment_id INTEGER REFERENCES shipments(id) ON DELETE CASCADE,
+                        job_no TEXT NOT NULL,
+                        milestone_code TEXT NOT NULL,
+                        milestone_name TEXT NOT NULL,
+                        event_date TIMESTAMP NOT NULL,
+                        location TEXT,
+                        remark TEXT,
+                        created_by TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_shipment_milestones_job_no
+                    ON shipment_milestones(job_no)
+                """)
+
+                # =====================================================
                 # BOOKINGS
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS bookings (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         tenant_id TEXT DEFAULT 'default',
                         booking_no TEXT UNIQUE NOT NULL,
                         job_type TEXT,
@@ -424,18 +562,24 @@ def init_database():
                         etd DATE,
                         eta DATE,
                         carrier TEXT,
+                        m_vessel TEXT,
+                        feeder TEXT,
+                        liner TEXT,
                         vessel TEXT,
                         voyage TEXT,
+                        closing_time TIMESTAMP,
                         cargo_type TEXT,
                         container_summary TEXT,
                         gross_weight NUMERIC(15,2),
                         measurement_cbm NUMERIC(15,2),
                         package_qty INTEGER,
+                        quantity INTEGER,
                         package_unit TEXT,
                         commodity TEXT,
                         freight_term TEXT,
                         status TEXT DEFAULT 'Proceed',
                         remark TEXT,
+                        quotation_id INTEGER,
                         created_by TEXT,
                         updated_by TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -448,7 +592,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS bills_of_lading (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         bl_no TEXT UNIQUE NOT NULL,
                         job_no TEXT NOT NULL,
                         shipper TEXT,
@@ -469,7 +613,8 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS containers (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
                         job_no TEXT NOT NULL,
                         bl_no TEXT,
                         container_no TEXT NOT NULL,
@@ -494,7 +639,8 @@ def init_database():
                         un_number TEXT,
                         imo_class TEXT,
                         status TEXT DEFAULT 'Loaded',
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(shipment_id, container_no)
                     )
                 """)
 
@@ -508,8 +654,8 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS job_costs (
-                        id SERIAL PRIMARY KEY,
-                        shipment_id INTEGER NOT NULL,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
                         cost_type TEXT NOT NULL,
                         category TEXT,
                         description TEXT,
@@ -518,6 +664,7 @@ def init_database():
                         unit_price NUMERIC(15,2) DEFAULT 0,
                         amount NUMERIC(15,2) DEFAULT 0,
                         currency TEXT DEFAULT 'THB',
+                        exchange_rate NUMERIC(10,5) DEFAULT 1.00000,
                         amount_thb NUMERIC(15,2) DEFAULT 0,
                         remark TEXT,
                         created_by TEXT,
@@ -530,7 +677,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS profit_sheets (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         shipment_id INTEGER NOT NULL,
                         sheet_no TEXT UNIQUE NOT NULL,
                         total_ar NUMERIC(15,2) DEFAULT 0,
@@ -551,7 +698,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS fx_rates (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         currency TEXT NOT NULL,
                         rate_to_thb NUMERIC(15,4) NOT NULL,
                         effective_date DATE NOT NULL,
@@ -566,7 +713,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS audit_logs (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         user_id INTEGER,
                         tenant_id TEXT,
                         entity TEXT,

@@ -54,9 +54,12 @@ def _init_items(prefix: str, defaults: list = None) -> None:
                 {
                     "uid": row.get("id", str(uuid.uuid4())[:8]),
                     "description": row.get("description", ""),
-                    "currency": row.get("currency", "USD"),
-                    "price": float(row.get("price", 0)),
+                    "basis": row.get("basis", ""),
+                    "quantity": float(row.get("quantity", 1)),
                     "unit": row.get("unit", "SHPMT"),
+                    "currency": row.get("currency", "USD"),
+                    "unit_rate": float(row.get("unit_rate", 0)),
+                    "price": float(row.get("price", 0)), # Display amount
                     "remark": row.get("remark", ""),
                 }
                 for row in defaults
@@ -69,9 +72,12 @@ def _blank_item() -> dict:
     return {
         "uid": str(uuid.uuid4())[:8],
         "description": "",
-        "currency": "USD",
-        "price": 0.0,
+        "basis": "",
+        "quantity": 1.0,
         "unit": "SHPMT",
+        "currency": "USD",
+        "unit_rate": 0.0,
+        "price": 0.0,
         "remark": "",
     }
 
@@ -92,13 +98,51 @@ def _validate_form(data: dict, items: list) -> List[str]:
     """Returns a list of human-readable validation error messages."""
     errors = []
 
-    # Mandatory fields
+    job_type = data.get("job_type", "")
+    
+    # Mandatory fields for all modes
     if not data.get("customer_name", "").strip():
         errors.append("Customer Name is required.")
-    if not data.get("pol", "").strip():
-        errors.append("Port of Loading (POL) is required.")
-    if not data.get("pod", "").strip():
-        errors.append("Port of Discharge (POD) is required.")
+    if not data.get("salesperson", "").strip():
+        errors.append("Salesperson is required.")
+        
+    # Conditional logic based on Mode
+    if job_type in ["SE", "SI"]: # SEA
+        if not data.get("pol", "").strip():
+            errors.append("Port of Loading (POL) is required for Sea Freight.")
+        if not data.get("pod", "").strip():
+            errors.append("Port of Discharge (POD) is required for Sea Freight.")
+        if not data.get("commodity", "").strip():
+            errors.append("Commodity is required for Sea Freight.")
+        if not data.get("incoterm", "").strip():
+            errors.append("Incoterm is required for Sea Freight.")
+        if not data.get("service_type", "").strip():
+            errors.append("Service Type (e.g. FCL/LCL) is required.")
+            
+        if data.get("service_type") == "FCL":
+            if not data.get("container_type", "").strip():
+                errors.append("Container Type is required for FCL.")
+            if not data.get("container_quantity"):
+                errors.append("Container Quantity is required for FCL.")
+        elif data.get("service_type") == "LCL":
+            if not data.get("weight_kg") and not data.get("volume_cbm"):
+                errors.append("Weight or CBM is required for LCL.")
+                
+    elif job_type in ["AE", "AI"]: # AIR
+        if not data.get("origin", "").strip():
+            errors.append("Origin Airport is required for Air Freight.")
+        if not data.get("destination", "").strip():
+            errors.append("Destination Airport is required for Air Freight.")
+        if not data.get("commodity", "").strip():
+            errors.append("Commodity is required for Air Freight.")
+        if not data.get("weight_kg"):
+            errors.append("Chargeable Weight is required for Air Freight.")
+            
+    elif job_type in ["TE", "TI"]: # TRUCK
+        if not data.get("origin", "").strip():
+            errors.append("Origin is required for Trucking.")
+        if not data.get("destination", "").strip():
+            errors.append("Destination is required for Trucking.")
 
     # Date logic
     try:
@@ -123,59 +167,7 @@ def _validate_form(data: dict, items: list) -> List[str]:
     return errors
 
 
-# =========================================================
-# LINE ITEMS EDITOR (outside st.form — Streamlit limitation)
-# =========================================================
-def _render_items_editor(prefix: str) -> None:
-    """Renders an interactive line-item grid with Add/Delete buttons."""
-    _init_items(prefix)
-    items = st.session_state[f"{prefix}_items"]
-
-    st.markdown("### 📊 Pricing Line Items")
-
-    # Column headers
-    hdr = st.columns([3, 1, 1.2, 1, 2, 0.5])
-    hdr[0].caption("**Description**")
-    hdr[1].caption("**Currency**")
-    hdr[2].caption("**Unit Price**")
-    hdr[3].caption("**Billing Unit**")
-    hdr[4].caption("**Remark**")
-    hdr[5].caption("**Del**")
-
-    CURRENCIES = ["USD", "THB", "CNY", "EUR", "JPY"]
-
-    for row in items:
-        uid = row["uid"]
-        c = st.columns([3, 1, 1.2, 1, 2, 0.5])
-
-        row["description"] = c[0].text_input(
-            "desc", row["description"], key=f"{prefix}_d_{uid}",
-            label_visibility="collapsed", placeholder="Ocean Freight, THC..."
-        )
-        cur_idx = CURRENCIES.index(row["currency"]) if row["currency"] in CURRENCIES else 0
-        row["currency"] = c[1].selectbox(
-            "cur", CURRENCIES, index=cur_idx, key=f"{prefix}_c_{uid}",
-            label_visibility="collapsed"
-        )
-        row["price"] = c[2].number_input(
-            "price", value=float(row["price"]), min_value=0.0, step=50.0,
-            format="%.2f", key=f"{prefix}_p_{uid}", label_visibility="collapsed"
-        )
-        row["unit"] = c[3].text_input(
-            "unit", row["unit"], key=f"{prefix}_u_{uid}",
-            label_visibility="collapsed", placeholder="CBM / BL"
-        )
-        row["remark"] = c[4].text_input(
-            "rmk", row["remark"], key=f"{prefix}_r_{uid}",
-            label_visibility="collapsed", placeholder="Notes..."
-        )
-        c[5].button("🗑", key=f"{prefix}_x_{uid}", on_click=_del_row, args=(prefix, uid),
-                     help="Remove this line")
-
-    st.button("➕ Add Charge Line", key=f"{prefix}_add_btn", on_click=_add_row, args=(prefix,))
-
-
-# =========================================================
+# The legacy line item editor was removed to utilize Streamlit's native st.data_editor# =========================================================
 # THE FORM (inside st.form for atomic submit)
 # =========================================================
 def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, Any]:
@@ -215,6 +207,10 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
                     key=f"{prefix}_cust", placeholder="e.g. KUMIKI CO.,LTD.",
                     help="Type the full registered company name of the client."
                 )
+                customer_address = st.text_area(
+                    "Customer Address", value=d.get("customer_address", ""),
+                    key=f"{prefix}_caddr", placeholder="123 Street, City, Country", height=68
+                )
                 attention = st.text_input(
                     "Attention (Contact Person)", value=d.get("attention", ""),
                     key=f"{prefix}_attn", help="The person at the client who should receive this document."
@@ -222,10 +218,8 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
                 tel = st.text_input(
                     "Telephone", value=d.get("tel", ""), key=f"{prefix}_tel"
                 )
-                carrier = st.text_input(
-                    "Carrier / Shipping Line", value=d.get("carrier", ""),
-                    key=f"{prefix}_carrier", placeholder="e.g. Maersk, Emirates SkyCargo",
-                    help="The ocean/air carrier used for this shipment."
+                customer_email = st.text_input(
+                    "Email", value=d.get("customer_email", ""), key=f"{prefix}_email"
                 )
 
             with c2:
@@ -237,34 +231,60 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
                     "Validity Date *", v_date, key=f"{prefix}_vdate",
                     help="Rate guarantee expires after this date. Must be >= Issue Date."
                 )
+                salesperson = st.text_input(
+                    "Salesperson *", value=d.get("salesperson", _current_user()),
+                    key=f"{prefix}_sales", help="The sales representative for this quote."
+                )
                 payment_term = st.text_input(
                     "Payment Terms", value=d.get("payment_term", "Net 30"),
                     key=f"{prefix}_pay", help="e.g. Net 30, COD, TT in advance."
-                )
-                commodity = st.text_input(
-                    "Commodity Description", value=d.get("commodity", ""),
-                    key=f"{prefix}_cmdty", placeholder="General Cargo, Fresh Goods",
-                    help="Brief description of the type of cargo."
                 )
                 subject = st.text_input(
                     "Subject / Heading", value=d.get("subject", ""),
                     key=f"{prefix}_subj", placeholder="e.g. Ocean Freight proposal Q3-2026"
                 )
 
-        # ── Routing ─────────────────────────────────────────
+        # ── Routing & Cargo Details ─────────────────────────────
         with st.container(border=True):
-            st.markdown("**⚓ Routing Information**")
-            r1, r2 = st.columns(2)
-            pol = r1.text_input(
-                "Port of Loading (POL) *", value=d.get("pol", ""),
-                key=f"{prefix}_pol", placeholder="THLCH — Laem Chabang",
-                help="UN/LOCODE of origin port."
-            )
-            pod = r2.text_input(
-                "Port of Discharge (POD) *", value=d.get("pod", ""),
-                key=f"{prefix}_pod", placeholder="JPNAH — Naha, Okinawa",
-                help="UN/LOCODE of destination port."
-            )
+            st.markdown("**⚓ Routing & Cargo Information**")
+            r1, r2, r3 = st.columns(3)
+            
+            with r1:
+                shipper = st.text_input("Shipper", value=d.get("shipper", ""), key=f"{prefix}_ship")
+                origin = st.text_input("Origin", value=d.get("origin", ""), key=f"{prefix}_origin", placeholder="City/Country")
+                pol = st.text_input("Port of Loading (POL)", value=d.get("pol", ""), key=f"{prefix}_pol", placeholder="THLCH")
+                service_type = st.selectbox(
+                    "Service Type", options=["", "FCL", "LCL", "AIR", "LTL", "FTL", "RO-RO"], 
+                    index=["", "FCL", "LCL", "AIR", "LTL", "FTL", "RO-RO"].index(d.get("service_type")) if d.get("service_type") in ["", "FCL", "LCL", "AIR", "LTL", "FTL", "RO-RO"] else 0,
+                    key=f"{prefix}_srv"
+                )
+                commodity = st.text_input("Commodity", value=d.get("commodity", ""), key=f"{prefix}_cmdty", placeholder="General Cargo")
+                quantity = st.number_input("Quantity", value=float(d.get("quantity") or 0.0), key=f"{prefix}_qty", step=1.0)
+
+            with r2:
+                consignee = st.text_input("Consignee", value=d.get("consignee", ""), key=f"{prefix}_cnee")
+                destination = st.text_input("Destination", value=d.get("destination", ""), key=f"{prefix}_dest", placeholder="City/Country")
+                pod = st.text_input("Port of Discharge (POD)", value=d.get("pod", ""), key=f"{prefix}_pod", placeholder="JPNAH")
+                incoterm = st.selectbox(
+                    "Incoterm", options=["", "EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DDP", "DDU"], 
+                    index=["", "EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DDP", "DDU"].index(d.get("incoterm")) if d.get("incoterm") in ["", "EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DDP", "DDU"] else 0,
+                    key=f"{prefix}_inco"
+                )
+                hs_code = st.text_input("HS Code", value=d.get("hs_code", ""), key=f"{prefix}_hs")
+                package_type = st.text_input("Package Type", value=d.get("package_type", ""), key=f"{prefix}_pkg", placeholder="Cartons, Pallets")
+
+            with r3:
+                carrier = st.text_input("Carrier / Line", value=d.get("carrier", ""), key=f"{prefix}_carrier", placeholder="Maersk")
+                freight_term = st.selectbox(
+                    "Freight Term", options=["", "PREPAID", "COLLECT"], 
+                    index=["", "PREPAID", "COLLECT"].index(d.get("freight_term")) if d.get("freight_term") in ["", "PREPAID", "COLLECT"] else 0,
+                    key=f"{prefix}_frt"
+                )
+                weight_kg = st.number_input("Weight (KGs)", value=float(d.get("weight_kg") or 0.0), key=f"{prefix}_wgt", step=10.0)
+                volume_cbm = st.number_input("Volume (CBM)", value=float(d.get("volume_cbm") or 0.0), key=f"{prefix}_vol", step=1.0)
+                container_type = st.text_input("Container Type", value=d.get("container_type", ""), key=f"{prefix}_cnt", placeholder="20'GP, 40'HC")
+                container_quantity = st.number_input("Container Qty", value=int(d.get("container_quantity") or 0), key=f"{prefix}_cntq", step=1)
+                is_dg = st.checkbox("Dangerous Goods (DG)", value=bool(d.get("is_dg") or False), key=f"{prefix}_dg")
 
         # ── Terms & Conditions ──────────────────────────────
         terms = st.text_area(
@@ -274,6 +294,50 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
             help="Legal clauses printed at the bottom of the quotation PDF."
         )
 
+        # ── Line Items (Data Editor) ────────────────────────
+        st.markdown("**📊 Pricing Line Items**")
+        
+        # Load items from defaults, or provide one blank item
+        initial_items = d.get("items", [])
+        if not initial_items:
+            initial_items = [_blank_item()]
+            
+        df_items = pd.DataFrame(initial_items)
+        
+        edited_items_df = st.data_editor(
+            df_items,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "uid": None, # Hide UID
+                "description": st.column_config.TextColumn("Description *", required=True),
+                "basis": st.column_config.TextColumn("Basis"),
+                "quantity": st.column_config.NumberColumn("Qty", min_value=0.0, format="%.3f", default=1.0),
+                "unit": st.column_config.TextColumn("Unit", default="SHPMT"),
+                "currency": st.column_config.SelectboxColumn("Currency", options=["USD", "THB", "CNY", "EUR", "JPY"], default="USD"),
+                "unit_rate": st.column_config.NumberColumn("Unit Rate *", min_value=0.0, format="%.2f", default=0.0),
+                "price": st.column_config.NumberColumn("Amount (Auto)", format="%.2f", disabled=True),
+                "remark": st.column_config.TextColumn("Remark")
+            },
+            key=f"{prefix}_items_editor"
+        )
+        
+        # Total Summary Display
+        if not edited_items_df.empty:
+            # Auto-calculate amount for display
+            edited_items_df["price"] = pd.to_numeric(edited_items_df["quantity"], errors='coerce').fillna(1.0) * pd.to_numeric(edited_items_df["unit_rate"], errors='coerce').fillna(0.0)
+            
+            # Group by currency
+            totals_html = "<div style='text-align: right; font-weight: bold; font-size: 16px; color: #0068c9; padding: 10px; background-color: rgba(0, 104, 201, 0.1); border-radius: 5px; margin-top: 10px;'>"
+            grouped = edited_items_df.groupby("currency")["price"].sum()
+            totals = [f"{curr}: {val:,.2f}" for curr, val in grouped.items() if val > 0]
+            if totals:
+                totals_html += "TOTAL ➜ " + " &nbsp;&nbsp;|&nbsp;&nbsp; ".join(totals)
+            else:
+                totals_html += "TOTAL ➜ 0.00"
+            totals_html += "</div>"
+            st.markdown(totals_html, unsafe_allow_html=True)
+
         # ── Submit Button ───────────────────────────────────
         btn_label = "💾 Update Quotation" if defaults else "🚀 Create & Generate Quotation"
         submitted = st.form_submit_button(btn_label, type="primary", use_container_width=True)
@@ -282,8 +346,11 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
     payload = {
         "job_type": job_type,
         "customer_name": customer_name.strip(),
+        "customer_address": customer_address.strip(),
         "attention": attention.strip(),
         "tel": tel.strip(),
+        "customer_email": customer_email.strip(),
+        "salesperson": salesperson.strip(),
         "carrier": carrier.strip(),
         "pol": pol.strip(),
         "pod": pod.strip(),
@@ -293,8 +360,24 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
         "commodity": commodity.strip(),
         "subject": subject.strip(),
         "terms_conditions": terms.strip(),
+        "shipper": shipper.strip(),
+        "consignee": consignee.strip(),
+        "service_type": service_type.strip(),
+        "origin": origin.strip(),
+        "destination": destination.strip(),
+        "incoterm": incoterm.strip(),
+        "freight_term": freight_term.strip(),
+        "hs_code": hs_code.strip(),
+        "quantity": float(quantity),
+        "package_type": package_type.strip(),
+        "weight_kg": float(weight_kg),
+        "volume_cbm": float(volume_cbm),
+        "container_type": container_type.strip(),
+        "container_quantity": int(container_quantity),
+        "is_dg": bool(is_dg),
         "created_by": _current_user(),
         "updated_by": _current_user(),
+        "_items": edited_items_df.to_dict('records') if not edited_items_df.empty else [],
         "_submitted": submitted,
     }
     return payload
@@ -311,17 +394,11 @@ def render() -> None:
 
     # ── TAB 1: CREATE ───────────────────────────────────────
     with tab_create:
-        # Items editor lives outside the form (Streamlit forms can't have dynamic rows)
-        _init_items("new")
-        _render_items_editor("new")
-
-        st.divider()
-
         # Form fields + submit button
         payload = _quotation_form("new")
 
         if payload["_submitted"]:
-            items = st.session_state.get("new_items", [])
+            items = payload.get("_items", [])
             errors = _validate_form(payload, items)
 
             if errors:
@@ -416,7 +493,7 @@ def render() -> None:
         if not q_list:
             return
 
-        s1, s2, s3 = st.columns([2, 1, 1])
+        s1, s2, s3, s4 = st.columns([2, 1, 1, 1])
         sel_qno = s1.selectbox("Select Quotation", options=q_list, key="qt_sel")
 
         with s2:
@@ -441,6 +518,25 @@ def render() -> None:
                 except Exception as e:
                     st.error(f"Duplication failed: {e}")
 
+        with s4:
+            if _PDF_AVAILABLE:
+                try:
+                    loaded_qt = get_quotation_by_no(sel_qno)
+                    if loaded_qt:
+                        pdf_path = generate_quotation_pdf(loaded_qt, loaded_qt.get("items", []))
+                        with open(pdf_path, "rb") as f:
+                            st.download_button(
+                                "📄 PDF",
+                                data=f.read(),
+                                file_name=f"{sel_qno}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                except Exception as pdf_err:
+                    st.error(f"PDF Error: {pdf_err}")
+            else:
+                st.button("📄 PDF", disabled=True, help="PDF module not available", use_container_width=True)
+
         # ── Edit Drawer ─────────────────────────────────────
         if "qt_edit_target" in st.session_state:
             target_no = st.session_state["qt_edit_target"]
@@ -454,15 +550,12 @@ def render() -> None:
                 loaded = None
 
             if loaded:
-                _init_items("edit", defaults=loaded.get("items", []))
-                _render_items_editor("edit")
+                loaded["items"] = loaded.get("items", []) # Inject items into defaults
+                payload_edit = _quotation_form("edit", defaults=loaded)
 
-                st.divider()
-                edit_payload = _quotation_form("edit", defaults=loaded)
-
-                if edit_payload["_submitted"]:
-                    edit_items = st.session_state.get("edit_items", [])
-                    errors = _validate_form(edit_payload, edit_items)
+                if payload_edit["_submitted"]:
+                    items = payload_edit.get("_items", [])
+                    errors = _validate_form(payload_edit, items)
 
                     if errors:
                         for err in errors:
@@ -471,9 +564,9 @@ def render() -> None:
                         try:
                             items_clean = [
                                 {k: v for k, v in it.items() if k != "uid"}
-                                for it in edit_items
+                                for it in items
                             ]
-                            update_quotation(target_no, edit_payload, items_clean)
+                            update_quotation(target_no, payload_edit, items_clean)
 
                             log_action(
                                 user_id=_current_user_id(), tenant_id="ntt",

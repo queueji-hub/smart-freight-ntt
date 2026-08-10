@@ -123,25 +123,48 @@ def _build_header(styles) -> Table:
 
 def _build_info_block(quotation: Dict[str, Any], styles) -> Table:
     """Two-column info block (Customer/Shipper/... | No./Date/...)."""
+    def _safe_str(val):
+        return str(val) if val is not None and str(val).strip() != "None" else ""
+        
+    def _safe_num(val, suffix=""):
+        if not val or val == "None" or float(val) == 0:
+            return ""
+        return f"{val} {suffix}".strip()
+
     left_rows = [
-        ("Customer", quotation.get("customer_name", "")),
-        ("Shpr/Cnee", quotation.get("shipper_cnee", "")),
-        ("Carrier", quotation.get("carrier", "")),
-        ("POL", quotation.get("pol", "")),
-        ("POD", quotation.get("pod", "")),
-        ("Attention", quotation.get("attention", "")),
-        ("Tel.", quotation.get("tel", "")),
-        ("Incoterm", quotation.get("incoterm", "")),
+        ("Customer", _safe_str(quotation.get("customer_name"))),
+        ("Address", _safe_str(quotation.get("customer_address"))),
+        ("Attention", _safe_str(quotation.get("attention"))),
+        ("Shipper", _safe_str(quotation.get("shipper"))),
+        ("Consignee", _safe_str(quotation.get("consignee"))),
+        ("POL", _safe_str(quotation.get("pol"))),
+        ("POD", _safe_str(quotation.get("pod"))),
+        ("Incoterm", _safe_str(quotation.get("incoterm"))),
     ]
+    
+    qty_str = ""
+    if _safe_num(quotation.get("quantity")):
+        qty_str = f"{_safe_num(quotation.get('quantity'))} {_safe_str(quotation.get('package_type'))}".strip()
+        
+    vol_str = []
+    if _safe_num(quotation.get("weight_kg")):
+        vol_str.append(_safe_num(quotation.get("weight_kg"), "KGs"))
+    if _safe_num(quotation.get("volume_cbm")):
+        vol_str.append(_safe_num(quotation.get("volume_cbm"), "CBM"))
+        
+    cont_str = ""
+    if _safe_num(quotation.get("container_quantity")):
+        cont_str = f"{_safe_num(quotation.get('container_quantity'))}x {_safe_str(quotation.get('container_type'))}".strip()
+
     right_rows = [
-        ("No.", quotation.get("quotation_no", "")),
+        ("No.", _safe_str(quotation.get("quotation_no"))),
         ("Date", _format_date(quotation.get("quotation_date"))),
         ("Validity", _format_date(quotation.get("validity_date"))),
-        ("Payment Term", quotation.get("payment_term", "30 Days")),
-        ("Service Type", quotation.get("service_type", "")),
-        ("Commodity", quotation.get("commodity", "")),
-        ("Weight", quotation.get("weight", "")),
-        ("Quantity", quotation.get("quantity_desc", "")),
+        ("Salesperson", _safe_str(quotation.get("salesperson"))),
+        ("Payment Term", _safe_str(quotation.get("payment_term"))),
+        ("Commodity", _safe_str(quotation.get("commodity"))),
+        ("Service Type", _safe_str(quotation.get("service_type"))),
+        ("Volume/Qty", " / ".join([s for s in [qty_str, " ".join(vol_str), cont_str] if s])),
     ]
     
     data = []
@@ -169,36 +192,59 @@ def _build_info_block(quotation: Dict[str, Any], styles) -> Table:
 def _build_items_table(items: List[Dict[str, Any]], styles) -> Table:
     """Items table with auto-pagination support (header repeats on each page)."""
     header = [
-        Paragraph('<b><font color="white">DESCIPTION</font></b>', styles["body"]),
-        "", "", "", "",
+        Paragraph('<b><font color="white">DESCRIPTION</font></b>', styles["body"]),
+        "", "", "", "", "", ""
     ]
     sub_header = [
         Paragraph('<b><font color="#1F4E9E">ITEM</font></b>', styles["body"]),
+        Paragraph('<b><font color="#1F4E9E">QTY</font></b>', styles["body"]),
+        Paragraph('<b><font color="#1F4E9E">UNIT</font></b>', styles["body"]),
         Paragraph('<b><font color="#1F4E9E">CURR</font></b>', styles["body"]),
-        Paragraph('<b><font color="#1F4E9E">PRICE</font></b>', styles["body"]),
-        Paragraph('<b><font color="#1F4E9E">Unit</font></b>', styles["body"]),
+        Paragraph('<b><font color="#1F4E9E">RATE</font></b>', styles["body"]),
+        Paragraph('<b><font color="#1F4E9E">AMOUNT</font></b>', styles["body"]),
         Paragraph('<b><font color="#1F4E9E">REMARK</font></b>', styles["body"]),
     ]
     
     data = [header, sub_header]
+    
+    currency_totals = {}
+    
     for item in items:
-        price = item.get("price", 0)
-        price_str = f"{price:,.0f}" if price == int(price) else f"{price:,.2f}"
+        amount = float(item.get("amount") or item.get("price") or 0)
+        rate = float(item.get("unit_rate") or amount)
+        qty = float(item.get("quantity") or 1)
+        curr = item.get("currency", "USD")
+        
+        currency_totals[curr] = currency_totals.get(curr, 0) + amount
+        
         data.append([
             Paragraph(item.get("description", ""), styles["body"]),
-            Paragraph(item.get("currency", "USD"), styles["body"]),
-            Paragraph(f"<b>{price_str}</b>", styles["body"]),
+            Paragraph(f"{qty:,.3f}".rstrip('0').rstrip('.'), styles["body"]),
             Paragraph(item.get("unit", "") or "", styles["body"]),
+            Paragraph(curr, styles["body"]),
+            Paragraph(f"{rate:,.2f}", styles["body"]),
+            Paragraph(f"<b>{amount:,.2f}</b>", styles["body"]),
             Paragraph(item.get("remark", "") or "", styles["body"]),
         ])
     
+    # Add Total Rows by Currency
+    if currency_totals:
+        for curr, tot in currency_totals.items():
+            if tot > 0:
+                data.append([
+                    "", "", "", "",
+                    Paragraph(f"<b>Total {curr}:</b>", styles["body"]),
+                    Paragraph(f"<b>{tot:,.2f}</b>", styles["body"]),
+                    ""
+                ])
+
     tbl = Table(
         data,
-        colWidths=[80*mm, 18*mm, 22*mm, 20*mm, 40*mm],
+        colWidths=[55*mm, 15*mm, 15*mm, 15*mm, 20*mm, 25*mm, 35*mm],
         repeatRows=2,  # Repeat both header rows on each page
     )
     tbl.setStyle(TableStyle([
-        # Top "DESCIPTION" header row - blue background, spans full width
+        # Top "DESCRIPTION" header row - blue background, spans full width
         ("SPAN", (0,0), (-1,0)),
         ("BACKGROUND", (0,0), (-1,0), BRAND_BLUE),
         ("ALIGN", (0,0), (-1,0), "CENTER"),
@@ -208,16 +254,18 @@ def _build_items_table(items: List[Dict[str, Any]], styles) -> Table:
         # Body
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
         ("ALIGN", (0,2), (0,-1), "LEFT"),     # Description left-aligned
-        ("ALIGN", (1,2), (1,-1), "CENTER"),   # CURR centered
-        ("ALIGN", (2,2), (2,-1), "CENTER"),   # PRICE centered
-        ("ALIGN", (3,2), (3,-1), "CENTER"),   # Unit centered
-        ("ALIGN", (4,2), (4,-1), "LEFT"),     # Remark left
+        ("ALIGN", (1,2), (1,-1), "CENTER"),   # QTY
+        ("ALIGN", (2,2), (2,-1), "CENTER"),   # UNIT
+        ("ALIGN", (3,2), (3,-1), "CENTER"),   # CURR
+        ("ALIGN", (4,2), (4,-1), "RIGHT"),    # RATE
+        ("ALIGN", (5,2), (5,-1), "RIGHT"),    # AMOUNT
+        ("ALIGN", (6,2), (6,-1), "LEFT"),     # Remark
         ("LEFTPADDING", (0,0), (-1,-1), 4),
         ("RIGHTPADDING", (0,0), (-1,-1), 4),
         ("TOPPADDING", (0,0), (-1,-1), 3),
         ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ("BOX", (0,0), (-1,-1), 0.5, colors.black),
-        ("INNERGRID", (0,0), (-1,1), 0.5, colors.black),
+        ("INNERGRID", (0,0), (-1,len(items)+1), 0.5, colors.black),
     ]))
     return tbl
 

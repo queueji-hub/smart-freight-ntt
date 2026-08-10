@@ -47,9 +47,16 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                         quotation_no, job_type, customer_name, attention, tel,
                         carrier, pol, pod, quotation_date, validity_date,
                         payment_term, commodity, subject, terms_conditions,
-                        status, created_at
+                        status, created_at,
+                        customer_address, customer_email, salesperson,
+                        shipper, consignee, service_type, origin, destination,
+                        incoterm, freight_term, hs_code, quantity, package_type,
+                        weight_kg, volume_cbm, container_type, container_quantity, is_dg
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP);
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    );
                 """, (
                     quotation_no,
                     job_type,
@@ -65,7 +72,25 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     data.get("commodity", ""),
                     data.get("subject", ""),
                     data.get("terms_conditions", ""),
-                    "ACTIVE"
+                    "ACTIVE",
+                    data.get("customer_address", ""),
+                    data.get("customer_email", ""),
+                    data.get("salesperson", ""),
+                    data.get("shipper", ""),
+                    data.get("consignee", ""),
+                    data.get("service_type", ""),
+                    data.get("origin", ""),
+                    data.get("destination", ""),
+                    data.get("incoterm", ""),
+                    data.get("freight_term", ""),
+                    data.get("hs_code", ""),
+                    float(data.get("quantity") or 0.0),
+                    data.get("package_type", ""),
+                    float(data.get("weight_kg") or 0.0),
+                    float(data.get("volume_cbm") or 0.0),
+                    data.get("container_type", ""),
+                    int(data.get("container_quantity") or 0),
+                    bool(data.get("is_dg") or False)
                 ))
 
                 cur.execute("SELECT id FROM quotations WHERE quotation_no = %s LIMIT 1;", (quotation_no,))
@@ -74,19 +99,28 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
 
                 # 2. Child Line Items Segment Iteration
                 for idx, item in enumerate(items):
+                    qty = float(item.get("quantity") or 1.0)
+                    unit_rate = float(item.get("unit_rate") or item.get("price") or 0.0)
+                    amount = qty * unit_rate
+                    
                     cur.execute("""
                         INSERT INTO quotation_items (
-                            quotation_id, description, currency, price, unit, remark, sort_order
+                            quotation_id, description, currency, price, unit, remark, sort_order,
+                            basis, quantity, unit_rate, amount
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s);
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                     """, (
                         quotation_id,
                         item.get("description", ""),
                         item.get("currency", "USD"),
-                        float(item.get("price", 0.0)),
+                        amount, # legacy price = amount
                         item.get("unit", "SHPMT"),
                         item.get("remark", ""),
-                        idx
+                        idx,
+                        item.get("basis", ""),
+                        qty,
+                        unit_rate,
+                        amount
                     ))
 
                 conn.commit()
@@ -144,7 +178,8 @@ def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
 
             # Fetch Child Item Array rows
             cur.execute("""
-                SELECT id, description, currency, price, unit, remark 
+                SELECT id, description, currency, price, unit, remark,
+                       basis, quantity, unit_rate, amount 
                 FROM quotation_items 
                 WHERE quotation_id = %s 
                 ORDER BY sort_order ASC;
@@ -180,13 +215,26 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                         job_type = %s, customer_name = %s, attention = %s, tel = %s,
                         carrier = %s, pol = %s, pod = %s, quotation_date = %s,
                         validity_date = %s, payment_term = %s, commodity = %s,
-                        subject = %s, terms_conditions = %s
+                        subject = %s, terms_conditions = %s,
+                        customer_address = %s, customer_email = %s, salesperson = %s,
+                        shipper = %s, consignee = %s, service_type = %s, origin = %s, destination = %s,
+                        incoterm = %s, freight_term = %s, hs_code = %s, quantity = %s, package_type = %s,
+                        weight_kg = %s, volume_cbm = %s, container_type = %s, container_quantity = %s, is_dg = %s
                     WHERE id = %s;
                 """, (
                     data.get("job_type"), data.get("customer_name"), data.get("attention"), data.get("tel"),
                     data.get("carrier"), data.get("pol"), data.get("pod"), data.get("quotation_date"),
                     data.get("validity_date"), data.get("payment_term"), data.get("commodity"),
-                    data.get("subject"), data.get("terms_conditions"), q_id
+                    data.get("subject"), data.get("terms_conditions"),
+                    data.get("customer_address", ""), data.get("customer_email", ""), data.get("salesperson", ""),
+                    data.get("shipper", ""), data.get("consignee", ""), data.get("service_type", ""), 
+                    data.get("origin", ""), data.get("destination", ""), data.get("incoterm", ""), 
+                    data.get("freight_term", ""), data.get("hs_code", ""), 
+                    float(data.get("quantity") or 0.0), data.get("package_type", ""), 
+                    float(data.get("weight_kg") or 0.0), float(data.get("volume_cbm") or 0.0), 
+                    data.get("container_type", ""), int(data.get("container_quantity") or 0), 
+                    bool(data.get("is_dg") or False),
+                    q_id
                 ))
 
                 # 3. Purging historical items lines rows to overwrite safely
@@ -194,16 +242,29 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
 
                 # 4. Injecting updated fresh lines array block
                 for idx, item in enumerate(items):
+                    qty = float(item.get("quantity") or 1.0)
+                    unit_rate = float(item.get("unit_rate") or item.get("price") or 0.0)
+                    amount = qty * unit_rate
+                    
                     cur.execute("""
                         INSERT INTO quotation_items (
-                            quotation_id, description, currency, price, unit, remark, sort_order
+                            quotation_id, description, currency, price, unit, remark, sort_order,
+                            basis, quantity, unit_rate, amount
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s);
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                     """, (
-                        q_id, item.get("description", ""), item.get("currency", "USD"),
-                        float(item.get("price", 0.0)), item.get("unit", "SHPMT"), item.get("remark", ""), idx
+                        q_id,
+                        item.get("description", ""),
+                        item.get("currency", "USD"),
+                        amount,
+                        item.get("unit", "SHPMT"),
+                        item.get("remark", ""),
+                        idx,
+                        item.get("basis", ""),
+                        qty,
+                        unit_rate,
+                        amount
                     ))
-
                 conn.commit()
             except Exception as e:
                 conn.rollback()
