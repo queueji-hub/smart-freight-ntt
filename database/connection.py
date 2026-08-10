@@ -587,6 +587,39 @@ def init_database():
                     )
                 """)
 
+                # Add missing Booking revision fields safely
+                alter_booking_columns = [
+                    "revision_no INTEGER DEFAULT 0",
+                    "is_current INTEGER DEFAULT 1",
+                    "previous_booking_id INTEGER",
+                    "revision_reason TEXT",
+                    "revised_by TEXT",
+                    "revised_at TIMESTAMP",
+                    "quotation_no TEXT",
+                    "job_no TEXT"
+                ]
+                for col_def in alter_booking_columns:
+                    try:
+                        cur.execute(f"ALTER TABLE bookings ADD COLUMN {col_def}")
+                    except Exception:
+                        pass
+
+                # =====================================================
+                # BOOKING REVISIONS
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS booking_revisions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        booking_no TEXT NOT NULL,
+                        revision_no INTEGER NOT NULL,
+                        revised_by TEXT,
+                        revised_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        revision_reason TEXT,
+                        snapshot TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
                 # =====================================================
                 # BILLS OF LADING
                 # =====================================================

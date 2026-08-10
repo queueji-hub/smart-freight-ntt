@@ -91,29 +91,55 @@ def _header(styles):
     return tbl
 
 
+def _clean_str(val, default="") -> str:
+    if val is None:
+        return default
+    v = str(val).strip()
+    return default if not v or v.lower() in ("none", "nan") else v
+
+
 def _info_table(b, styles):
     """Two-column info table."""
+    rev_no = b.get("revision_no")
+    rev_str = f"REV {rev_no}" if rev_no is not None else "REV 0"
+
+    gw = _clean_str(b.get("gross_weight"))
+    cbm = _clean_str(b.get("measurement_cbm"))
+    wt_cbm_str = f"{gw} KG / {cbm} CBM" if gw or cbm else "—"
+
+    pkg_qty = _clean_str(b.get("package_qty"))
+    pkg_unit = _clean_str(b.get("package_unit"), "PKGS")
+    pkg_str = f"{pkg_qty} {pkg_unit}" if pkg_qty else "—"
+
+    carrier = _clean_str(b.get("carrier"))
+    liner = _clean_str(b.get("liner"))
+    carrier_str = f"{carrier} / {liner}".strip(" /") if carrier or liner else "—"
+
+    vessel = _clean_str(b.get("vessel"))
+    voyage = _clean_str(b.get("voyage"))
+    vessel_str = f"{vessel} {voyage}".strip() if vessel or voyage else "—"
+
     rows_left = [
-        ("Booking No.", b.get("booking_no", "")),
-        ("Customer", b.get("customer_name", "")),
-        ("Shipper", b.get("shipper", "")),
-        ("Consignee", b.get("consignee", "")),
-        ("Notify Party", b.get("notify_party", "")),
-        ("Cargo Type", b.get("cargo_type", "")),
-        ("Commodity", b.get("commodity", "")),
-        ("Weight / CBM", f"{b.get('gross_weight') or ''} KG / {b.get('measurement_cbm') or ''} CBM"),
-        ("Packages", f"{b.get('package_qty') or ''} {b.get('package_unit') or ''}"),
+        ("Booking No.", _clean_str(b.get("booking_no"))),
+        ("Customer", _clean_str(b.get("customer_name"))),
+        ("Shipper", _clean_str(b.get("shipper"))),
+        ("Consignee", _clean_str(b.get("consignee"))),
+        ("Notify Party", _clean_str(b.get("notify_party"))),
+        ("Cargo Type", _clean_str(b.get("cargo_type"))),
+        ("Commodity", _clean_str(b.get("commodity"))),
+        ("Weight / CBM", wt_cbm_str),
+        ("Packages", pkg_str),
     ]
     rows_right = [
-        ("Job Type", b.get("job_type", "")),
-        ("ETD", _fmt(b.get("etd"))),
-        ("ETA", _fmt(b.get("eta"))),
-        ("Carrier / Liner", f"{b.get('carrier', '')} / {b.get('liner', '')}"),
-        ("Vessel / Voy", f"{b.get('vessel', '')} {b.get('voyage', '')}"),
-        ("M.Vessel", b.get("m_vessel", "")),
-        ("Containers", b.get("container_summary", "")),
-        ("Freight Term", b.get("freight_term", "")),
-        ("Closing Time", b.get("closing_time", "")),
+        ("Revision No.", rev_str),
+        ("Job Type", _clean_str(b.get("job_type"))),
+        ("ETD", _fmt(b.get("etd")) or "—"),
+        ("ETA", _fmt(b.get("eta")) or "—"),
+        ("Carrier / Liner", carrier_str),
+        ("Vessel / Voy", vessel_str),
+        ("Containers", _clean_str(b.get("container_summary")) or "—"),
+        ("Freight Term", _clean_str(b.get("freight_term")) or "—"),
+        ("Closing Time", _clean_str(b.get("closing_time")) or "—"),
     ]
     
     data = []
@@ -142,15 +168,15 @@ def _ports_table(b, styles):
     data = [
         [Paragraph("<b>Routing</b>", styles["label"]), "", "", ""],
         [Paragraph("<b>POL (Port of Loading)</b>", styles["label"]),
-         Paragraph(b.get("pol", "") or "—", styles["value"]),
+         Paragraph(_clean_str(b.get("pol")) or "—", styles["value"]),
          Paragraph("<b>POR (Port of Receipt)</b>", styles["label"]),
-         Paragraph(b.get("por", "") or "—", styles["value"])],
+         Paragraph(_clean_str(b.get("por")) or "—", styles["value"])],
         [Paragraph("<b>POD (Port of Discharge)</b>", styles["label"]),
-         Paragraph(b.get("pod", "") or "—", styles["value"]),
+         Paragraph(_clean_str(b.get("pod")) or "—", styles["value"]),
          Paragraph("<b>Final Destination</b>", styles["label"]),
-         Paragraph(b.get("final_destination", "") or "—", styles["value"])],
+         Paragraph(_clean_str(b.get("final_destination")) or "—", styles["value"])],
         [Paragraph("<b>Transhipment Port</b>", styles["label"]),
-         Paragraph(b.get("transhipment_port", "") or "—", styles["value"]),
+         Paragraph(_clean_str(b.get("transhipment_port")) or "—", styles["value"]),
          "", ""],
     ]
     tbl = Table(data, colWidths=[40*mm, 50*mm, 40*mm, 50*mm])
@@ -177,15 +203,15 @@ def _dates_table(b, styles):
         [Paragraph("<b>CY Date</b>", styles["label"]),
          Paragraph(_fmt(b.get("cy_date")) or "—", styles["value"]),
          Paragraph("<b>CY Place</b>", styles["label"]),
-         Paragraph(b.get("cy_place", "") or "—", styles["value"])],
+         Paragraph(_clean_str(b.get("cy_place")) or "—", styles["value"])],
         [Paragraph("<b>CFS Date</b>", styles["label"]),
          Paragraph(_fmt(b.get("cfs_date")) or "—", styles["value"]),
          Paragraph("<b>CFS Place</b>", styles["label"]),
-         Paragraph(b.get("cfs_place", "") or "—", styles["value"])],
+         Paragraph(_clean_str(b.get("cfs_place")) or "—", styles["value"])],
         [Paragraph("<b>Customer Return Date</b>", styles["label"]),
          Paragraph(_fmt(b.get("customer_return_date")) or "—", styles["value"]),
          Paragraph("<b>Return Place</b>", styles["label"]),
-         Paragraph(b.get("return_place", "") or "—", styles["value"])],
+         Paragraph(_clean_str(b.get("return_place")) or "—", styles["value"])],
     ]
     tbl = Table(data, colWidths=[40*mm, 50*mm, 40*mm, 50*mm])
     tbl.setStyle(TableStyle([
@@ -205,9 +231,14 @@ def _dates_table(b, styles):
 
 def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None) -> str:
     """Generate Booking Confirmation PDF."""
+    bno = booking.get("booking_no", "booking")
+    rev = booking.get("revision_no", 0)
+    
     if output_path is None:
-        bno = booking.get("booking_no", "booking")
-        output_path = str(Path(OUTPUT_DIR) / f"BC_{bno}.pdf")
+        if rev and int(rev) > 0:
+            output_path = str(Path(OUTPUT_DIR) / f"BC_{bno}_REV_{rev}.pdf")
+        else:
+            output_path = str(Path(OUTPUT_DIR) / f"BC_{bno}.pdf")
     
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     
@@ -215,7 +246,7 @@ def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None) -> st
         output_path, pagesize=A4,
         leftMargin=15*mm, rightMargin=15*mm,
         topMargin=15*mm, bottomMargin=20*mm,
-        title=f"Booking Confirmation {booking.get('booking_no','')}",
+        title=f"Booking Confirmation {bno}",
         author=COMPANY["name"],
     )
     styles = _styles()
@@ -223,7 +254,10 @@ def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None) -> st
     
     story.append(_header(styles))
     story.append(Spacer(1, 4*mm))
-    story.append(Paragraph("BOOKING CONFIRMATION", styles["title"]))
+    title_text = "BOOKING CONFIRMATION"
+    if rev and int(rev) > 0:
+        title_text += f" (REV {rev})"
+    story.append(Paragraph(title_text, styles["title"]))
     story.append(_info_table(booking, styles))
     story.append(Spacer(1, 4*mm))
     story.append(_ports_table(booking, styles))
@@ -231,12 +265,14 @@ def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None) -> st
     story.append(_dates_table(booking, styles))
     story.append(Spacer(1, 4*mm))
     
-    if booking.get("remark"):
+    remark_val = _clean_str(booking.get("remark"))
+    if remark_val:
         story.append(Paragraph("<b>Remark / Special Instructions:</b>",
                                 styles["label"]))
-        story.append(Paragraph(booking.get("remark", "").replace("\n", "<br/>"),
+        story.append(Paragraph(remark_val.replace("\n", "<br/>"),
                                 styles["body"]))
         story.append(Spacer(1, 4*mm))
+
     
     # Signature
     sig_data = [[

@@ -1,4 +1,6 @@
 from typing import List, Dict, Any, Optional
+import json
+from datetime import datetime, date
 from database.connection import get_connection
 from managers.job_number import generate_job_number
 from core.audit import log_action
@@ -320,42 +322,46 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
     """
     tenant_id = user.get("tenant_id", "default")
     
-    with get_connection() as conn:
-        try:
+    # 1. Quick read check to get job_type & etd for job_no generation outside transaction
+    existing = get_booking(booking_no, tenant_id)
+    if not existing:
+        raise ValueError("Booking not found.")
+    if existing.get("status") in ["CONVERTED", "CONVERTED TO JOB"]:
+        # Find existing job_no if already converted
+        with get_connection() as conn:
             with conn.cursor() as cur:
-                # 1. Check if already converted
                 cur.execute("SELECT job_no FROM shipments WHERE booking_no = %s", (booking_no,))
                 ship_row = cur.fetchone()
                 if ship_row:
                     return ship_row["job_no"]
-                
-                # 2. Lock/Reload Booking & Atomic Status Update
-                # By updating first and checking rowcount, we prevent concurrent threads from both converting.
+        return existing.get("job_no", "")
+
+    if str(existing.get("status", "")).upper() != "CONFIRMED":
+        raise ValueError("Only CONFIRMED bookings can be converted to a Job.")
+
+    from managers.job_number import generate_job_number
+    job_no = generate_job_number(
+        existing.get("job_type", "SE"),
+        existing.get("etd")
+    )
+    
+    with get_connection() as conn:
+        try:
+            with conn.cursor() as cur:
+                # 2. Atomic Status Update
                 cur.execute(
-                    "UPDATE bookings SET status = %s WHERE booking_no = %s AND tenant_id = %s AND status = 'CONFIRMED'",
-                    ("CONVERTED TO JOB", booking_no, tenant_id)
+                    "UPDATE bookings SET status = %s, job_no = %s WHERE booking_no = %s AND tenant_id = %s AND status = 'CONFIRMED'",
+                    ("CONVERTED TO JOB", job_no, booking_no, tenant_id)
                 )
                 
                 if cur.rowcount == 0:
-                    # If 0 rows updated, it was either not found, already converted, or not CONFIRMED
-                    cur.execute("SELECT status FROM bookings WHERE booking_no = %s AND tenant_id = %s", (booking_no, tenant_id))
-                    row = cur.fetchone()
-                    if not row:
-                        raise ValueError("Booking not found.")
                     raise ValueError("Only CONFIRMED bookings can be converted to a Job.")
                 
-                # 3. Fetch Booking details to copy
+                # 3. Fetch full booking details
                 cur.execute("SELECT * FROM bookings WHERE booking_no = %s AND tenant_id = %s", (booking_no, tenant_id))
                 booking = dict(cur.fetchone())
-                    
-                # 4. Generate Job Number
-                from managers.job_number import generate_job_number
-                job_no = generate_job_number(
-                    booking.get("job_type", "SE"),
-                    booking.get("etd")
-                )
                 
-                # 5. Insert Shipment
+                # 4. Insert Shipment
                 from managers.shipment_manager import SHIPMENT_FIELDS
                 
                 job_payload = {
@@ -432,3 +438,123 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
         except Exception as e:
             conn.rollback()
             raise ValueError(f"Transaction failed: {e}")
+
+
+# =========================================================
+# BOOKING REVISION WORKFLOW
+# =========================================================
+
+def _json_serializable(obj):
+    if isinstance(obj, (date, datetime)):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+
+def create_booking_revision(
+    booking_no: str,
+    revision_reason: str,
+    user: Dict[str, Any],
+    tenant_id: str = "default"
+) -> int:
+    """
+    Creates a controlled revision of a Booking.
+    - Saves current booking state to booking_revisions table as JSON snapshot.
+    - Increments revision_no on bookings table.
+    - Status transitions back to DRAFT for edits.
+    """
+    if not revision_reason or not revision_reason.strip():
+        raise ValueError("Revision reason is required.")
+
+    booking = get_booking(booking_no, tenant_id)
+    if not booking:
+        raise ValueError("Booking not found.")
+
+    current_status = str(booking.get("status", "DRAFT")).upper()
+    if current_status in ["CONVERTED", "CONVERTED TO JOB"]:
+        raise ValueError("Cannot revise a booking that has already been converted to a Job.")
+    if current_status == "CANCELLED":
+        raise ValueError("Cannot revise a cancelled booking.")
+
+    rev_by = str(user.get("username", "system_actor"))
+    curr_rev_no = int(booking.get("revision_no") or 0)
+
+    # Convert snapshot dict to JSON
+    snapshot_json = json.dumps(booking, default=_json_serializable)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # 1. Insert snapshot into booking_revisions
+            cur.execute("""
+                INSERT INTO booking_revisions (
+                    booking_no, revision_no, revised_by, revision_reason, snapshot
+                )
+                VALUES (%s, %s, %s, %s, %s)
+            """, (booking_no, curr_rev_no, rev_by, revision_reason.strip(), snapshot_json))
+
+            # 2. Increment revision_no and set status back to DRAFT for editing
+            new_rev_no = curr_rev_no + 1
+            cur.execute("""
+                UPDATE bookings
+                SET revision_no = %s,
+                    status = 'DRAFT',
+                    revision_reason = %s,
+                    revised_by = %s,
+                    revised_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE booking_no = %s AND tenant_id = %s
+            """, (new_rev_no, revision_reason.strip(), rev_by, booking_no, tenant_id))
+
+            conn.commit()
+
+    log_action(
+        user.get("id", 1),
+        tenant_id,
+        "booking",
+        booking_no,
+        f"REVISE:REV_{new_rev_no}"
+    )
+
+    return new_rev_no
+
+
+def get_revision_history(booking_no: str) -> List[Dict[str, Any]]:
+    """Fetches full revision history snapshots for a given booking_no."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, booking_no, revision_no, revised_by, revised_at, revision_reason, snapshot, created_at
+                FROM booking_revisions
+                WHERE booking_no = %s
+                ORDER BY revision_no DESC
+            """, (booking_no,))
+            rows = cur.fetchall()
+            results = []
+            for r in rows:
+                row_dict = dict(r)
+                if row_dict.get("snapshot"):
+                    try:
+                        row_dict["parsed_snapshot"] = json.loads(row_dict["snapshot"])
+                    except Exception:
+                        row_dict["parsed_snapshot"] = {}
+                results.append(row_dict)
+            return results
+
+
+def get_booking_revision(booking_no: str, revision_no: int) -> Optional[Dict[str, Any]]:
+    """Fetches a specific historical revision snapshot."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT * FROM booking_revisions
+                WHERE booking_no = %s AND revision_no = %s
+            """, (booking_no, revision_no))
+            row = cur.fetchone()
+            if row:
+                row_dict = dict(row)
+                if row_dict.get("snapshot"):
+                    try:
+                        row_dict["parsed_snapshot"] = json.loads(row_dict["snapshot"])
+                    except Exception:
+                        row_dict["parsed_snapshot"] = {}
+                return row_dict
+            return None

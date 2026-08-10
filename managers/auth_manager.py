@@ -13,20 +13,20 @@ from database.connection import get_connection
 PERMISSIONS = {
     "admin": {
         "dashboard": "rw", "crm": "rw", "quotation": "rw", "booking": "rw",
-        "shipment": "rw", "tracking": "rw", "profit": "rw", "billing": "rw",
+        "shipment": "rw", "bl": "rw", "tracking": "rw", "profit": "rw", "billing": "rw",
         "fx": "rw", "reports": "rw", "users": "rw", "settings": "rw",
     },
     "sales": {
         "dashboard": "r", "crm": "rw", "quotation": "rw", "booking": "r",
-        "shipment": "r", "tracking": "r", "billing": "r", "reports": "r",
+        "shipment": "r", "bl": "r", "tracking": "r", "billing": "r", "reports": "r",
     },
     "operation": {
         "dashboard": "r", "crm": "rw", "quotation": "rw", "booking": "rw",
-        "shipment": "rw", "tracking": "rw", "billing": "r", "reports": "r",
+        "shipment": "rw", "bl": "rw", "tracking": "rw", "billing": "r", "reports": "r",
     },
     "accounting": {
         "dashboard": "r", "crm": "r", "quotation": "r", "booking": "r",
-        "shipment": "r", "billing": "rw", "reports": "rw",
+        "shipment": "r", "bl": "r", "billing": "rw", "reports": "rw",
     },
 }
 

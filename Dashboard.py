@@ -127,6 +127,7 @@ PAGES = [
     ("quotation", "📄 Quotation", "quotation"),
     ("booking", "📑 Booking", "booking"),
     ("job", "📦 Shipments", "shipment"),
+    ("bl", "📜 Bill of Lading", "bl"),
     ("tracking", "📍 Tracking", "tracking"),
     ("billing", "💰 Billing", "billing"),
     ("profit", "💹 Profit Analysis", "profit"),
