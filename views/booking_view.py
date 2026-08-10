@@ -619,8 +619,9 @@ def _create_form(user, tenant_id):
     pre = st.session_state.get("booking_prefill", {})
 
     with st.form(key="b_create_main_form"):
-        st.markdown("#### 1. Parties")
-        c1, c2, c3, c4 = st.columns(4)
+        st.markdown("#### 1. Parties & Booking Reference")
+        c0, c1, c2 = st.columns(3)
+        custom_bno = c0.text_input("Carrier Booking No. (เลข Booking จากสายเรือ)", value="", placeholder="e.g. ONEBKK2608001 (ว่างไว้หากให้ออกอัตโนมัติ)")
         job_type = c1.selectbox(
             "Job Type *",
             options=list(JOB_TYPES.keys()),
@@ -629,8 +630,8 @@ def _create_form(user, tenant_id):
         )
         customer_name = c1.text_input("Customer Name *", value=_s(pre.get("customer_name")))
         shipper = c2.text_input("Shipper", value=_s(pre.get("shipper")))
-        consignee = c3.text_input("Consignee", value=_s(pre.get("consignee")))
-        notify_party = c4.text_input("Notify Party", value=_s(pre.get("notify_party")))
+        consignee = c2.text_input("Consignee", value=_s(pre.get("consignee")))
+        notify_party = c2.text_input("Notify Party", value=_s(pre.get("notify_party")))
 
         st.markdown("#### 2. Routing")
         r1, r2, r3, r4, r5 = st.columns(5)
@@ -703,6 +704,7 @@ def _create_form(user, tenant_id):
 
         try:
             payload = {
+                "booking_no": custom_bno.strip() if custom_bno.strip() else None,
                 "quotation_id": pre.get("id"),
                 "quotation_no": _s(pre.get("quotation_no")),
                 "job_type": job_type,

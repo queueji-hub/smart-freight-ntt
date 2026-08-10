@@ -20,13 +20,17 @@ def create_booking(data: Dict[str, Any], user: Dict[str, Any] = None) -> str:
         user = {"tenant_id": "default", "id": 1}
 
     tenant_id = user.get("tenant_id", "default")
-    prefix = "NTT" if tenant_id in ("default", "NTT", "ntt") else tenant_id
 
-    booking_no = generate_job_number(
-        data.get("job_type", "SE"),
-        data.get("created_at"),
-        prefix
-    )
+    provided_bno = (data.get("booking_no") or "").strip()
+    if provided_bno:
+        booking_no = provided_bno
+    else:
+        prefix = "NTT" if tenant_id in ("default", "NTT", "ntt") else tenant_id
+        booking_no = generate_job_number(
+            data.get("job_type", "SE"),
+            data.get("created_at"),
+            prefix
+        )
 
     with get_connection() as conn:
         with conn.cursor() as cur:
