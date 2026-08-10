@@ -40,17 +40,18 @@ def generate_job_number(job_type: str, ref_date=None,
     running = f"{running_val:0{digits}d}"
     base = f"{job_type}{yymm}{running}"
     
+    prefix = "NTT"
     if company_prefix:
-        prefix = company_prefix.strip().rstrip('-')
-        return f"{prefix}-{base}"
-    return base
+        p = company_prefix.strip().rstrip('-')
+        if p and p.lower() not in ("default", "none"):
+            prefix = p
+    return f"{prefix}-{base}"
 
 def generate_booking_number(job_type: str, ref_date=None, 
                             company_prefix: Optional[str] = None) -> str:
     """Generate booking number."""
     base = generate_job_number(job_type, ref_date, company_prefix)
-    if company_prefix:
-        # แยก prefix ออกจาก base แล้วแทรก B
+    if "-" in base:
         parts = base.split('-', 1)
         return f"{parts[0]}-B-{parts[1]}"
-    return f"B-{base}"
+    return f"NTT-B-{base}"
