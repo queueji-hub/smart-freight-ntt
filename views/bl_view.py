@@ -9,7 +9,7 @@ import streamlit as st
 
 from managers.auth_manager import can_write
 from managers.bl_manager import (
-    create_bl, get_bl, list_bls, update_bl, delete_bl,
+    create_bl, get_bl, list_bls as list_bl, update_bl, delete_bl,
     update_bl_status, list_bl_containers, add_bl_container, remove_bl_container,
     BL_STATUS_FLOW, LOCKED_STATUSES, EDITABLE_STATUSES, BL_TYPES, _s, _f, _i
 )

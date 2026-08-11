@@ -262,15 +262,31 @@ def get_bl_by_no(bl_no: str) -> Optional[Dict]:
             return dict(row) if row else None
 
 
-def list_bls(job_no: str) -> List[Dict]:
-    """List all B/Ls for a Job, oldest first."""
+def list_bls(job_no: Optional[str] = None, status: Optional[str] = None) -> List[Dict]:
+    """List B/Ls with optional filters, scoped by tenant. Recovers gracefully if table is missing."""
+    tenant_id = get_current_tenant_id()
+    sql = "SELECT * FROM bills_of_lading WHERE tenant_id = %s"
+    params = [tenant_id]
+    
+    if job_no:
+        sql += " AND job_no = %s"
+        params.append(job_no)
+    if status:
+        sql += " AND status = %s"
+        params.append(status)
+        
+    sql += " ORDER BY created_at ASC"
+
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM bills_of_lading WHERE job_no = %s ORDER BY created_at ASC",
-                (job_no,)
-            )
-            return [dict(r) for r in cur.fetchall()]
+            try:
+                cur.execute(sql, tuple(params))
+                return [dict(r) for r in cur.fetchall()]
+            except Exception as e:
+                # Graceful degradation if bills_of_lading table does not exist
+                print(f"[SCHEMA GAP WARNING] bills_of_lading table query failed: {e}")
+                return []
+
 
 
 def update_bl(bl_id: int, data: Dict[str, Any]) -> bool:

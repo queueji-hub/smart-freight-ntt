@@ -1,10 +1,16 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from database.connection import get_connection
 from managers.tenant_context import get_current_tenant_id
 
-def get_month_end_summary(reporting_month: str) -> Dict[str, Any]:
+def get_month_end_summary(reporting_month: str, reporting_year: Optional[str] = None) -> Dict[str, Any]:
     tenant_id = get_current_tenant_id()
     
+    # Handle YYYY-MM format
+    if "-" in reporting_month:
+        parts = reporting_month.split("-")
+        reporting_year = parts[0]
+        reporting_month = parts[1]
+        
     with get_connection() as conn:
         with conn.cursor() as cur:
             # 1. Job Statistics
@@ -19,8 +25,8 @@ def get_month_end_summary(reporting_month: str) -> Dict[str, Any]:
                     SUM(CASE WHEN financial_status = 'Open' THEN 1 ELSE 0 END) as open_jobs,
                     SUM(CASE WHEN financial_status = 'Closed' THEN 1 ELSE 0 END) as closed_jobs
                 FROM shipments
-                WHERE reporting_month = %s AND tenant_id = %s
-            """, (reporting_month, tenant_id))
+                WHERE reporting_month = %s AND reporting_year = %s AND tenant_id = %s
+            """, (reporting_month, reporting_year, tenant_id))
             job_stats = dict(cur.fetchone() or {})
             
             # 2. Unbilled / Uncosted Tracking
@@ -28,18 +34,18 @@ def get_month_end_summary(reporting_month: str) -> Dict[str, Any]:
                 SELECT 
                     job_no
                 FROM shipments s
-                WHERE reporting_month = %s AND tenant_id = %s
+                WHERE reporting_month = %s AND reporting_year = %s AND tenant_id = %s
                 AND NOT EXISTS (SELECT 1 FROM job_costs jc WHERE jc.shipment_id = s.id AND jc.cost_type = 'AR')
-            """, (reporting_month, tenant_id))
+            """, (reporting_month, reporting_year, tenant_id))
             unbilled = [r['job_no'] for r in cur.fetchall()]
             
             cur.execute("""
                 SELECT 
                     job_no
                 FROM shipments s
-                WHERE reporting_month = %s AND tenant_id = %s
+                WHERE reporting_month = %s AND reporting_year = %s AND tenant_id = %s
                 AND NOT EXISTS (SELECT 1 FROM job_costs jc WHERE jc.shipment_id = s.id AND jc.cost_type = 'AP')
-            """, (reporting_month, tenant_id))
+            """, (reporting_month, reporting_year, tenant_id))
             uncosted = [r['job_no'] for r in cur.fetchall()]
             
             # 3. Aggregated Financials
@@ -49,9 +55,9 @@ def get_month_end_summary(reporting_month: str) -> Dict[str, Any]:
                     jc.cost_type, jc.cost_status, SUM(jc.amount_thb) as total
                 FROM job_costs jc
                 JOIN shipments s ON jc.shipment_id = s.id
-                WHERE s.reporting_month = %s AND s.tenant_id = %s
+                WHERE s.reporting_month = %s AND s.reporting_year = %s AND s.tenant_id = %s
                 GROUP BY jc.cost_type, jc.cost_status
-            """, (reporting_month, tenant_id))
+            """, (reporting_month, reporting_year, tenant_id))
             
             financials = {'ar_actual': 0.0, 'ap_actual': 0.0, 'ap_posted': 0.0}
             for row in cur.fetchall():
@@ -68,6 +74,7 @@ def get_month_end_summary(reporting_month: str) -> Dict[str, Any]:
                     
             return {
                 "reporting_month": reporting_month,
+                "reporting_year": reporting_year,
                 "job_stats": job_stats,
                 "unbilled_jobs": unbilled,
                 "uncosted_jobs": uncosted,

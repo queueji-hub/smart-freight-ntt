@@ -87,9 +87,10 @@ class SQLiteConnAdapter:
 def get_connection():
     """
     PostgreSQL connection manager for Supabase with automatic SQLite fallback.
+    Yields exactly once and propagates exceptions cleanly.
     """
-
-    conn = None
+    app_env = st.secrets.get("APP_ENV", "development")
+    postgres_conn = None
 
     try:
         host = st.secrets.get("DB_HOST", st.secrets.get("host", "localhost"))
@@ -98,7 +99,7 @@ def get_connection():
         user = st.secrets.get("DB_USER", st.secrets.get("user", "postgres"))
         password = st.secrets.get("DB_PASSWORD", st.secrets.get("password", ""))
 
-        conn = psycopg2.connect(
+        postgres_conn = psycopg2.connect(
             host=host,
             port=port,
             dbname=dbname,
@@ -108,14 +109,10 @@ def get_connection():
             sslmode=st.secrets.get("sslmode", "require"),
             connect_timeout=3
         )
-
-        yield conn
-
     except Exception as e:
-        app_env = st.secrets.get("APP_ENV", "development")
         if app_env == "production":
-            raise RuntimeError("Database connection failed in production mode. Failing closed.") from e
-            
+            raise RuntimeError(f"PostgreSQL connection failed in production mode: {type(e).__name__} - {str(e)}") from e
+        
         # Fall back to local SQLite database if PostgreSQL/Supabase is unreachable (dev only)
         db_file = Path(__file__).resolve().parent.parent / "data" / "smart_freight.db"
         db_file.parent.mkdir(exist_ok=True, parents=True)
@@ -124,12 +121,24 @@ def get_connection():
         adapter = SQLiteConnAdapter(sqlite_conn)
         try:
             yield adapter
+        except Exception:
+            adapter.rollback()
+            raise
         finally:
             adapter.close()
+        return
 
+    # If PostgreSQL connected successfully
+    try:
+        yield postgres_conn
+    except Exception:
+        if postgres_conn:
+            postgres_conn.rollback()
+        raise
     finally:
-        if conn:
-            conn.close()
+        if postgres_conn:
+            postgres_conn.close()
+
 
 
 # =========================================================
@@ -180,6 +189,11 @@ def init_database():
     """
 
     with get_connection() as conn:
+        # Do not run SQLite-specific AUTOINCREMENT DDL against PostgreSQL.
+        # PostgreSQL schema is managed via external migrations (e.g. models/schema.sql).
+        if type(conn).__name__ != 'SQLiteConnAdapter':
+            return
+
 
         try:
             with conn.cursor() as cur:
@@ -246,6 +260,7 @@ def init_database():
                         credit_terms_days INTEGER DEFAULT 30,
                         notes TEXT,
                         is_active BOOLEAN DEFAULT TRUE,
+                        tenant_id TEXT DEFAULT 'default',
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
@@ -514,6 +529,16 @@ def init_database():
                         created_by TEXT,
                         updated_by TEXT,
 
+                        tenant_id TEXT DEFAULT 'default',
+                        reporting_date DATE,
+                        reporting_month TEXT,
+                        reporting_year TEXT,
+                        financial_status TEXT DEFAULT 'Open',
+                        document_status TEXT,
+                        mode TEXT DEFAULT 'Sea',
+                        closed_at TIMESTAMP,
+                        closed_by TEXT,
+
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
@@ -583,12 +608,17 @@ def init_database():
                     CREATE TABLE IF NOT EXISTS shipment_milestones (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         shipment_id INTEGER REFERENCES shipments(id) ON DELETE CASCADE,
-                        job_no TEXT NOT NULL,
+                        tenant_id TEXT DEFAULT 'default',
+                        job_no TEXT,
                         milestone_code TEXT NOT NULL,
                         milestone_name TEXT NOT NULL,
-                        event_date TIMESTAMP NOT NULL,
+                        event_date TIMESTAMP,
+                        planned_date TIMESTAMP,
+                        actual_date TIMESTAMP,
                         location TEXT,
                         remark TEXT,
+                        remarks TEXT,
+                        status TEXT DEFAULT 'Pending',
                         created_by TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
@@ -816,6 +846,7 @@ def init_database():
                     CREATE TABLE IF NOT EXISTS job_costs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+                        tenant_id TEXT DEFAULT 'default',
                         cost_type TEXT NOT NULL,
                         category TEXT,
                         description TEXT,
@@ -826,6 +857,7 @@ def init_database():
                         currency TEXT DEFAULT 'THB',
                         exchange_rate NUMERIC(10,5) DEFAULT 1.00000,
                         amount_thb NUMERIC(15,2) DEFAULT 0,
+                        cost_status TEXT DEFAULT 'ESTIMATED',
                         remark TEXT,
                         created_by TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

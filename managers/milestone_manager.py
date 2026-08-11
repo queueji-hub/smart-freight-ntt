@@ -27,61 +27,84 @@ STANDARD_MILESTONES_SI = [
 ]
 
 def add_milestone(shipment_id: int, job_no: str, code: str, name: str, event_date: Optional[str] = None, location: Optional[str] = None, remark: Optional[str] = None) -> int:
+    tenant_id = get_current_tenant_id()
+    if not shipment_id and job_no:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM shipments WHERE job_no = %s AND tenant_id = %s", (job_no, tenant_id))
+                row = cur.fetchone()
+                if row:
+                    shipment_id = row['id']
+
     with get_connection() as conn:
-        cur = conn.execute("""
-            INSERT INTO shipment_milestones (shipment_id, job_no, milestone_code, milestone_name, event_date, location, remark)
-            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
-        """, (shipment_id, job_no, code, name, event_date, location, remark))
-        row = cur.fetchone()
-        conn.commit()
-        return row['id']
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO shipment_milestones (shipment_id, tenant_id, milestone_code, milestone_name, planned_date, actual_date, remarks, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+            """, (shipment_id, tenant_id, code, name, event_date, event_date, f"{location} - {remark}" if location else remark, "Completed" if event_date else "Pending"))
+            row = cur.fetchone()
+            conn.commit()
+            return row['id'] if row else None
 
 def update_milestone(milestone_id: int, event_date: Optional[str] = None, location: Optional[str] = None, remark: Optional[str] = None) -> bool:
     with get_connection() as conn:
-        cur = conn.execute("""
-            UPDATE shipment_milestones SET event_date=%s, location=%s, remark=%s WHERE id=%s
-        """, (event_date, location, remark, milestone_id))
-        conn.commit()
-        return cur.rowcount > 0
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE shipment_milestones SET actual_date=%s, remarks=%s, status=%s WHERE id=%s
+            """, (event_date, f"{location} - {remark}" if location else remark, "Completed" if event_date else "Pending", milestone_id))
+            conn.commit()
+            return cur.rowcount > 0
 
 def list_milestones(job_no: str) -> List[Dict]:
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
-        return conn.execute("""
-            SELECT * FROM shipment_milestones
-            WHERE job_no = %s
-            ORDER BY event_date DESC, created_at DESC
-        """, (job_no,)).fetchall()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT sm.*
+                FROM shipment_milestones sm
+                JOIN shipments s ON sm.shipment_id = s.id
+                WHERE s.job_no = %s AND s.tenant_id = %s
+                ORDER BY sm.planned_date ASC, sm.id ASC
+            """, (job_no, tenant_id))
+            return [dict(r) for r in cur.fetchall()]
 
 def delete_milestone(milestone_id: int, job_no: str) -> bool:
     with get_connection() as conn:
-        cur = conn.execute("""
-            DELETE FROM shipment_milestones WHERE id=%s AND job_no=%s
-        """, (milestone_id, job_no))
-        conn.commit()
-        return cur.rowcount > 0
+        with conn.cursor() as cur:
+            cur.execute("""
+                DELETE FROM shipment_milestones WHERE id=%s
+            """, (milestone_id,))
+            conn.commit()
+            return cur.rowcount > 0
 
 def init_milestones_for_shipment(shipment_id: int, job_no: str, job_type: str) -> None:
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
-        # ใช้ fetchone เพื่อเช็คว่ามีอยู่แล้วหรือยัง
-        row = conn.execute("SELECT COUNT(*) as cnt FROM shipment_milestones WHERE shipment_id=%s", (shipment_id,)).fetchone()
-        if row['cnt'] > 0: return
-        
-        milestones = STANDARD_MILESTONES_SI if job_type == "SI" else STANDARD_MILESTONES_SE
-        for code, name_en, name_th in milestones:
-            conn.execute("""
-                INSERT INTO shipment_milestones (shipment_id, job_no, milestone_code, milestone_name, event_date)
-                VALUES (%s, %s, %s, %s, NULL)
-            """, (shipment_id, job_no, code, f"{name_en} ({name_th})"))
-        conn.commit()
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) as cnt FROM shipment_milestones WHERE shipment_id=%s AND tenant_id=%s", (shipment_id, tenant_id))
+            row = cur.fetchone()
+            if row and row['cnt'] > 0: return
+            
+            milestones = STANDARD_MILESTONES_SI if job_type == "SI" else STANDARD_MILESTONES_SE
+            for code, name_en, name_th in milestones:
+                cur.execute("""
+                    INSERT INTO shipment_milestones (shipment_id, tenant_id, milestone_code, milestone_name, status)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (shipment_id, tenant_id, code, f"{name_en} ({name_th})", "Pending"))
+            conn.commit()
 
 def get_progress_percentage(shipment_id: int) -> int:
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
-        row = conn.execute("""
-            SELECT 
-                COUNT(*) as total,
-                COUNT(*) FILTER (WHERE event_date IS NOT NULL) as completed
-            FROM shipment_milestones WHERE shipment_id=%s
-        """, (shipment_id,)).fetchone()
-        
-        if row['total'] == 0: return 0
-        return int(round(row['completed'] * 100 / row['total']))
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN actual_date IS NOT NULL THEN 1 ELSE 0 END) as completed
+                FROM shipment_milestones WHERE shipment_id=%s AND tenant_id=%s
+            """, (shipment_id, tenant_id))
+            row = cur.fetchone()
+            
+            if not row or row['total'] == 0: return 0
+            completed = row['completed'] or 0
+            return int(round(completed * 100 / row['total']))

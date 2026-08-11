@@ -460,18 +460,18 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                     shipment_id = ship_row_new["id"]
                     # Idempotent JOB CREATED milestone insert
                     cur.execute(
-                        "SELECT id FROM shipment_milestones WHERE job_no = %s AND milestone_code = 'JOB_CREATED' AND tenant_id = %s",
-                        (job_no, tenant_id)
+                        "SELECT id FROM shipment_milestones WHERE shipment_id = %s AND milestone_code = 'JOB_CREATED' AND tenant_id = %s",
+                        (shipment_id, tenant_id)
                     )
                     if not cur.fetchone():
                         from datetime import datetime
                         cur.execute(
                             """
                             INSERT INTO shipment_milestones 
-                            (shipment_id, job_no, milestone_code, milestone_name, event_date, remark, created_by, tenant_id) 
+                            (shipment_id, tenant_id, milestone_code, milestone_name, planned_date, actual_date, remarks, status) 
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                             """,
-                            (shipment_id, job_no, "JOB_CREATED", "Job Created from Booking", datetime.now(), f"Auto-generated from booking {booking_no}", user.get("username", "system"), tenant_id)
+                            (shipment_id, tenant_id, "JOB_CREATED", "Job Created from Booking", datetime.now(), datetime.now(), f"Auto-generated from booking {booking_no}", "Completed")
                         )
 
                 conn.commit()

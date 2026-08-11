@@ -33,6 +33,39 @@ SHIPMENT_FIELDS = [
 STATUS_FLOW = ["Proceed", "In Transit", "Arrived", "Finished", "Closed", "Canceled"]
 
 
+def get_reporting_period(job: Dict[str, Any]) -> tuple[str, str]:
+    """
+    Canonical reporting period extractor.
+    EXPORT: Month/Year of ETD
+    IMPORT: Month/Year of ETA
+    """
+    job_type = str(job.get("job_type", "")).upper()
+    reporting_date = None
+    if "EXPORT" in job_type:
+        reporting_date = job.get("etd")
+    elif "IMPORT" in job_type:
+        reporting_date = job.get("eta")
+    else:
+        reporting_date = job.get("etd") or job.get("eta")
+        
+    if not reporting_date:
+        from datetime import datetime
+        reporting_date = datetime.now().date()
+        
+    try:
+        from datetime import datetime, date
+        if isinstance(reporting_date, str):
+            rd = datetime.strptime(reporting_date[:10], "%Y-%m-%d").date()
+        elif isinstance(reporting_date, datetime):
+            rd = reporting_date.date()
+        else:
+            rd = reporting_date
+        return rd.strftime("%m"), rd.strftime("%Y")
+    except:
+        from datetime import datetime
+        rd = datetime.now()
+        return rd.strftime("%m"), rd.strftime("%Y")
+
 # =========================
 # CREATE JOB
 # =========================
@@ -45,29 +78,9 @@ def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
     )
     
     # ETD / ETA Business Logic
-    job_type = str(data.get("job_type", "")).upper()
-    mode = str(data.get("mode", "Sea")).upper()
-    
-    reporting_date = None
-    if "EXPORT" in job_type:
-        reporting_date = data.get("etd")
-    elif "IMPORT" in job_type:
-        reporting_date = data.get("eta")
-    else:
-        reporting_date = data.get("etd") or data.get("eta")
-        
-    if reporting_date:
-        try:
-            from datetime import datetime
-            if isinstance(reporting_date, str):
-                rd = datetime.strptime(reporting_date[:10], "%Y-%m-%d")
-            else:
-                rd = reporting_date
-            data["reporting_date"] = rd.strftime("%Y-%m-%d")
-            data["reporting_month"] = rd.strftime("%Y-%m")
-            data["reporting_year"] = rd.strftime("%Y")
-        except:
-            pass
+    m, y = get_reporting_period(data)
+    data["reporting_month"] = m
+    data["reporting_year"] = y
 
     data = {k: v for k, v in data.items() if k in SHIPMENT_FIELDS}
 
@@ -201,27 +214,9 @@ def update_shipment(job_no: str, data: Dict[str, Any]) -> bool:
 
     # Recalculate Reporting Date if ETD/ETA changed
     if "etd" in allowed or "eta" in allowed or "job_type" in allowed:
-        job_type = str(merged.get("job_type", "")).upper()
-        reporting_date = None
-        if "EXPORT" in job_type:
-            reporting_date = merged.get("etd")
-        elif "IMPORT" in job_type:
-            reporting_date = merged.get("eta")
-        else:
-            reporting_date = merged.get("etd") or merged.get("eta")
-            
-        if reporting_date:
-            try:
-                from datetime import datetime
-                if isinstance(reporting_date, str):
-                    rd = datetime.strptime(reporting_date[:10], "%Y-%m-%d")
-                else:
-                    rd = reporting_date
-                allowed["reporting_date"] = rd.strftime("%Y-%m-%d")
-                allowed["reporting_month"] = rd.strftime("%Y-%m")
-                allowed["reporting_year"] = rd.strftime("%Y")
-            except:
-                pass
+        m, y = get_reporting_period(merged)
+        allowed["reporting_month"] = m
+        allowed["reporting_year"] = y
 
     sets = ", ".join([f"{k}=%s" for k in allowed.keys()])
     values = list(allowed.values())

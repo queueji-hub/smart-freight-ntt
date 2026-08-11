@@ -12,7 +12,7 @@ def list_customers() -> List[Dict[str, Any]]:
             cur.execute("""
                 SELECT *
                 FROM customers
-                WHERE is_active = TRUE
+                WHERE is_active = 1
                   AND tenant_id = %s
                 ORDER BY LOWER(company_name) ASC
             """, (get_current_tenant_id(),))
