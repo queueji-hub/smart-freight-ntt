@@ -308,21 +308,23 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
         # ── Line Items (Data Editor) ────────────────────────
         st.markdown("**📊 Pricing Line Items**")
         
-        # Load items from defaults, or provide one blank item
-        initial_items = d.get("items", [])
-        if not initial_items:
-            initial_items = [_blank_item()]
-        else:
-            # SANITIZATION: Cast Decimal to float for Streamlit PyArrow serialization
-            for item in initial_items:
-                for k in ["quantity", "unit_rate", "price", "amount"]:
-                    if k in item and item[k] is not None:
-                        try:
-                            item[k] = float(item[k])
-                        except (ValueError, TypeError):
-                            item[k] = 0.0
+        items_key = f"{prefix}_items"
+        if items_key not in st.session_state:
+            initial_items = d.get("items", [])
+            if not initial_items:
+                initial_items = [_blank_item()]
+            else:
+                # SANITIZATION: Cast Decimal to float for Streamlit PyArrow serialization
+                for item in initial_items:
+                    for k in ["quantity", "unit_rate", "price", "amount"]:
+                        if k in item and item[k] is not None:
+                            try:
+                                item[k] = float(item[k])
+                            except (ValueError, TypeError):
+                                item[k] = 0.0
+            st.session_state[items_key] = initial_items
             
-        df_items = pd.DataFrame(initial_items)
+        df_items = pd.DataFrame(st.session_state[items_key])
         
         edited_items_df = st.data_editor(
             df_items,
@@ -342,10 +344,11 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
             key=f"{prefix}_items_editor"
         )
         
-        # Total Summary Display
+        # Sync changes to session state to preserve edited data on rerun/validation failure
         if not edited_items_df.empty:
             # Auto-calculate amount for display
             edited_items_df["price"] = pd.to_numeric(edited_items_df["quantity"], errors='coerce').fillna(1.0) * pd.to_numeric(edited_items_df["unit_rate"], errors='coerce').fillna(0.0)
+            st.session_state[items_key] = edited_items_df.to_dict('records')
             
             # Group by currency
             totals_html = "<div style='text-align: right; font-weight: bold; font-size: 16px; color: #0068c9; padding: 10px; background-color: rgba(0, 104, 201, 0.1); border-radius: 5px; margin-top: 10px;'>"
