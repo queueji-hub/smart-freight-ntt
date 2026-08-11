@@ -13,7 +13,7 @@ import streamlit as st
 from config import JOB_TYPES, DEFAULT_TERMS
 from managers.quotation_manager import (
     create_quotation, get_quotation_by_no, list_quotations,
-    update_quotation, duplicate_quotation,
+    update_quotation, duplicate_quotation, create_quotation_revision,
 )
 from managers.customer_manager import search_customers, get_customer_by_name
 from core.audit import log_action
@@ -516,7 +516,7 @@ def render() -> None:
         if not q_list:
             return
 
-        s1, s2, s3, s4 = st.columns([2, 1, 1, 1])
+        s1, s2, s3, s4, s5 = st.columns([2, 1, 1, 1, 1])
         sel_qno = s1.selectbox("Select Quotation", options=q_list, key="qt_sel")
 
         with s2:
@@ -542,6 +542,20 @@ def render() -> None:
                     st.error(f"Duplication failed: {e}")
 
         with s4:
+            if st.button("🔄 Revise", use_container_width=True):
+                try:
+                    rev_qno = create_quotation_revision(sel_qno)
+                    log_action(
+                        user_id=_current_user_id(), tenant_id="ntt",
+                        entity="quotation", entity_id=rev_qno, action="REVISE",
+                        details=f"Created revision {rev_qno} from {sel_qno} by {_current_user()}"
+                    )
+                    st.success(f"✅ Revision created: **{rev_qno}**")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Revision failed: {e}")
+
+        with s5:
             if _PDF_AVAILABLE:
                 try:
                     loaded_qt = get_quotation_by_no(sel_qno)

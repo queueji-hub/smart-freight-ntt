@@ -36,7 +36,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
         mapping = {"SEA_EXP": "SE", "SEA_IMP": "SI", "AIR_EXP": "AE", "AIR_IMP": "AI", "TRK_EXP": "TE", "TRK_IMP": "TI", "FREIGHT": "SE"}
         job_type = mapping.get(job_type, "SE")
 
-    quotation_no = generate_document_number("QT", q_date_obj)
+    quotation_no = data.get("quotation_no") or generate_document_number("QT", q_date_obj)
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -290,4 +290,35 @@ def duplicate_quotation(quotation_no: str) -> str:
     source_data["quotation_date"] = datetime.now().strftime("%Y-%m-%d")
     source_data["validity_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
+    return create_quotation(source_data, source_data.get("items", []))
+
+def create_quotation_revision(quotation_no: str) -> str:
+    """
+    Creates a new revision of the given quotation.
+    Marks the source quotation as SUPERSEDED (read-only/immutable).
+    Generates a new revision number by appending -R1, -R2, etc.
+    """
+    source_data = get_quotation_by_no(quotation_no)
+    if not source_data:
+        raise ValueError(f"Source quotation '{quotation_no}' not found.")
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE quotations SET status = 'SUPERSEDED'
+                WHERE quotation_no = %s;
+            """, (quotation_no,))
+            conn.commit()
+
+    import re
+    match = re.search(r'-R(\d+)$', quotation_no)
+    if match:
+        rev = int(match.group(1)) + 1
+        base = quotation_no[:match.start()]
+        new_qno = f"{base}-R{rev}"
+    else:
+        new_qno = f"{quotation_no}-R1"
+
+    source_data["quotation_no"] = new_qno
+    source_data["status"] = "ACTIVE"
     return create_quotation(source_data, source_data.get("items", []))

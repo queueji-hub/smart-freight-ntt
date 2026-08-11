@@ -406,6 +406,21 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                 # 3. Fetch full booking details
                 cur.execute("SELECT * FROM bookings WHERE booking_no = %s AND tenant_id = %s", (booking_no, tenant_id))
                 booking = dict(cur.fetchone())
+
+                # Fetch salesperson from original quotation for salesperson performance tracking continuity
+                salesperson = None
+                q_id = booking.get("quotation_id")
+                q_ref = booking.get("quotation_no")
+                if q_id:
+                    cur.execute("SELECT salesperson FROM quotations WHERE id = %s AND tenant_id = %s LIMIT 1", (q_id, tenant_id))
+                    q_row = cur.fetchone()
+                    if q_row:
+                        salesperson = q_row["salesperson"] if isinstance(q_row, dict) else q_row[0]
+                elif q_ref:
+                    cur.execute("SELECT salesperson FROM quotations WHERE quotation_no = %s AND tenant_id = %s LIMIT 1", (q_ref, tenant_id))
+                    q_row = cur.fetchone()
+                    if q_row:
+                        salesperson = q_row["salesperson"] if isinstance(q_row, dict) else q_row[0]
                 
                 # 4. Insert Shipment
                 from managers.shipment_manager import SHIPMENT_FIELDS
@@ -416,6 +431,7 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                     "job_type": booking.get("job_type"),
                     "customer_name": booking.get("customer_name"),
                     "notify_party": booking.get("notify_party"),
+                    "sales_person": salesperson,
                     "shipper": booking.get("shipper"),
                     "consignee": booking.get("consignee"),
                     "cargo_type": booking.get("cargo_type"),

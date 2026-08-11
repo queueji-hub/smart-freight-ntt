@@ -47,9 +47,9 @@ def add_cost_line(data: Dict[str, Any]) -> int:
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
             ''', (data["shipment_id"], data["cost_type"].upper(), data.get("category"), data.get("description"), 
                   data.get("supplier"), qty, unit_price, amount, currency, amount_thb, data.get("remark"), data.get("created_by"), cost_status))
-            conn.commit()
             row = cur.fetchone()
-            return row['id']
+            conn.commit()
+            return row['id'] if isinstance(row, dict) else row[0]
 
 def update_cost_line(cost_id: int, data: Dict[str, Any]) -> bool:
     tenant_id = get_current_tenant_id()
