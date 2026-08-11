@@ -109,15 +109,15 @@ def _validate_form(data: dict, items: list) -> List[str]:
     # Conditional logic based on Mode
     if job_type in ["SE", "SI"]: # SEA
         if not data.get("pol", "").strip():
-            errors.append("Port of Loading (POL) is required for Sea Freight.")
+            errors.append("POL is required for Sea Freight.")
         if not data.get("pod", "").strip():
-            errors.append("Port of Discharge (POD) is required for Sea Freight.")
+            errors.append("POD is required for Sea Freight.")
         if not data.get("commodity", "").strip():
             errors.append("Commodity is required for Sea Freight.")
         if not data.get("incoterm", "").strip():
             errors.append("Incoterm is required for Sea Freight.")
         if not data.get("service_type", "").strip():
-            errors.append("Service Type (e.g. FCL/LCL) is required.")
+            errors.append("Service Type is required.")
             
         if data.get("service_type") == "FCL":
             if not data.get("container_type", "").strip():
@@ -159,10 +159,10 @@ def _validate_form(data: dict, items: list) -> List[str]:
     else:
         for i, item in enumerate(items, 1):
             if not item.get("description", "").strip():
-                errors.append(f"Line #{i}: Description is empty.")
+                errors.append(f"Line {i}: Description is required.")
             p = float(item.get("price", 0))
             if p < 0:
-                errors.append(f"Line #{i}: Price cannot be negative.")
+                errors.append(f"Line {i}: Price cannot be negative.")
 
     return errors
 
@@ -332,14 +332,14 @@ def _quotation_form(prefix: str, defaults: Optional[Dict] = None) -> Dict[str, A
             use_container_width=True,
             column_config={
                 "uid": None, # Hide UID
-                "description": st.column_config.TextColumn("Description *", required=True),
-                "basis": st.column_config.TextColumn("Basis"),
-                "quantity": st.column_config.NumberColumn("Qty", min_value=0.0, format="%.3f", default=1.0),
-                "unit": st.column_config.TextColumn("Unit", default="SHPMT"),
-                "currency": st.column_config.SelectboxColumn("Currency", options=["USD", "THB", "CNY", "EUR", "JPY"], default="USD"),
-                "unit_rate": st.column_config.NumberColumn("Unit Rate *", min_value=0.0, format="%.2f", default=0.0),
-                "price": st.column_config.NumberColumn("Amount (Auto)", format="%.2f", disabled=True),
-                "remark": st.column_config.TextColumn("Remark")
+                "description": st.column_config.TextColumn("Description *", required=True, width="large"),
+                "basis": st.column_config.TextColumn("Basis", width="small"),
+                "quantity": st.column_config.NumberColumn("Qty", min_value=0.0, format="%.3f", default=1.0, width="small"),
+                "unit": st.column_config.TextColumn("Unit", default="SHPMT", width="small"),
+                "currency": st.column_config.SelectboxColumn("Currency", options=["USD", "THB", "CNY", "EUR", "JPY"], default="USD", width="small"),
+                "unit_rate": st.column_config.NumberColumn("Unit Rate *", min_value=0.0, format="%.2f", default=0.0, width="medium"),
+                "price": st.column_config.NumberColumn("Amount (Auto)", format="%.2f", disabled=True, width="medium"),
+                "remark": st.column_config.TextColumn("Remark", width="medium")
             },
             key=f"{prefix}_items_editor"
         )
