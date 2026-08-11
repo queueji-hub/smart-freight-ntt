@@ -105,9 +105,11 @@ def add_container(data: Dict[str, Any]) -> bool:
 
     if not shipment_id and job_no:
         with get_connection() as conn:
-            row = conn.execute("SELECT id FROM shipments WHERE job_no=%s", (job_no,)).fetchone()
-            if row:
-                shipment_id = row['id']
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM shipments WHERE job_no=%s", (job_no,))
+                row = cur.fetchone()
+                if row:
+                    shipment_id = row['id']
 
     if not shipment_id:
         return False  # Cannot insert without shipment_id

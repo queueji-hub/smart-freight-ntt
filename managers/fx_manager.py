@@ -12,19 +12,19 @@ def set_rate(currency: str, rate_to_thb: float,
     eff = effective_date if isinstance(effective_date, date) else date.today()
     
     with get_connection() as conn:
-        # ใช้ RETURNING id เพื่อความรวดเร็วและเป็น atomic
-        cur = conn.execute("""
-            INSERT INTO fx_rates (currency, rate_to_thb, effective_date, source)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT(currency, effective_date) DO UPDATE
-            SET rate_to_thb = EXCLUDED.rate_to_thb,
-                source = EXCLUDED.source
-            RETURNING id
-        """, (currency.upper(), float(rate_to_thb), eff, source))
-        
-        row = cur.fetchone()
-        conn.commit()
-        return row['id']
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO fx_rates (currency, rate_to_thb, effective_date, source)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT(currency, effective_date) DO UPDATE
+                SET rate_to_thb = EXCLUDED.rate_to_thb,
+                    source = EXCLUDED.source
+                RETURNING id
+            """, (currency.upper(), float(rate_to_thb), eff, source))
+            
+            row = cur.fetchone()
+            conn.commit()
+            return row['id'] if isinstance(row, dict) else row[0]
 
 def get_rate(currency: str, on_date=None) -> float:
     """Get the most recent rate for a currency on or before given date."""
@@ -34,13 +34,17 @@ def get_rate(currency: str, on_date=None) -> float:
     on_date = on_date if isinstance(on_date, date) else date.today()
     
     with get_connection() as conn:
-        row = conn.execute("""
-            SELECT rate_to_thb FROM fx_rates
-            WHERE currency=%s AND effective_date <= %s
-            ORDER BY effective_date DESC LIMIT 1
-        """, (currency.upper(), on_date)).fetchone()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT rate_to_thb FROM fx_rates
+                WHERE currency=%s AND effective_date <= %s
+                ORDER BY effective_date DESC LIMIT 1
+            """, (currency.upper(), on_date))
+            row = cur.fetchone()
         
-    return float(row['rate_to_thb']) if row else 0.0
+    if row:
+        return float(row['rate_to_thb'] if isinstance(row, dict) else row[0])
+    return 0.0
 
 def convert(amount: float, from_cur: str, to_cur: str, on_date=None) -> float:
     """Convert amount between currencies via THB."""
@@ -68,7 +72,10 @@ def list_rates(currency: Optional[str] = None, limit: int = 100) -> List[Dict[st
     params.append(limit)
     
     with get_connection() as conn:
-        return list(conn.execute(sql, params).fetchall())
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            return [dict(r) for r in rows]
 
 def latest_rates() -> Dict[str, float]:
     """Get the latest rate for each supported currency."""

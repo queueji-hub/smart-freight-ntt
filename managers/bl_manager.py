@@ -98,19 +98,21 @@ def generate_bl_number(bl_type: str, ref_date=None) -> str:
     counter_key = f"BL_{bl_type}"
 
     with get_connection() as conn:
-        conn.execute("""
-            INSERT INTO job_counters (job_type, yymm, last_running)
-            VALUES (%s, %s, 1)
-            ON CONFLICT (job_type, yymm)
-            DO UPDATE SET last_running = job_counters.last_running + 1
-        """, (counter_key, yymm))
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO job_counters (job_type, yymm, last_running)
+                VALUES (%s, %s, 1)
+                ON CONFLICT (job_type, yymm)
+                DO UPDATE SET last_running = job_counters.last_running + 1
+            """, (counter_key, yymm))
 
-        row = conn.execute(
-            "SELECT last_running FROM job_counters WHERE job_type=%s AND yymm=%s",
-            (counter_key, yymm)
-        ).fetchone()
-        conn.commit()
-        seq = row["last_running"]
+            cur.execute(
+                "SELECT last_running FROM job_counters WHERE job_type=%s AND yymm=%s",
+                (counter_key, yymm)
+            )
+            row = cur.fetchone()
+            conn.commit()
+            seq = row["last_running"]
 
     return f"{bl_type}{yymm}{seq:04d}"
 

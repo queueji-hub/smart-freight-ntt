@@ -44,7 +44,11 @@ def create_vendor(data: Dict[str, Any], user: Dict[str, Any]) -> int:
                     data.get('currency', 'THB'),
                     user["username"] if user else 'system'
                 ))
-                vendor_id = cur.fetchone()["id"]
+                row = cur.fetchone()
+                try:
+                    vendor_id = row["id"]
+                except Exception:
+                    vendor_id = row[0]
                 conn.commit()
                 if user:
                     log_action(user["id"], tenant_id, "vendor", str(vendor_id), "CREATED")

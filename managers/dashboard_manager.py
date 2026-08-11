@@ -8,19 +8,21 @@ from database.connection import get_connection
 
 def get_kpi_summary():
     with get_connection() as conn:
-        return conn.execute("""
-            SELECT
-                COUNT(*) AS total_shipments,
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COUNT(*) AS total_shipments,
 
-                SUM(CASE WHEN status='Proceed' THEN 1 ELSE 0 END) AS active_jobs,
-                SUM(CASE WHEN status='Finished' THEN 1 ELSE 0 END) AS finished_jobs,
-                SUM(CASE WHEN status='Closed' THEN 1 ELSE 0 END) AS closed_jobs,
+                    SUM(CASE WHEN status='Proceed' THEN 1 ELSE 0 END) AS active_jobs,
+                    SUM(CASE WHEN status='Finished' THEN 1 ELSE 0 END) AS finished_jobs,
+                    SUM(CASE WHEN status='Closed' THEN 1 ELSE 0 END) AS closed_jobs,
 
-                SUM(CASE WHEN DATE(etd) = CURRENT_DATE THEN 1 ELSE 0 END) AS etd_today,
-                SUM(CASE WHEN DATE(eta) = CURRENT_DATE THEN 1 ELSE 0 END) AS eta_today
+                    SUM(CASE WHEN DATE(etd) = CURRENT_DATE THEN 1 ELSE 0 END) AS etd_today,
+                    SUM(CASE WHEN DATE(eta) = CURRENT_DATE THEN 1 ELSE 0 END) AS eta_today
 
-            FROM shipments
-        """).fetchone()
+                FROM shipments
+            """)
+            return cur.fetchone()
 
 
 # =========================
@@ -29,12 +31,14 @@ def get_kpi_summary():
 
 def get_monthly_flow():
     with get_connection() as conn:
-        return conn.execute("""
-            SELECT
-                COUNT(*) FILTER (WHERE DATE_TRUNC('month', etd) = DATE_TRUNC('month', CURRENT_DATE)) AS etd_this_month,
-                COUNT(*) FILTER (WHERE DATE_TRUNC('month', eta) = DATE_TRUNC('month', CURRENT_DATE)) AS eta_this_month
-            FROM shipments
-        """).fetchone()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE DATE_TRUNC('month', etd) = DATE_TRUNC('month', CURRENT_DATE)) AS etd_this_month,
+                    COUNT(*) FILTER (WHERE DATE_TRUNC('month', eta) = DATE_TRUNC('month', CURRENT_DATE)) AS eta_this_month
+                FROM shipments
+            """)
+            return cur.fetchone()
 
 
 # =========================

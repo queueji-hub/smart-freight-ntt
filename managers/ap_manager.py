@@ -59,7 +59,11 @@ def create_ap_voucher(data: Dict[str, Any], user: Dict[str, Any]) -> int:
                     data.get('total', 0.0),
                     user["username"] if user else 'system'
                 ))
-                voucher_id = cur.fetchone()["id"]
+                row = cur.fetchone()
+                try:
+                    voucher_id = row["id"]
+                except Exception:
+                    voucher_id = row[0]
                 conn.commit()
                 if user:
                     log_action(user["id"], tenant_id, "ap_voucher", str(voucher_id), "CREATED")

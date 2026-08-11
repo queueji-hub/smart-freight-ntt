@@ -91,73 +91,74 @@ def create_invoice(
 
     with get_connection() as conn:
         try:
-            cur = conn.execute("""
-                INSERT INTO invoices (
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO invoices (
+                        tenant_id,
+                        doc_no,
+                        doc_type,
+                        customer_name,
+                        issue_date,
+                        due_date,
+                        subtotal,
+                        vat_amount,
+                        wht_amount,
+                        total_amount,
+                        outstanding,
+                        status,
+                        created_by
+                    )
+                    VALUES (
+                        %s,%s,'INV',
+                        %s,%s,%s,
+                        %s,%s,%s,%s,
+                        %s,'OPEN',%s
+                    )
+                    RETURNING id
+                """, (
                     tenant_id,
                     doc_no,
-                    doc_type,
-                    customer_name,
-                    issue_date,
-                    due_date,
-                    subtotal,
-                    vat_amount,
-                    wht_amount,
-                    total_amount,
-                    outstanding,
-                    status,
-                    created_by
-                )
-                VALUES (
-                    %s,%s,'INV',
-                    %s,%s,%s,
-                    %s,%s,%s,%s,
-                    %s,'OPEN',%s
-                )
-                RETURNING id
-            """, (
-                tenant_id,
-                doc_no,
-                data.get("customer_name"),
-                data.get("issue_date"),
-                data.get("due_date"),
-                summary["total_before_vat"],
-                summary["total_vat_7"],
-                summary["wht_total"],
-                summary["grand_total"],
-                summary["grand_total"],
-                user["id"]
-            ))
-
-            invoice_id = cur.fetchone()["id"]
-
-            # Line items
-            for idx, item in enumerate(items):
-                conn.execute("""
-                    INSERT INTO invoice_items (
-                        invoice_id,
-                        description,
-                        quantity,
-                        unit_price,
-                        amount,
-                        tax_type,
-                        wht_type,
-                        sort_order
-                    )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                """, (
-                    invoice_id,
-                    item.get("description"),
-                    item.get("quantity", 1),
-                    item.get("unit_price", 0),
-                    item.get("amount", 0),
-                    item.get("tax_type", "VAT 7%"),
-                    item.get("wht_type", "NONE"),
-                    idx
+                    data.get("customer_name"),
+                    data.get("issue_date"),
+                    data.get("due_date"),
+                    summary["total_before_vat"],
+                    summary["total_vat_7"],
+                    summary["wht_total"],
+                    summary["grand_total"],
+                    summary["grand_total"],
+                    user["id"]
                 ))
 
-            conn.commit()
+                row = cur.fetchone()
+                invoice_id = row["id"] if isinstance(row, dict) else row[0]
 
-            log_action(user["id"], tenant_id, "invoice", doc_no, "CREATE")
+                # Line items
+                for idx, item in enumerate(items):
+                    cur.execute("""
+                        INSERT INTO invoice_items (
+                            invoice_id,
+                            description,
+                            quantity,
+                            unit_price,
+                            amount,
+                            tax_type,
+                            wht_type,
+                            sort_order
+                        )
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                    """, (
+                        invoice_id,
+                        item.get("description"),
+                        item.get("quantity", 1),
+                        item.get("unit_price", 0),
+                        item.get("amount", 0),
+                        item.get("tax_type", "VAT 7%"),
+                        item.get("wht_type", "NONE"),
+                        idx
+                    ))
+
+                conn.commit()
+                log_action(user["id"], tenant_id, "invoice", doc_no, "CREATE")
 
         except Exception as e:
             conn.rollback()
@@ -187,8 +188,10 @@ def list_invoices(tenant_id: str = None, status: str = None) -> List[Dict[str, A
     sql += " ORDER BY id DESC"
 
     with get_connection() as conn:
-        rows = conn.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            return [dict(r) for r in rows]
 
 
 # =========================================================
@@ -210,42 +213,42 @@ def record_payment(
 
     with get_connection() as conn:
         try:
-            row = conn.execute("""
-                SELECT outstanding, doc_no
-                FROM invoices
-                WHERE id=%s AND tenant_id=%s
-            """, (invoice_id, tenant_id)).fetchone()
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT outstanding, doc_no
+                    FROM invoices
+                    WHERE id=%s AND tenant_id=%s
+                """, (invoice_id, tenant_id))
+                row = cur.fetchone()
 
-            if not row:
-                raise ValueError(f"Invoice ID {invoice_id} not found for current tenant.")
+                if not row:
+                    raise ValueError(f"Invoice ID {invoice_id} not found for current tenant.")
 
-            current_outstanding = Decimal(str(row["outstanding"]))
-            payment_amount = Decimal(str(amount))
+                current_outstanding = Decimal(str(row["outstanding"]))
+                payment_amount = Decimal(str(amount))
 
-            new_outstanding = (current_outstanding - payment_amount).quantize(_TWO, rounding=ROUND_HALF_UP)
-            if new_outstanding < Decimal("0"):
-                new_outstanding = Decimal("0")
+                new_outstanding = (current_outstanding - payment_amount).quantize(_TWO, rounding=ROUND_HALF_UP)
+                if new_outstanding < Decimal("0"):
+                    new_outstanding = Decimal("0")
 
-            new_status = "PAID" if new_outstanding <= Decimal("0") else "PARTIAL"
+                new_status = "PAID" if new_outstanding <= Decimal("0") else "PARTIAL"
 
-            conn.execute("""
-                UPDATE invoices
-                SET outstanding=%s,
-                    status=%s,
-                    updated_at=CURRENT_TIMESTAMP
-                WHERE id=%s AND tenant_id=%s
-            """, (
-                float(new_outstanding),
-                new_status,
-                invoice_id,
-                tenant_id
-            ))
+                cur.execute("""
+                    UPDATE invoices
+                    SET outstanding=%s,
+                        status=%s,
+                        updated_at=CURRENT_TIMESTAMP
+                    WHERE id=%s AND tenant_id=%s
+                """, (
+                    float(new_outstanding),
+                    new_status,
+                    invoice_id,
+                    tenant_id
+                ))
 
-            conn.commit()
-
-            log_action(user["id"], tenant_id, "invoice", str(row.get("doc_no", invoice_id)), "PAYMENT")
-
-            return True
+                conn.commit()
+                log_action(user["id"], tenant_id, "invoice", str(row.get("doc_no", invoice_id)), "PAYMENT")
+                return True
 
         except ValueError:
             raise
@@ -266,21 +269,23 @@ def get_outstanding_summary(tenant_id: str = None) -> Dict[str, Any]:
     tenant_id = get_current_tenant_id()
 
     with get_connection() as conn:
-        row = conn.execute("""
-            SELECT
-                COALESCE(SUM(total_amount),0) as billed,
-                COALESCE(SUM(outstanding),0) as outstanding
-            FROM invoices
-            WHERE tenant_id=%s
-        """, (tenant_id,)).fetchone()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COALESCE(SUM(total_amount),0) as billed,
+                    COALESCE(SUM(outstanding),0) as outstanding
+                FROM invoices
+                WHERE tenant_id=%s
+            """, (tenant_id,))
+            row = cur.fetchone()
 
-        billed = Decimal(str(row["billed"])).quantize(_TWO, rounding=ROUND_HALF_UP)
-        outstanding = Decimal(str(row["outstanding"])).quantize(_TWO, rounding=ROUND_HALF_UP)
+            billed = Decimal(str(row["billed"])).quantize(_TWO, rounding=ROUND_HALF_UP)
+            outstanding = Decimal(str(row["outstanding"])).quantize(_TWO, rounding=ROUND_HALF_UP)
 
-        return {
-            "billed": float(billed),
-            "outstanding": float(outstanding)
-        }
+            return {
+                "billed": float(billed),
+                "outstanding": float(outstanding)
+            }
 
 
 # =========================================================
@@ -295,23 +300,25 @@ def get_invoice(invoice_id: int, tenant_id: str = None) -> Optional[Dict[str, An
     tenant_id = get_current_tenant_id()
 
     with get_connection() as conn:
-        inv = conn.execute("""
-            SELECT *
-            FROM invoices
-            WHERE id=%s AND tenant_id=%s
-        """, (invoice_id, tenant_id)).fetchone()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT *
+                FROM invoices
+                WHERE id=%s AND tenant_id=%s
+            """, (invoice_id, tenant_id))
+            inv = cur.fetchone()
 
-        if not inv:
-            return None
+            if not inv:
+                return None
 
-        items = conn.execute("""
-            SELECT *
-            FROM invoice_items
-            WHERE invoice_id=%s
-            ORDER BY sort_order
-        """, (invoice_id,)).fetchall()
+            cur.execute("""
+                SELECT *
+                FROM invoice_items
+                WHERE invoice_id=%s
+                ORDER BY sort_order
+            """, (invoice_id,))
+            items = cur.fetchall()
 
-        result = dict(inv)
-        result["items"] = [dict(i) for i in items]
-
-        return result
+            result = dict(inv)
+            result["items"] = [dict(i) for i in items]
+            return result

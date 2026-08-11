@@ -292,6 +292,7 @@ def init_database():
                         subject TEXT,
                         terms_conditions TEXT,
                         status TEXT DEFAULT 'ACTIVE',
+                        tenant_id TEXT DEFAULT 'default',
                         created_by TEXT,
                         updated_by TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -365,7 +366,7 @@ def init_database():
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS invoices (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-
+                        tenant_id TEXT DEFAULT 'default',
                         doc_no TEXT UNIQUE NOT NULL,
                         doc_type TEXT,
 
@@ -390,6 +391,7 @@ def init_database():
                         outstanding NUMERIC(15,2) DEFAULT 0,
 
                         payment_status TEXT DEFAULT 'Unpaid',
+                        status TEXT DEFAULT 'OPEN',
 
                         ref_doc_no TEXT,
                         remark TEXT,
@@ -921,7 +923,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS documents (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         tenant_id TEXT NOT NULL,
                         document_no TEXT NOT NULL,
                         document_type TEXT NOT NULL,
@@ -941,7 +943,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS email_log (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         tenant_id TEXT NOT NULL,
                         to_email TEXT,
                         cc TEXT,
@@ -968,7 +970,7 @@ def init_database():
 
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS document_versions (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
                         version_number INTEGER NOT NULL,
                         original_file_name TEXT NOT NULL,
@@ -989,7 +991,7 @@ def init_database():
 
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS document_links (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
                         entity_type TEXT NOT NULL,
                         entity_id TEXT NOT NULL,
@@ -1013,7 +1015,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS vendors (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         tenant_id TEXT NOT NULL,
                         vendor_code TEXT NOT NULL,
                         legal_name TEXT NOT NULL,
@@ -1033,7 +1035,7 @@ def init_database():
                 # =====================================================
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS ap_vouchers (
-                        id SERIAL PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         tenant_id TEXT NOT NULL,
                         vendor_id INTEGER NOT NULL REFERENCES vendors(id),
                         job_no TEXT,
