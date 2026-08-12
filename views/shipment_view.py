@@ -1,233 +1,144 @@
-"""
-Phase 30 Consolidated Job Control Center & Job 360 Workspace
-"""
+"""Smart Freight NTT — modern Job Control / Job 360 workspace."""
+from datetime import date
 import os
-import streamlit as st
+from typing import Any, Dict
 import pandas as pd
-from datetime import datetime, date
-
+import streamlit as st
 from managers.auth_manager import can_write
-from managers.shipment_manager import (
-    list_shipments, get_shipment, create_shipment, update_shipment,
-    STATUS_FLOW, list_job_containers, list_milestones, add_job_container
-)
+from managers.customer_manager import list_customers
+from managers.master_data_manager import list_distinct_job_values, list_sales_users
+from managers.shipment_manager import STATUS_FLOW, add_job_container, create_shipment, get_shipment, list_job_containers, list_milestones, list_shipments, update_shipment
 from managers.profit_manager import get_profit_summary
-from managers.document_manager import list_documents, download_document_version
-from managers.transport_manager import list_transport_orders_by_job
-from managers.regulatory_manager import list_submissions_by_job
-from core.audit import list_audit_logs
+from core.audit import list_audit_logs, log_action
 from pdf.report_generator import generate_job_sheet_pdf
 
+def _s(v, fb="—"):
+    if v is None: return fb
+    x=str(v).strip()
+    return fb if not x or x.lower() in {"none","nan","nat"} else x
+
+def _money(v):
+    try: return f"฿ {float(v or 0):,.2f}"
+    except (TypeError,ValueError): return "฿ 0.00"
+
+def _dt(v):
+    if isinstance(v,date): return v
+    try: return date.fromisoformat(str(v)[:10])
+    except (TypeError,ValueError): return None
+
+def _idx(opts,v):
+    x=_s(v,"")
+    return opts.index(x) if x in opts else 0
+
+def _opts(col):
+    try: return [""]+list_distinct_job_values(col)
+    except Exception: return [""]
+
+def _css():
+    st.markdown('''<style>
+    .s-card{background:#fff;border:1px solid #e8edf4;border-radius:14px;padding:16px 18px;min-height:150px;box-shadow:0 3px 14px rgba(15,23,42,.055);margin-bottom:14px}.s-title{font-weight:750;color:#162033;font-size:15px}.s-body{color:#536174;font-size:13px;line-height:1.85;margin-top:8px}.s-label{color:#718096;font-size:10px;text-transform:uppercase;letter-spacing:.04em}.s-val{color:#172033;font-weight:650}.s-job{color:#0b63e5;font-size:21px;font-weight:800}.s-status{display:inline-block;padding:3px 9px;border-radius:999px;background:#e9f9ef;color:#16803a;font-size:11px;font-weight:750}.s-section{color:#162033;font-size:17px;font-weight:800;margin:12px 0 8px}
+    </style>''',unsafe_allow_html=True)
+
+def _card(title,icon,body):
+    st.markdown(f'<div class="s-card"><div class="s-title"><span style="display:inline-flex;width:25px;height:25px;align-items:center;justify-content:center;border-radius:8px;background:#eef5ff;color:#1769e0;margin-right:8px">{icon}</span>{title}</div><div class="s-body">{body}</div></div>',unsafe_allow_html=True)
 
 def render():
-    st.subheader("Job Ledger")
-    jobs = list_shipments()
-    if jobs:
-        df = pd.DataFrame(jobs)
-        display_cols = ["job_no", "customer_name", "mode", "pol", "pod", "etd", "eta", "status", "sales_person"]
-        for col in display_cols:
-            if col not in df.columns:
-                df[col] = None
-        st.dataframe(df[display_cols], use_container_width=True)
-    else:
-        st.info("No jobs found in the system.")
+    _css(); st.markdown('# Job Control'); st.caption('Operational center for shipment execution, documents and job profitability.')
+    jobs=list_shipments(limit=200) or []
+    if st.session_state.get('job_control_new') or not jobs:
+        _new_job()
+        if jobs and st.button('Cancel',key='cancel_new_job'): st.session_state.pop('job_control_new',None); st.rerun()
+        return
+    a,b=st.columns([5,1])
+    selected=a.selectbox('Job',[j['job_no'] for j in jobs],key='job_control_selector',label_visibility='collapsed')
+    if b.button('＋ New Job',use_container_width=True): st.session_state['job_control_new']=True; st.rerun()
+    job=get_shipment(selected)
+    if not job: st.error('Unable to load the selected job from the database.'); return
+    _summary(job)
+    tabs=st.tabs(['Overview','Operations','Cargo & Containers','Milestones','Documents','Financial','History'])
+    with tabs[0]: _overview(job)
+    with tabs[1]: _operations(job)
+    with tabs[2]: _containers(job)
+    with tabs[3]: _milestones(job)
+    with tabs[4]: _documents(job)
+    with tabs[5]: _financial(job)
+    with tabs[6]: _history(job)
 
-    st.divider()
-    if jobs:
-        job_options = [j["job_no"] for j in jobs]
-        selected_job_no = st.selectbox("Select Job for 360° View", options=["--- NEW JOB ---"] + job_options)
-        if selected_job_no == "--- NEW JOB ---":
-            render_new_job_form()
-        else:
-            job = get_shipment(selected_job_no)
-            if job:
-                render_job_360(job)
-    else:
-        render_new_job_form()
+def _summary(j):
+    p=get_profit_summary(j.get('id')) or {}; gp=p.get('actual_net_profit',p.get('net_profit',0)); margin=p.get('actual_margin_pct',p.get('profit_margin',0))
+    mother=j.get('m_vessel') or j.get('mother_vessel') or j.get('vessel')
+    st.markdown(f'''<div style="background:#fff;border:1px solid #e7edf5;border-radius:15px;padding:18px 20px;box-shadow:0 4px 18px rgba(15,23,42,.06);margin:4px 0 18px"><div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap"><div><div class="s-label">Job No.</div><div class="s-job">{_s(j.get('job_no'),'NEW JOB')}</div></div><div><div class="s-label">Customer</div><div class="s-val">{_s(j.get('customer_name'))}</div></div><div><div class="s-label">Service</div><div class="s-val">{_s(j.get('mode'))} · {_s(j.get('service_type'))}</div></div><div><div class="s-label">POL / POD</div><div class="s-val">{_s(j.get('pol'))} / {_s(j.get('pod'))}</div></div><div><div class="s-label">ETD / ETA</div><div class="s-val">{_s(j.get('etd'))} / {_s(j.get('eta'))}</div></div><div><div class="s-label">Mother Vessel</div><div class="s-val">{_s(mother)}</div></div><div><div class="s-label">Gross Profit</div><div class="s-val" style="color:#169447">{_money(gp)}</div><div style="color:#718096">Margin {float(margin or 0):.2f}%</div></div><div><span class="s-status">{_s(j.get('status'),'Proceed')}</span></div></div></div>''',unsafe_allow_html=True)
 
+def _overview(j):
+    c=st.columns(4)
+    with c[0]: _card('Shipment Info','▣',f'Job Type: <b>{_s(j.get("job_type"))}</b><br>Mode: <b>{_s(j.get("mode"))}</b><br>Cargo: <b>{_s(j.get("cargo_type"))}</b><br>Incoterm: <b>{_s(j.get("incoterm"))}</b><br>Freight: <b>{_s(j.get("freight_term"))}</b>')
+    with c[1]: _card('Route Info','⌖',f'POL: <b>{_s(j.get("pol"))}</b><br>Transshipment: <b>{_s(j.get("transshipment_port"))}</b><br>POD: <b>{_s(j.get("pod"))}</b><br>Mother Vessel: <b>{_s(j.get("vessel"))}</b><br>Voyage: <b>{_s(j.get("voyage"))}</b>')
+    with c[2]: _card('Parties','▤',f'Shipper: <b>{_s(j.get("shipper"))}</b><br>Consignee: <b>{_s(j.get("consignee"))}</b><br>Notify: <b>{_s(j.get("notify_party"))}</b><br>Sales: <b>{_s(j.get("sales_person"))}</b>')
+    p=get_profit_summary(j.get('id')) or {}
+    with c[3]: _card('Financial Overview','฿',f'Revenue: <b>{_money(p.get("ar_actual"))}</b><br>Cost: <b>{_money(p.get("ap_actual"))}</b><br>Profit: <b style="color:#169447">{_money(p.get("actual_net_profit"))}</b><br>Margin: <b>{float(p.get("actual_margin_pct") or 0):.2f}%</b>')
 
-def render_new_job_form():
-    st.markdown("### Create New Job")
-    with st.form("new_job_form"):
-        col1, col2 = st.columns(2)
-        job_type = col1.selectbox("Type", ["EXPORT SEA FCL", "IMPORT SEA FCL", "EXPORT AIR", "IMPORT AIR", "CROSS BORDER"])
-        mode = col2.selectbox("Mode", ["SEA", "AIR", "ROAD"])
-        customer = st.text_input("Customer Name")
-        sales = st.text_input("Salesperson")
-        c3, c4 = st.columns(2)
-        etd = c3.date_input("ETD")
-        eta = c4.date_input("ETA")
-        if st.form_submit_button("Create Job"):
-            try:
-                new_job = create_shipment({
-                    "job_type": job_type, "mode": mode, "customer_name": customer,
-                    "sales_person": sales, "etd": str(etd), "eta": str(eta)
-                })
-                st.success(f"Job Created! {new_job}")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Failed: {str(e)}")
-
-
-def _render_document_actions(job: dict, docs: list) -> None:
-    """Compact job-scoped document actions using canonical managers/generators."""
-    st.markdown("#### Document Actions")
-    c_pdf, c_info = st.columns([1, 3])
-    with c_pdf:
-        if st.button("PDF · Job Sheet", key=f"job_sheet_pdf_{job['id']}", type="primary", use_container_width=True):
-            try:
-                prof = get_profit_summary(job["id"]) or {}
-                pdf_path = generate_job_sheet_pdf(
-                    job_data=job,
-                    profit_data=prof,
-                    milestones=list_milestones(job["job_no"]) or [],
-                )
-                if not pdf_path or not os.path.exists(pdf_path):
-                    raise FileNotFoundError("Job Sheet generator did not return a valid PDF file.")
-                with open(pdf_path, "rb") as f:
-                    st.download_button(
-                        "Download Job Sheet", data=f.read(), file_name=os.path.basename(pdf_path),
-                        mime="application/pdf", key=f"job_sheet_download_{job['id']}",
-                        use_container_width=True,
-                    )
-            except Exception as exc:
-                st.error(f"PDF generation failed: {exc}")
-    with c_info:
-        st.caption("Generate the current Job Sheet without leaving Job 360.")
-
-    if docs:
-        st.markdown("##### Attached Documents")
-        for doc in docs:
-            doc_id = doc.get("id")
-            doc_no = doc.get("document_no") or f"DOC-{doc_id}"
-            doc_type = doc.get("document_type") or "Document"
-            version = doc.get("version_number", 1)
-            c1, c2 = st.columns([4, 1])
-            with c1:
-                st.write(f"**{doc_type}** · `{doc_no}` · v{version}")
-            with c2:
-                if doc_id is not None:
-                    try:
-                        file_data = download_document_version(doc_id)
-                        st.download_button(
-                            "Download", data=file_data["file_bytes"],
-                            file_name=file_data["original_file_name"],
-                            mime=file_data.get("mime_type", "application/octet-stream"),
-                            key=f"job_doc_download_{doc_id}_{version}", use_container_width=True,
-                        )
-                    except Exception as exc:
-                        st.caption(f"Unavailable: {exc}")
-    else:
-        st.info("No stored documents attached to this job.")
-
-
-def render_job_360(job):
-    job_no = job["job_no"]
-    prof = get_profit_summary(job['id'])
-    gp_val = prof.get("actual_net_profit", 0.0) if prof else 0.0
-    margin_val = prof.get("actual_margin_pct", 0.0) if prof else 0.0
-
-    st.markdown(f"""
-    <div style="background-color: #0F172A; padding: 15px; border-radius: 10px; border: 1px solid #334155;">
-        <h4 style="color:#38BDF8; margin-top:0;">{job.get('job_type', 'UNKNOWN')} | STATUS: {job.get('status', 'OPEN')}</h4>
-        <b>Customer:</b> {job.get('customer_name')} | <b>Sales:</b> {job.get('sales_person')}<br>
-        <b>Routing:</b> {job.get('pol')} ➡️ {job.get('pod')} | <b>Vessel/Voy:</b> {job.get('vessel')} / {job.get('voyage')}<br>
-        <b>ETD:</b> {job.get('etd')} | <b>ETA:</b> {job.get('eta')} | <b>Est GP:</b> {gp_val:,.2f} ({margin_val}%)
-    </div><br>
-    """, unsafe_allow_html=True)
-
-    tabs = st.tabs(["1. Overview", "2. Operations", "3. Cargo & Containers", "4. Milestones", "5. Documents", "6. Financial", "7. History"])
-
-    with tabs[0]:
-        st.subheader("Key Information")
-        col1, col2 = st.columns(2)
-        col1.write(f"**Job No:** {job_no}")
-        col1.write(f"**Customer:** {job.get('customer_name')}")
-        col1.write(f"**Salesperson:** {job.get('sales_person')}")
-        col1.write(f"**Mode:** {job.get('mode')}")
-        col2.write(f"**POL:** {job.get('pol')}")
-        col2.write(f"**POD:** {job.get('pod')}")
-        col2.write(f"**ETD:** {job.get('etd')}")
-        col2.write(f"**ETA:** {job.get('eta')}")
-        col2.write(f"**Status:** {job.get('status')}")
-
-    with tabs[1]:
-        st.subheader("Operations")
-        with st.form("ops_control_form"):
-            col1, col2 = st.columns(2)
-            pol = col1.text_input("POL", value=job.get('pol', ''))
-            pod = col2.text_input("POD", value=job.get('pod', ''))
-            vessel = col1.text_input("Vessel", value=job.get('vessel', ''))
-            voyage = col2.text_input("Voyage", value=job.get('voyage', ''))
-            c1, c2 = st.columns(2)
-            new_status = c1.selectbox("Status", STATUS_FLOW, index=STATUS_FLOW.index(job['status']) if job['status'] in STATUS_FLOW else 0)
-            remarks = c2.text_input("Remarks", value=job.get('remark', ''))
-            if st.form_submit_button("Update"):
-                update_shipment(job_no, {"pol": pol, "pod": pod, "vessel": vessel, "voyage": voyage, "status": new_status, "remark": remarks})
-                st.success("Operations updated.")
-                st.rerun()
-
-    with tabs[2]:
-        st.subheader("Cargo & Containers")
-        with st.form("add_container_form"):
-            c1, c2, c3 = st.columns(3)
-            c_no = c1.text_input("Container No")
-            c_size = c2.selectbox("Size", ["20GP", "40GP", "40HC", "45HC"])
-            c_seal = c3.text_input("Seal No")
-            if st.form_submit_button("Add Container"):
-                try:
-                    add_job_container({"job_no": job_no, "container_no": c_no, "container_size": c_size, "seal_no": c_seal, "gross_weight": 0.0})
-                    st.success("Container assigned.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
-        containers = list_job_containers(job_no)
-        if containers:
-            st.dataframe(pd.DataFrame(containers)[["container_no", "container_size", "seal_no", "gross_weight"]], use_container_width=True)
-        else:
-            st.info("No containers attached.")
-
-    with tabs[3]:
-        st.subheader("Milestones")
-        ms = list_milestones(job_no)
-        if ms:
-            st.dataframe(pd.DataFrame(ms)[["milestone_name", "planned_date", "actual_date", "status"]], use_container_width=True)
-        else:
-            st.info("No milestones tracked for this job.")
-
-    with tabs[4]:
-        st.subheader("Documents")
+def _operations(j):
+    st.markdown('<div class="s-section">Operations</div>',unsafe_allow_html=True)
+    if not can_write(st.session_state.get('role','admin'),'shipment'): st.info('Read-only access'); return
+    customers=list_customers(); sales=list_sales_users(); cl=[x.get('company_name') for x in customers]; sl=[_s(x.get('full_name'),x.get('username')) for x in sales]
+    with st.form(f'ops_{j["job_no"]}',clear_on_submit=False):
+        c1,c2,c3=st.columns(3); customer=c1.selectbox('Customer',cl or [''],index=_idx(cl,j.get('customer_name'))); sales_person=c2.selectbox('Sales',sl or [''],index=_idx(sl,j.get('sales_person'))); status=c3.selectbox('Status',STATUS_FLOW,index=_idx(STATUS_FLOW,j.get('status')))
+        c4,c5,c6=st.columns(3); pol=c4.selectbox('POL',_opts('pol'),index=_idx(_opts('pol'),j.get('pol'))); pod=c5.selectbox('POD',_opts('pod'),index=_idx(_opts('pod'),j.get('pod'))); carrier=c6.selectbox('Carrier',_opts('carrier'),index=_idx(_opts('carrier'),j.get('carrier')))
+        c7,c8,c9=st.columns(3); vessel=c7.selectbox('Mother Vessel',_opts('vessel'),index=_idx(_opts('vessel'),j.get('vessel'))); trans=c8.selectbox('Transshipment',_opts('transshipment_port'),index=_idx(_opts('transshipment_port'),j.get('transshipment_port'))); voyage=c9.text_input('Voyage',value=_s(j.get('voyage'),''))
+        c10,c11,c12=st.columns(3); etd=c10.date_input('ETD',value=_dt(j.get('etd')) or date.today()); eta=c11.date_input('ETA',value=_dt(j.get('eta')) or date.today()); actual=c12.date_input('Actual Departure',value=_dt(j.get('actual_departure')))
+        remarks=st.text_area('Remarks',value=_s(j.get('remark'),''),height=80); save=st.form_submit_button('Save Changes',type='primary',use_container_width=True)
+    if save:
+        cid=next((x.get('id') for x in customers if x.get('company_name')==customer),j.get('customer_id'))
         try:
-            docs = list_documents("JOB", job['id']) or []
-        except Exception as exc:
-            docs = []
-            st.error(f"Unable to load job documents: {exc}")
-        _render_document_actions(job, docs)
-        st.divider()
-        st.subheader("Transport Orders & Customs")
-        to = list_transport_orders_by_job(job_no)
-        if to:
-            st.dataframe(pd.DataFrame(to)[["transport_order_no", "order_type", "status", "driver_name"]], use_container_width=True)
-        else:
-            st.info("No transport orders assigned.")
+            update_shipment(j['job_no'],{'customer_id':cid,'customer_name':customer,'sales_person':sales_person,'status':status,'pol':pol or None,'pod':pod or None,'carrier':carrier or None,'vessel':vessel or None,'transshipment_port':trans or None,'voyage':voyage,'etd':etd.isoformat(),'eta':eta.isoformat(),'actual_departure':actual.isoformat() if actual else None,'remark':remarks})
+            log_action(user_id=st.session_state.get('user_id',1),tenant_id='ntt',entity='shipment',entity_id=j['job_no'],action='UPDATE',details='Job Control updated'); st.success('Job updated'); st.rerun()
+        except Exception as e: st.error(f'Update failed: {e}')
 
-    with tabs[5]:
-        st.subheader("Financial")
-        if prof:
-            col1, col2 = st.columns(2)
-            col1.metric("Actual Revenue", f"{prof.get('ar_actual', 0.0):,.2f}")
-            col2.metric("Actual Cost", f"{(prof.get('ap_actual', 0.0) + prof.get('ap_accrued', 0.0)):,.2f}")
-            c1, c2 = st.columns(2)
-            c1.metric("Gross Profit", f"{gp_val:,.2f}")
-            c2.metric("Margin %", f"{margin_val}%")
-            st.caption("Invoice editing and numbering remain in the Financial module to preserve accounting controls.")
-        else:
-            st.info("No financial data found.")
+def _containers(j):
+    st.markdown('<div class="s-section">Cargo & Containers</div>',unsafe_allow_html=True)
+    service=_s(j.get('service_type'),'').upper(); mode=_s(j.get('mode'),'').upper()
+    if service in {'CY/CY','CY-CY'}: st.caption('CY/CY selected — CFS fields are intentionally hidden.')
+    if mode=='AIR': st.caption('Air shipment — use Loose cargo handling; CY/CY and CFS/CFS are not applicable.')
+    with st.form(f'container_{j["job_no"]}',clear_on_submit=True):
+        a,b,c=st.columns(3); no=a.text_input('Container No.'); size=b.selectbox('Size',['20GP','40GP','40HC','45HC']); seal=c.text_input('Seal No.')
+        if st.form_submit_button('Add Container',use_container_width=True):
+            try: add_job_container({'job_no':j['job_no'],'container_no':no,'container_size':size,'seal_no':seal,'gross_weight':0.0}); st.success('Container added'); st.rerun()
+            except Exception as e: st.error(str(e))
+    rows=list_job_containers(j['job_no']) or []
+    if rows:
+        df=pd.DataFrame(rows); cols=[x for x in ['container_no','container_size','seal_no','gross_weight','volume_cbm','status'] if x in df.columns]; st.dataframe(df[cols],use_container_width=True,hide_index=True)
+    else: st.info('No containers attached to this job.')
 
-    with tabs[6]:
-        st.subheader("History")
-        logs = list_audit_logs(entity="shipment", search=job_no)
-        if logs:
-            st.dataframe(pd.DataFrame(logs)[["username", "action", "details", "timestamp"]], use_container_width=True)
-        else:
-            st.info("No changes recorded in audit logs.")
+def _milestones(j):
+    st.markdown('<div class="s-section">Milestones</div>',unsafe_allow_html=True); rows=list_milestones(j['job_no']) or []
+    if not rows: st.info('No milestones recorded.'); return
+    df=pd.DataFrame(rows); cols=[x for x in ['milestone_name','planned_date','actual_date','status','location','remark'] if x in df.columns]; st.dataframe(df[cols],use_container_width=True,hide_index=True)
+
+def _documents(j):
+    st.markdown('<div class="s-section">Documents & Workflow</div>',unsafe_allow_html=True); st.caption('Documents are generated from database data. No binary document upload is required.')
+    a,b=st.columns([5,1]); a.write(f'**Job Sheet** · `{j["job_no"]}`')
+    try:
+        p=get_profit_summary(j['id']) or {}; path=generate_job_sheet_pdf(j,p,list_milestones(j['job_no']) or [])
+        if path and os.path.exists(path):
+            with open(path,'rb') as f: b.download_button('PDF',f.read(),file_name=os.path.basename(path),mime='application/pdf',key=f'job_pdf_{j["id"]}',use_container_width=True,type='primary')
+    except Exception as e: b.error(f'PDF failed: {e}')
+    st.divider(); st.write('**Related Documents**'); st.dataframe(pd.DataFrame([{'Document':n,'Document No.':_s(v)} for n,v in [('Quotation',j.get('quotation_no')),('Booking',j.get('booking_no')),('Bill of Lading',j.get('bl_no')),('Invoice',j.get('invoice_no'))]]),use_container_width=True,hide_index=True)
+
+def _financial(j):
+    st.markdown('<div class="s-section">Financial Overview</div>',unsafe_allow_html=True); p=get_profit_summary(j['id']) or {}; a,b,c,d=st.columns(4); a.metric('Revenue',_money(p.get('ar_actual'))); b.metric('Cost',_money(p.get('ap_actual'))); c.metric('Gross Profit',_money(p.get('actual_net_profit'))); d.metric('Margin',f'{float(p.get("actual_margin_pct") or 0):.2f}%')
+
+def _history(j):
+    st.markdown('<div class="s-section">Activity History</div>',unsafe_allow_html=True); rows=list_audit_logs(entity='shipment',search=j['job_no']) or []
+    if not rows: st.info('No audit events recorded.'); return
+    df=pd.DataFrame(rows); cols=[x for x in ['username','action','details','timestamp'] if x in df.columns]; st.dataframe(df[cols],use_container_width=True,hide_index=True)
+
+def _new_job():
+    st.markdown('<div class="s-section">Create Job</div>',unsafe_allow_html=True); customers=list_customers(); sales=list_sales_users(); cl=[x.get('company_name') for x in customers]; sl=[_s(x.get('full_name'),x.get('username')) for x in sales]
+    with st.form('new_job_form',clear_on_submit=True):
+        a,b,c=st.columns(3); jt=a.selectbox('Job Type',['EXPORT SEA','IMPORT SEA','EXPORT AIR','IMPORT AIR','CROSS BORDER']); mode=b.selectbox('Mode',['SEA','AIR','ROAD']); customer=c.selectbox('Customer',cl or [''])
+        d,e,f=st.columns(3); sales_person=d.selectbox('Sales',sl or ['']); etd=e.date_input('ETD',date.today()); eta=f.date_input('ETA',date.today()); create=st.form_submit_button('Create Job',type='primary',use_container_width=True)
+    if create:
+        cid=next((x.get('id') for x in customers if x.get('company_name')==customer),None)
+        try:
+            no=create_shipment({'job_type':jt,'mode':mode,'customer_id':cid,'customer_name':customer,'sales_person':sales_person,'etd':etd.isoformat(),'eta':eta.isoformat(),'status':'Proceed'}); st.success(f'Job {no} created'); st.session_state.pop('job_control_new',None); st.rerun()
+        except Exception as e: st.error(f'Create failed: {e}')
