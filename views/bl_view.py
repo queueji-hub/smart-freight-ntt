@@ -10,12 +10,12 @@ import streamlit as st
 
 from managers.auth_manager import can_write
 from managers.bl_manager import (
-    create_bl, get_bl, list_bls as list_bl, update_bl,
-    update_bl_status, list_bl_containers, add_bl_container, remove_bl_container,
+    create_bl, list_bls as list_bl, update_bl,
+    update_bl_status, list_bl_containers,
     BL_STATUS_FLOW, LOCKED_STATUSES, BL_TYPES, _s, _f, _i,
 )
-from managers.shipment_manager import list_shipments, list_job_containers
-from managers.document_duplicate_service import duplicate_bl
+from managers.shipment_manager import list_shipments
+from managers.document_duplicate_service import duplicate_bl, get_bl_snapshot
 from pdf.bl_pdf import generate_bl_pdf
 
 STATUS_OPTIONS = ["All Statuses", "Draft", "Submitted", "Approved", "Issued", "Surrendered", "Cancelled"]
@@ -23,7 +23,8 @@ STATUS_OPTIONS = ["All Statuses", "Draft", "Submitted", "Approved", "Issued", "S
 
 def _pdf_button(bl_id: int, key_prefix: str = "bl") -> None:
     try:
-        pdf_path = generate_bl_pdf(bl_id)
+        payload = get_bl_snapshot(bl_id)
+        pdf_path = generate_bl_pdf(payload)
         if pdf_path and os.path.exists(pdf_path):
             with open(pdf_path, "rb") as fh:
                 st.download_button(
@@ -116,9 +117,10 @@ def _workspace(can_edit: bool, user: dict) -> None:
     ids = list(options)
     default = ids.index(st.session_state["selected_bl_id"]) if st.session_state.get("selected_bl_id") in ids else 0
     selected_id = st.selectbox("Select B/L", ids, index=default, format_func=lambda x: options[x], key="bl30_ws")
-    bl = get_bl(selected_id)
-    if not bl:
-        st.error("B/L not found.")
+    try:
+        bl = get_bl_snapshot(selected_id)["bl"]
+    except Exception as exc:
+        st.error(str(exc))
         return
 
     st.session_state["selected_bl_id"] = selected_id
@@ -184,7 +186,7 @@ def _workspace(can_edit: bool, user: dict) -> None:
             remarks = st.text_area("Remarks", _s(bl.get("remarks")), disabled=not editable)
             special = st.text_area("Special Instructions", _s(bl.get("special_instructions")), disabled=not editable)
         with t4:
-            linked = list_bl_containers(selected_id) or []
+            linked = get_bl_snapshot(selected_id)["containers"]
             if linked:
                 st.dataframe(pd.DataFrame([{
                     "Container": _s(c.get("container_no")), "Size": _s(c.get("container_size")),
@@ -193,10 +195,11 @@ def _workspace(can_edit: bool, user: dict) -> None:
                 } for c in linked]), use_container_width=True, hide_index=True)
             else:
                 st.info("No containers linked to this B/L.")
-        with t5:
-            from views.document_ui import render_document_section
-            render_document_section("HBL" if _s(bl.get("bl_type")) == "HBL" else "MBL", selected_id)
         save = st.form_submit_button("Save Changes", type="primary", use_container_width=True, disabled=not editable)
+
+    with t5:
+        from views.document_ui import render_document_section
+        render_document_section("HBL" if _s(bl.get("bl_type")) == "HBL" else "MBL", selected_id)
 
     if save:
         try:
