@@ -124,39 +124,30 @@ if not user:
 # Professional ERP Hierarchy
 ERP_MODULES = {
     "EXECUTIVE": [
-        ("dashboard", "📊 Management Dashboard", "dashboard"),
-        ("sales_perf", "📈 Sales Performance", "reports"),
-        ("company_monthly", "🏢 Company Monthly Report", "reports"),
-        ("month_end", "🔒 Month-End Closing", "billing"),
+        ("dashboard", "📊 Dashboard", "dashboard"),
+        ("reports", "📈 Management Report", "reports"),
     ],
     "SALES": [
         ("crm", "👥 Customers", "crm"),
         ("quotation", "📄 Quotations", "quotation"),
-        ("booking", "📑 Booking", "booking"),
+        ("booking", "📑 Bookings", "booking"),
     ],
     "OPERATIONS": [
-        ("job_control", "🎮 Job Control Center", "shipment"),
-        ("job", "📦 Job Sheet 360", "shipment"),
-        ("tracking", "📍 Shipment Tracking", "tracking"),
-        ("bl", "📜 Bill of Lading", "bl"),
-        ("transport", "🚛 Transport Orders", "shipment"),
+        ("job_control", "📦 Jobs / Job 360", "shipment"),
+        ("bl", "📜 Bills of Lading", "bl"),
     ],
     "DOCUMENTS": [
         ("document", "📎 Document Center", "document"),
-        ("pdf_center", "🖨️ PDF Generation", "document"),
-        ("physical_docs", "🗄️ Physical Documents", "document"),
     ],
     "FINANCE": [
-        ("billing", "💰 AR (Accounts Receivable)", "billing"),
-        ("ap", "💸 AP (Accounts Payable)", "ap"),
-        ("vendor", "🏢 Vendor Master", "vendor"),
-        ("profit", "💹 Job Profitability", "profit"),
-        ("commission", "💵 Sales Commission", "profit"),
+        ("billing", "💰 AR (Billing)", "billing"),
+        ("ap", "💸 AP (Payable)", "ap"),
+        ("profit", "💹 Profitability", "profit"),
     ],
     "COMPLIANCE": [
-        ("regulatory", "⚖️ Regulatory & Customs", "document"),
+        ("regulatory", "⚖️ Compliance / Regulatory", "document"),
     ],
-    "SYSTEM": [
+    "ADMIN": [
         ("users", "👤 Users", "users"),
         ("settings", "⚙️ Settings", "settings"),
     ]

@@ -457,6 +457,11 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                     "actual_arrival": None
                 }
                 
+                from managers.shipment_manager import get_reporting_period
+                rep_month, rep_year = get_reporting_period(job_payload)
+                job_payload["reporting_month"] = rep_month
+                job_payload["reporting_year"] = rep_year
+                
                 data = {k: v for k, v in job_payload.items() if k in SHIPMENT_FIELDS}
                 cols = ["job_no"] + list(data.keys())
                 vals = [job_no] + list(data.values())
@@ -507,8 +512,11 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
 # =========================================================
 
 def _json_serializable(obj):
+    from decimal import Decimal
     if isinstance(obj, (date, datetime)):
         return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
     raise TypeError(f"Type {type(obj)} not serializable")
 
 
