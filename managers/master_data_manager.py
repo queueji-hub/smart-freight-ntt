@@ -1,54 +1,42 @@
-"""Lightweight master-data lookups used by operational views.
+"""Lightweight database-backed master-data lookups for operational views.
 
-The view layer should select IDs from master data instead of persisting
-free-text copies where a canonical master already exists.
+Dedicated master tables can be introduced later; until then the selectors are
+fed from existing normalized records instead of allowing arbitrary free text.
 """
 from typing import Any, Dict, List
-
 from database.connection import get_connection
 from managers.tenant_context import get_current_tenant_id
 
 
 def list_sales_users() -> List[Dict[str, Any]]:
-    """Return active sales/admin users available to the current tenant."""
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
+            cur.execute("""
                 SELECT id, username, full_name, email, role
                 FROM users
                 WHERE is_active = TRUE
-                  AND LOWER(COALESCE(role, '')) IN ('sales', 'admin', 'manager')
+                  AND LOWER(COALESCE(role, '')) IN ('sales','admin','manager')
                 ORDER BY LOWER(COALESCE(full_name, username))
-                """
-            )
-            rows = cur.fetchall()
-            return [dict(r) for r in rows]
+            """)
+            return [dict(r) for r in cur.fetchall()]
 
 
 def list_distinct_job_values(column: str) -> List[str]:
-    """Return existing values for a safe allow-listed shipment master field.
-
-    This is intentionally a transitional helper until dedicated Ports/Carriers/
-    Vessels master tables are introduced. It prevents the UI from inventing
-    values while keeping the current schema unchanged.
-    """
+    """Union existing Shipment + Booking values for a safe selector."""
     allowed = {"pol", "pod", "carrier", "vessel", "transshipment_port"}
     if column not in allowed:
         raise ValueError("Unsupported master-data column")
-
+    tenant = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT DISTINCT {column} AS value
-                FROM shipments
-                WHERE tenant_id = %s
-                  AND {column} IS NOT NULL
-                  AND TRIM({column}) <> ''
-                ORDER BY {column}
-                LIMIT 500
-                """,
-                (get_current_tenant_id(),),
-            )
-            return [str(row["value"]) for row in cur.fetchall() if row.get("value")]
+            # Booking schema uses transhipment_port spelling; vessel values are
+            # intentionally consolidated with Mother Vessel / vessel values.
+            booking_col = "transhipment_port" if column == "transshipment_port" else column
+            if column == "vessel":
+                shipment_sql = "SELECT vessel AS value FROM shipments WHERE tenant_id=%s AND vessel IS NOT NULL AND TRIM(vessel)<>''"
+                booking_sql = "SELECT COALESCE(m_vessel, vessel) AS value FROM bookings WHERE tenant_id=%s AND COALESCE(m_vessel, vessel) IS NOT NULL AND TRIM(COALESCE(m_vessel, vessel))<>''"
+            else:
+                shipment_sql = f"SELECT {column} AS value FROM shipments WHERE tenant_id=%s AND {column} IS NOT NULL AND TRIM({column})<>''"
+                booking_sql = f"SELECT {booking_col} AS value FROM bookings WHERE tenant_id=%s AND {booking_col} IS NOT NULL AND TRIM({booking_col})<>''"
+            cur.execute(f"SELECT DISTINCT value FROM ({shipment_sql} UNION ALL {booking_sql}) x ORDER BY value LIMIT 500", (tenant, tenant))
+            return [str(r['value']) for r in cur.fetchall() if r.get('value')]
