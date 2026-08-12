@@ -82,7 +82,12 @@ def _prepare_invoice_pdf(doc_no: str) -> None:
 
         inv, _items = get_invoice_snapshot(doc_no)
         status = _approval_status(doc_no, inv.get("status"))
-        pdf_path = generate_invoice_pdf(inv, approval_status=status)
+        # Keep the existing PDF generator signature unchanged. It already
+        # derives its DRAFT watermark from the invoice status/payment status.
+        inv = dict(inv)
+        inv["approval_status"] = status
+        inv["status"] = status
+        pdf_path = generate_invoice_pdf(inv)
         if not pdf_path or not os.path.exists(pdf_path):
             raise FileNotFoundError("Invoice PDF generator did not return a valid file.")
         with open(pdf_path, "rb") as fh:
