@@ -71,12 +71,13 @@ def generate_booking_pdf(booking: Dict[str,Any], output_path: str=None) -> str:
       ('Weight',f"{_s(booking.get('gross_weight'),'0')} KG",'Measurement',f"{_s(booking.get('measurement_cbm'),'0')} CBM"),
       ('Packages',f"{_s(booking.get('package_qty'),'0')} {_s(booking.get('package_unit'),'PKGS')}",'Containers',booking.get('container_summary')),
       ('ETD',_fmt(booking.get('etd')),'ETA',_fmt(booking.get('eta'))),
-      ('Carrier',booking.get('carrier'),'Voyage',booking.get('voyage')),
+      ('Liner',booking.get('liner') or booking.get('carrier'),'Vessel',booking.get('vessel')),
+      ('Mother Vessel',booking.get('m_vessel') or booking.get('mother_vessel'),'Voyage',booking.get('voyage')),
     ],stl,header='Booking Details',color=BLUE),Spacer(1,4*mm)]
     story += [_grid([
       ('POL',booking.get('pol'),'POR',booking.get('por')),
       ('POD',booking.get('pod'),'Final Destination',booking.get('final_destination')),
-      ('Transshipment Port',booking.get('transhipment_port'),'Mother Vessel',booking.get('m_vessel') or booking.get('mother_vessel') or booking.get('vessel')),
+      ('Transshipment Port',booking.get('transhipment_port') or booking.get('transhipment_port'),'Vessel',booking.get('vessel')),
     ],stl,header='Routing & Vessel',color=BLUE),Spacer(1,4*mm)]
     cargo_type=_s(booking.get('cargo_type'),'').upper(); is_air=cargo_type=='AIR'; is_cy='CY' in _s(booking.get('cy_place'),'').upper()
     schedule=[('CY Date',_fmt(booking.get('cy_date')),'CY Place',booking.get('cy_place')),('Customer Return Date',_fmt(booking.get('customer_return_date')),'Return Place',booking.get('return_place'))]
