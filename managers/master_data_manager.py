@@ -14,7 +14,7 @@ def list_sales_users() -> List[Dict[str, Any]]:
             cur.execute("""
                 SELECT id, username, full_name, email, role
                 FROM users
-                WHERE is_active = TRUE
+                WHERE is_active = 1
                   AND LOWER(COALESCE(role, '')) IN ('sales','admin','manager')
                 ORDER BY LOWER(COALESCE(full_name, username))
             """)
