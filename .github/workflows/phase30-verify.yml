@@ -1,0 +1,34 @@
+name: Phase 30 Verification
+
+on:
+  push:
+    branches:
+      - phase30-live-ui-pdf
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Compile Python source
+        run: python -m compileall -q managers views database pdf Dashboard.py
+      - name: Verify Phase 30 imports
+        run: |
+          python - <<'PY'
+          import managers.document_duplicate_service
+          import views.billing_view
+          import views.bl_view
+          print("Phase 30 imports: PASS")
+          PY
