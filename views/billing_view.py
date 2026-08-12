@@ -82,11 +82,13 @@ def _prepare_invoice_pdf(doc_no: str) -> None:
 
         inv, _items = get_invoice_snapshot(doc_no)
         status = _approval_status(doc_no, inv.get("status"))
-        # Keep the existing PDF generator signature unchanged. It already
-        # derives its DRAFT watermark from the invoice status/payment status.
+        # Keep the existing PDF generator signature unchanged. Its current
+        # watermark decision is based on payment_status/status, so map the
+        # approval state into a temporary render-only copy.
         inv = dict(inv)
         inv["approval_status"] = status
         inv["status"] = status
+        inv["payment_status"] = "ISSUED" if status == "Approved" else "DRAFT"
         pdf_path = generate_invoice_pdf(inv)
         if not pdf_path or not os.path.exists(pdf_path):
             raise FileNotFoundError("Invoice PDF generator did not return a valid file.")
