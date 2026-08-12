@@ -1,8 +1,7 @@
-"""Safe duplication helpers for downstream documents.
+"""Safe duplication and snapshot helpers for downstream documents.
 
 Every duplicate is a NEW document with a fresh document number and DRAFT state.
-Original records are never overwritten. Financial documents may only be duplicated
-from non-cancelled records; B/L duplicates are created as Draft snapshots.
+Original records are never overwritten.
 """
 
 from typing import Any, Dict, List, Tuple
@@ -15,6 +14,29 @@ def _user_name(user: Dict[str, Any] | None) -> str:
     return str((user or {}).get("username") or "system")
 
 
+def get_bl_snapshot(bl_id: int) -> Dict[str, Any]:
+    """Read a B/L plus its manifest using explicit tenant-safe SQL."""
+    from managers.bl_manager import list_bl_containers
+
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM bills_of_lading WHERE id=%s AND tenant_id=%s",
+                (int(bl_id), tenant_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError(f"B/L id={bl_id} not found.")
+            bl = dict(row)
+    return {
+        "bl": bl,
+        "job": {},
+        "booking": {},
+        "containers": list_bl_containers(int(bl_id)) or [],
+    }
+
+
 def duplicate_booking(booking_no: str, user: Dict[str, Any] | None = None) -> str:
     from managers.booking_manager import get_booking, create_booking
 
@@ -25,28 +47,21 @@ def duplicate_booking(booking_no: str, user: Dict[str, Any] | None = None) -> st
         raise ValueError("Cancelled or converted bookings cannot be duplicated.")
 
     payload = dict(source)
-    payload.pop("id", None)
-    payload.pop("booking_no", None)
-    payload.pop("created_at", None)
-    payload.pop("updated_at", None)
-    payload.pop("job_no", None)
-    payload.pop("revision_no", None)
-    payload.pop("is_current", None)
-    payload.pop("previous_booking_id", None)
-    payload.pop("revision_reason", None)
-    payload.pop("revised_by", None)
-    payload.pop("revised_at", None)
+    for key in (
+        "id", "booking_no", "created_at", "updated_at", "job_no", "revision_no",
+        "is_current", "previous_booking_id", "revision_reason", "revised_by", "revised_at",
+    ):
+        payload.pop(key, None)
     payload["status"] = "DRAFT"
     payload["created_by"] = _user_name(user)
     return create_booking(payload, user or {"username": _user_name(user), "id": 1})
 
 
 def duplicate_bl(bl_id: int, user: Dict[str, Any] | None = None) -> int:
-    from managers.bl_manager import get_bl, create_bl, list_bl_containers, add_bl_container
+    from managers.bl_manager import create_bl, list_bl_containers, add_bl_container
 
-    source = get_bl(int(bl_id))
-    if not source:
-        raise ValueError(f"B/L id={bl_id} not found.")
+    source_payload = get_bl_snapshot(int(bl_id))
+    source = source_payload["bl"]
     if str(source.get("status", "Draft")).lower() == "cancelled":
         raise ValueError("Cancelled B/L documents cannot be duplicated.")
     job_no = source.get("job_no")
@@ -61,16 +76,12 @@ def duplicate_bl(bl_id: int, user: Dict[str, Any] | None = None) -> int:
     extra["created_by"] = _user_name(user)
 
     new_id = create_bl(job_no, bl_type, user or {"username": _user_name(user)}, extra_data=extra)
-
-    # Preserve the manifest linkage as a snapshot, without touching the source B/L.
     for container in list_bl_containers(int(bl_id)) or []:
         container_id = container.get("id")
         if container_id is not None:
             try:
                 add_bl_container(new_id, container_id)
             except Exception:
-                # Keep the duplicate itself valid even if a legacy manifest row
-                # cannot be copied because of a database-level constraint.
                 pass
     return new_id
 
@@ -119,12 +130,9 @@ def duplicate_invoice(doc_no: str, user: Dict[str, Any] | None = None) -> str:
     return create_invoice(payload, items)
 
 
-def update_invoice_draft(
-    doc_no: str,
-    payload: Dict[str, Any],
-    items: List[Dict[str, Any]],
-) -> bool:
+def update_invoice_draft(doc_no: str, payload: Dict[str, Any], items: List[Dict[str, Any]]) -> bool:
     """Update only DRAFT financial documents, atomically replacing their lines."""
+    from decimal import Decimal
     from managers.invoice_manager import calculate_summary
 
     tenant_id = get_current_tenant_id()
@@ -158,14 +166,14 @@ def update_invoice_draft(
             )
             cur.execute("DELETE FROM invoice_items WHERE invoice_id=%s AND tenant_id=%s", (invoice_id, tenant_id))
             for idx, item in enumerate(items):
+                qty = Decimal(str(item.get("quantity", 1)))
+                price = Decimal(str(item.get("unit_price", 0)))
                 cur.execute(
                     """INSERT INTO invoice_items
                        (invoice_id, description, quantity, unit_price, amount, tax_type, wht_type, sort_order, tenant_id)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
-                        invoice_id, item.get("description", ""), item.get("quantity", 1),
-                        item.get("unit_price", 0),
-                        item.get("quantity", 1) * item.get("unit_price", 0),
+                        invoice_id, item.get("description", ""), qty, price, qty * price,
                         item.get("tax_type", "VAT 7%"), item.get("wht_type", "None"), idx, tenant_id,
                     ),
                 )
