@@ -12,9 +12,6 @@ def list_sales_users() -> List[Dict[str, Any]]:
     """Return active sales-capable users across boolean/integer legacy schemas."""
     with get_connection() as conn:
         with conn.cursor() as cur:
-            # is_active is historically inconsistent across environments.
-            # Compare its textual representation so integer 1 and boolean TRUE
-            # are both accepted without integer=boolean PostgreSQL errors.
             cur.execute("""
                 SELECT id, username, full_name, email, role
                 FROM users
@@ -26,19 +23,26 @@ def list_sales_users() -> List[Dict[str, Any]]:
 
 
 def list_distinct_job_values(column: str) -> List[str]:
-    """Union existing Shipment + Booking values for a safe selector."""
-    allowed = {"pol", "pod", "carrier", "vessel", "transshipment_port"}
+    """Union existing Shipment + Booking values for a safe selector.
+
+    This is a compatibility lookup until dedicated normalized master tables are
+    fully migrated. Only approved fields can be queried.
+    """
+    allowed = {"pol", "pod", "carrier", "liner", "vessel", "transshipment_port"}
     if column not in allowed:
         raise ValueError("Unsupported master-data column")
     tenant = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             booking_col = "transhipment_port" if column == "transshipment_port" else column
-            if column == "vessel":
-                shipment_sql = "SELECT vessel AS value FROM shipments WHERE tenant_id=%s AND vessel IS NOT NULL AND TRIM(vessel)<>''"
-                booking_sql = "SELECT COALESCE(m_vessel, vessel) AS value FROM bookings WHERE tenant_id=%s AND COALESCE(m_vessel, vessel) IS NOT NULL AND TRIM(COALESCE(m_vessel, vessel))<>''"
+            if column in {"vessel", "liner"}:
+                shipment_sql = f"SELECT {column} AS value FROM shipments WHERE tenant_id=%s AND {column} IS NOT NULL AND TRIM({column})<>''"
+                booking_sql = f"SELECT {column} AS value FROM bookings WHERE tenant_id=%s AND {column} IS NOT NULL AND TRIM({column})<>''"
             else:
                 shipment_sql = f"SELECT {column} AS value FROM shipments WHERE tenant_id=%s AND {column} IS NOT NULL AND TRIM({column})<>''"
                 booking_sql = f"SELECT {booking_col} AS value FROM bookings WHERE tenant_id=%s AND {booking_col} IS NOT NULL AND TRIM({booking_col})<>''"
-            cur.execute(f"SELECT DISTINCT value FROM ({shipment_sql} UNION ALL {booking_sql}) x ORDER BY value LIMIT 500", (tenant, tenant))
+            cur.execute(
+                f"SELECT DISTINCT value FROM ({shipment_sql} UNION ALL {booking_sql}) x ORDER BY value LIMIT 500",
+                (tenant, tenant),
+            )
             return [str(r['value']) for r in cur.fetchall() if r.get('value')]
