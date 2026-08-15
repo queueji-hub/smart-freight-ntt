@@ -53,6 +53,7 @@ PAGE_ROUTES["booking"] = ("views.booking_v2_view", "render")
 PAGE_ROUTES["quotation"] = ("views.quotation_v2_view", "render")
 PAGE_ROUTES["bl"] = ("views.bl_v2_view", "render")
 PAGE_ROUTES["billing"] = ("views.finance_v2_view", "render")
+PAGE_ROUTES["document"] = ("views.document_v2_view", "render")
 
 
 def _restore_user():
