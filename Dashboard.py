@@ -49,10 +49,10 @@ PAGE_ROUTES = {
     for modules in ERP_MODULES.values()
     for page_id, _label, module_name in modules
 }
-# Phase 30: production-facing workspaces keep canonical page ids and permissions.
 PAGE_ROUTES["booking"] = ("views.booking_v2_view", "render")
 PAGE_ROUTES["quotation"] = ("views.quotation_v2_view", "render")
 PAGE_ROUTES["bl"] = ("views.bl_v2_view", "render")
+PAGE_ROUTES["billing"] = ("views.finance_v2_view", "render")
 
 
 def _restore_user():
