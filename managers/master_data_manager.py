@@ -6,7 +6,9 @@ fed from existing normalized records instead of allowing arbitrary free text.
 The production database is still carrying some legacy schema variants, so
 these helpers inspect the actual PostgreSQL columns before building SQL. This
 prevents a missing legacy column (for example shipments.liner) from crashing
-the Booking UI while preserving tenant filtering where the table supports it.
+ the Booking UI while preserving tenant filtering where the table supports it.
+
+Phase 30 preview deployment marker: schema-aware selector runtime fix is active.
 """
 from typing import Any, Dict, List, Set
 
