@@ -63,6 +63,8 @@ jobs:
         run: pytest -q tests/test_quotation_ssot_service.py
       - name: Test charge master contract
         run: pytest -q tests/test_charge_master_manager.py
+      - name: Test finance schema contract
+        run: pytest -q tests/test_finance_schema_contract.py
       - name: Test approval workflow policy
         run: pytest -q tests/test_document_approval_manager.py
       - name: Test document preflight
