@@ -36,7 +36,6 @@ def _pdf_action(bl: Dict[str, Any]) -> None:
     key = f"bl_v2_{bl_id}"
     if st.button("PDF", key=f"{key}_prepare", type="primary", width="stretch"):
         try:
-            # Pure renderer: all DB reads happen through the manager payload service.
             from pdf.bl_document_renderer import generate_company_bl_pdf
             payload = assemble_bl_document_payload(bl_id)
             output = generate_company_bl_pdf(payload)
@@ -202,7 +201,7 @@ def render() -> None:
     summary[0].metric("B/L No.", _s(bl.get("bl_no")))
     summary[1].metric("Shipment", _s(bl.get("job_no")))
     summary[2].metric("Consol Seq", _s(bl.get("consol_seq"), "1"))
-    summary[3].metric("Vessel", _s(bl.get("vessel")))
+    summary[3].metric("Vessel", _s(bl.get("vessel") or bl.get("mother_vessel")))
     summary[4].metric("Status", approval_status)
 
     section("Actions")
@@ -233,7 +232,7 @@ def render() -> None:
     info[0].write(f"**Shipper**\n\n{_s(bl.get('shipper'))}")
     info[1].write(f"**Consignee**\n\n{_s(bl.get('consignee'))}")
     info[2].write(f"**POL / POD**\n\n{_s(bl.get('port_of_loading'))} / {_s(bl.get('port_of_discharge'))}")
-    info[3].write(f"**Vessel / Voyage**\n\n{_s(bl.get('vessel'))} / {_s(bl.get('voyage'))}")
+    info[3].write(f"**Vessel / Voyage**\n\n{_s(bl.get('vessel') or bl.get('mother_vessel'))} / {_s(bl.get('voyage'))}")
 
     if can_edit and approval_status in {"Draft", "Pending Approval"}:
         _edit_form(bl)
