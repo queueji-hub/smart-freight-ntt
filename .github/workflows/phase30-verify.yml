@@ -33,8 +33,10 @@ jobs:
           import managers.document_duplicate_service
           import managers.document_approval_manager
           import managers.master_data_manager
+          import managers.customer_manager
           import views.billing_view
           import views.bl_view
+          import views.booking_v2_view
           import core.freight_rules
           import core.booking_presentation
           import ui.design_system
@@ -45,5 +47,7 @@ jobs:
         run: pytest -q tests/test_freight_rules.py
       - name: Test booking presentation
         run: pytest -q tests/test_booking_presentation.py
+      - name: Test booking workspace
+        run: pytest -q tests/test_booking_v2_view.py
       - name: Test approval workflow policy
         run: pytest -q tests/test_document_approval_manager.py
