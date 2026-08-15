@@ -38,6 +38,7 @@ jobs:
           import managers.booking_ssot_service
           import managers.ssot_write_adapter
           import managers.charge_master_manager
+          import managers.profit_manager
           import views.billing_view
           import views.bl_view
           import views.booking_v2_view
@@ -67,6 +68,8 @@ jobs:
         run: pytest -q tests/test_finance_schema_contract.py
       - name: Test document numbering schema
         run: pytest -q tests/test_document_numbering_schema.py
+      - name: Test profitability tenant contract
+        run: pytest -q tests/test_profitability_contract.py
       - name: Test PDF smoke
         run: pytest -q tests/test_pdf_smoke.py
       - name: Test approval workflow policy
