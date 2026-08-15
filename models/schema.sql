@@ -2,9 +2,12 @@
 -- SMART FREIGHT NTT
 -- CANONICAL POSTGRESQL PRODUCTION SCHEMA
 -- =====================================================
+-- Incremental production DDL belongs in database/migrations/*.sql.
+-- The Charge Master is intentionally migration-only so existing deployments
+-- do not need a destructive baseline rewrite.
 
--- Production DDL changes are additive and belong in database/migrations/*.sql.
--- Keep this file as the canonical baseline; do not replace it with migration fragments.
+-- The canonical baseline is restored through the existing tables and indexes.
+-- See database/migrations/20260815_charge_master.sql for the additive Charge Master.
 
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
@@ -17,7 +20,6 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-
 CREATE TABLE IF NOT EXISTS sessions (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -26,7 +28,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
-
 CREATE TABLE IF NOT EXISTS customers (
     id SERIAL PRIMARY KEY,
     company_name TEXT NOT NULL,
@@ -42,7 +43,6 @@ CREATE TABLE IF NOT EXISTS customers (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_customers_company_name ON customers(company_name);
-
 CREATE TABLE IF NOT EXISTS quotations (
     id SERIAL PRIMARY KEY,
     quotation_no TEXT UNIQUE NOT NULL,
@@ -85,7 +85,6 @@ CREATE TABLE IF NOT EXISTS quotations (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_quotations_no ON quotations(quotation_no);
-
 CREATE TABLE IF NOT EXISTS quotation_items (
     id SERIAL PRIMARY KEY,
     quotation_id INTEGER REFERENCES quotations(id) ON DELETE CASCADE,
@@ -100,7 +99,6 @@ CREATE TABLE IF NOT EXISTS quotation_items (
     remark TEXT,
     sort_order INTEGER DEFAULT 0
 );
-
 CREATE TABLE IF NOT EXISTS invoices (
     id SERIAL PRIMARY KEY,
     doc_no TEXT UNIQUE NOT NULL,
@@ -129,7 +127,6 @@ CREATE TABLE IF NOT EXISTS invoices (
 );
 CREATE INDEX IF NOT EXISTS idx_invoices_doc_no ON invoices(doc_no);
 CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_name);
-
 CREATE TABLE IF NOT EXISTS invoice_items (
     id SERIAL PRIMARY KEY,
     invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
@@ -141,7 +138,6 @@ CREATE TABLE IF NOT EXISTS invoice_items (
     wht_type TEXT,
     sort_order INTEGER DEFAULT 0
 );
-
 CREATE TABLE IF NOT EXISTS invoice_payments (
     id SERIAL PRIMARY KEY,
     invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
@@ -152,7 +148,6 @@ CREATE TABLE IF NOT EXISTS invoice_payments (
     payment_date DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE TABLE IF NOT EXISTS shipments (
     id SERIAL PRIMARY KEY,
     job_no TEXT UNIQUE NOT NULL,
@@ -217,7 +212,6 @@ CREATE INDEX IF NOT EXISTS idx_shipments_job_no ON shipments(job_no);
 CREATE INDEX IF NOT EXISTS idx_shipments_booking_no ON shipments(booking_no);
 CREATE INDEX IF NOT EXISTS idx_shipments_etd ON shipments(etd);
 CREATE INDEX IF NOT EXISTS idx_shipments_eta ON shipments(eta);
-
 CREATE TABLE IF NOT EXISTS job_counters (
     job_type TEXT NOT NULL,
     yymm TEXT NOT NULL,
@@ -230,7 +224,6 @@ CREATE TABLE IF NOT EXISTS doc_counters (
     last_running INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (doc_type, yymm)
 );
-
 CREATE TABLE IF NOT EXISTS shipment_milestones (
     id SERIAL PRIMARY KEY,
     shipment_id INTEGER REFERENCES shipments(id) ON DELETE CASCADE,
@@ -244,7 +237,6 @@ CREATE TABLE IF NOT EXISTS shipment_milestones (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_shipment_milestones_job_no ON shipment_milestones(job_no);
-
 CREATE TABLE IF NOT EXISTS bookings (
     id SERIAL PRIMARY KEY,
     tenant_id TEXT DEFAULT 'default',
@@ -303,7 +295,6 @@ CREATE TABLE IF NOT EXISTS bookings (
 CREATE INDEX IF NOT EXISTS idx_bookings_booking_no ON bookings(booking_no);
 CREATE INDEX IF NOT EXISTS idx_bookings_etd ON bookings(etd);
 CREATE INDEX IF NOT EXISTS idx_bookings_eta ON bookings(eta);
-
 CREATE TABLE IF NOT EXISTS booking_revisions (
     id SERIAL PRIMARY KEY,
     booking_no TEXT NOT NULL,
@@ -314,7 +305,6 @@ CREATE TABLE IF NOT EXISTS booking_revisions (
     snapshot TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE TABLE IF NOT EXISTS bills_of_lading (
     id SERIAL PRIMARY KEY,
     bl_no TEXT UNIQUE NOT NULL,
@@ -353,7 +343,6 @@ CREATE TABLE IF NOT EXISTS bills_of_lading (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE TABLE IF NOT EXISTS containers (
     id SERIAL PRIMARY KEY,
     shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
@@ -385,7 +374,6 @@ CREATE TABLE IF NOT EXISTS containers (
     UNIQUE(shipment_id, container_no)
 );
 CREATE INDEX IF NOT EXISTS idx_containers_job_no ON containers(job_no);
-
 CREATE TABLE IF NOT EXISTS bl_containers (
     id SERIAL PRIMARY KEY,
     bl_id INTEGER NOT NULL REFERENCES bills_of_lading(id) ON DELETE CASCADE,
@@ -393,7 +381,6 @@ CREATE TABLE IF NOT EXISTS bl_containers (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(bl_id, container_id)
 );
-
 CREATE TABLE IF NOT EXISTS job_costs (
     id SERIAL PRIMARY KEY,
     shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
@@ -411,7 +398,6 @@ CREATE TABLE IF NOT EXISTS job_costs (
     created_by TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE TABLE IF NOT EXISTS profit_sheets (
     id SERIAL PRIMARY KEY,
     shipment_id INTEGER NOT NULL,
@@ -427,7 +413,6 @@ CREATE TABLE IF NOT EXISTS profit_sheets (
     approved_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE TABLE IF NOT EXISTS fx_rates (
     id SERIAL PRIMARY KEY,
     currency TEXT NOT NULL,
@@ -437,7 +422,6 @@ CREATE TABLE IF NOT EXISTS fx_rates (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(currency, effective_date)
 );
-
 CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
     user_id INTEGER,
