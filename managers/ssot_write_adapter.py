@@ -17,7 +17,16 @@ _ALLOWED = {
 }
 
 
-def _column_exists(cur, table: str, column: str) -> bool:
+def _is_sqlite_connection(conn: Any) -> bool:
+    return type(conn).__name__ == "SQLiteConnAdapter"
+
+
+def _column_exists(cur, table: str, column: str, sqlite: bool = False) -> bool:
+    if sqlite:
+        cur.execute(f"PRAGMA table_info({table})")
+        rows = cur.fetchall()
+        return any(str(row.get("name")) == column for row in rows)
+
     cur.execute(
         """
         SELECT 1
@@ -33,12 +42,7 @@ def _column_exists(cur, table: str, column: str) -> bool:
 
 
 def persist_master_ids(table: str, document_key: str, document_value: Any, values: Dict[str, Any]) -> bool:
-    """Persist supported master IDs when the current DB schema exposes the columns.
-
-    Returns True when at least one ID was written. Missing columns are treated as a
-    backward-compatible no-op so old environments continue to function until the
-    additive migration is applied.
-    """
+    """Persist supported master IDs when the current DB schema exposes the columns."""
     allowed = _ALLOWED.get(table, set())
     candidate = {k: values.get(k) for k in allowed if values.get(k) is not None}
     if not candidate:
@@ -47,7 +51,8 @@ def persist_master_ids(table: str, document_key: str, document_value: Any, value
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            writable = {k: v for k, v in candidate.items() if _column_exists(cur, table, k)}
+            sqlite = _is_sqlite_connection(conn)
+            writable = {k: v for k, v in candidate.items() if _column_exists(cur, table, k, sqlite=sqlite)}
             if not writable:
                 return False
 
@@ -64,26 +69,20 @@ def persist_master_ids(table: str, document_key: str, document_value: Any, value
 
 def sync_quotation_master_ids(quotation_no: str, customer_id: Any = None, sales_id: Any = None) -> bool:
     return persist_master_ids(
-        "quotations",
-        "quotation_no",
-        quotation_no,
+        "quotations", "quotation_no", quotation_no,
         {"customer_id": customer_id, "sales_id": sales_id},
     )
 
 
 def sync_booking_master_ids(booking_no: str, customer_id: Any = None, sales_id: Any = None) -> bool:
     return persist_master_ids(
-        "bookings",
-        "booking_no",
-        booking_no,
+        "bookings", "booking_no", booking_no,
         {"customer_id": customer_id, "sales_id": sales_id},
     )
 
 
 def sync_invoice_master_ids(invoice_no: str, customer_id: Any = None) -> bool:
     return persist_master_ids(
-        "invoices",
-        "doc_no",
-        invoice_no,
+        "invoices", "doc_no", invoice_no,
         {"customer_id": customer_id},
     )
