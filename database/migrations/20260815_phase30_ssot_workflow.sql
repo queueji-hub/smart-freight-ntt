@@ -12,9 +12,11 @@ ALTER TABLE bookings
     ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'Draft';
 
 ALTER TABLE invoices
+    ADD COLUMN IF NOT EXISTS tenant_id TEXT DEFAULT 'default',
     ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'Draft';
 
 ALTER TABLE bills_of_lading
+    ADD COLUMN IF NOT EXISTS tenant_id TEXT DEFAULT 'default',
     ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'Draft';
 
 CREATE INDEX IF NOT EXISTS idx_quotations_tenant_customer
@@ -31,6 +33,9 @@ CREATE INDEX IF NOT EXISTS idx_bookings_tenant_sales
 
 CREATE INDEX IF NOT EXISTS idx_invoices_tenant_customer
     ON invoices(tenant_id, customer_id);
+
+CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_job
+    ON bills_of_lading(tenant_id, job_no);
 
 UPDATE quotations
 SET approval_status = 'Draft'
