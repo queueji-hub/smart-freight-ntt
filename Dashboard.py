@@ -8,8 +8,10 @@ from database.connection import init_database
 from database.local_schema_compat import ensure_phase30_local_schema
 from ui.design_system import apply_theme, page_header
 
+BUILD_ID = "PHASE30-PREVIEW-20260815"
+
 st.set_page_config(
-    page_title="Smart Freight NTT",
+    page_title="Smart Freight NTT • Phase 30 Preview",
     page_icon="🚢",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -125,6 +127,7 @@ def main():
     with st.sidebar:
         st.markdown("**SMART FREIGHT NTT**")
         st.caption(f"{user.get('full_name', 'Operator')} · {ROLE_LABELS.get(role, role.upper())}")
+        st.caption(BUILD_ID)
         st.divider()
         for group, modules in groups:
             st.caption(group.title())
@@ -149,7 +152,7 @@ def main():
                 st.query_params.clear()
                 st.rerun()
 
-    page_header(current_page, status_text="Online")
+    page_header(current_page, status_text="Preview")
 
     module_path, fn_name = PAGE_ROUTES[current_page]
     try:
