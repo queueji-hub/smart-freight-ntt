@@ -26,7 +26,7 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest
       - name: Compile Python source
-        run: python -m compileall -q managers views database pdf core tests Dashboard.py
+        run: python -m compileall -q managers views database pdf core ui tests Dashboard.py
       - name: Verify Phase 30 imports
         run: |
           python - <<'PY'
@@ -37,6 +37,8 @@ jobs:
           import views.bl_view
           import core.freight_rules
           import core.booking_presentation
+          import ui.design_system
+          import ui.document_actions
           print("Phase 30 imports: PASS")
           PY
       - name: Test canonical freight rules
