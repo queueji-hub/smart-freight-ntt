@@ -1,5 +1,5 @@
 """Modern Booking Confirmation PDF.
-Canonical wording: Booking Confirmation, Carrier, Mother Vessel.
+Canonical wording: Booking Confirmation, Liner, Mother Vessel.
 Phase 30: transport-specific cargo/equipment and CY/CFS presentation.
 """
 from pathlib import Path
@@ -14,6 +14,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from config import COMPANY, OUTPUT_DIR
 from pdf.fonts import THAI_FONT, THAI_FONT_BOLD
+from core.freight_rules import get_freight_profile, resolve_vessel
 
 BLUE = colors.HexColor('#1F4E9E')
 GOLD = colors.HexColor('#C9A227')
@@ -37,24 +38,16 @@ def _fmt(v):
 
 
 def _mode(booking: Dict[str, Any]) -> str:
-    """Resolve transport mode from canonical job/cargo fields without changing stored data."""
-    cargo = _s(booking.get('cargo_type'), '').upper()
-    job_type = _s(booking.get('job_type'), '').upper()
-    if cargo == 'AIR' or job_type.startswith('AI'):
-        return 'AIR'
-    if cargo == 'TRUCK' or job_type.startswith('TR'):
-        return 'TRUCK'
-    if job_type.startswith('SE') or cargo in {'FCL', 'LCL'}:
-        return 'SEA'
-    return cargo or job_type
+    return get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type')).transport
 
 
 def _cargo_type(booking: Dict[str, Any]) -> str:
-    return _s(booking.get('cargo_type'), '').upper()
+    return get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type')).cargo_type
 
 
 def _is_sea_fcl(booking: Dict[str, Any]) -> bool:
-    return _mode(booking) == 'SEA' and _cargo_type(booking) == 'FCL'
+    profile = get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type'))
+    return profile.volume_kind == 'CONTAINER' and profile.receiving_kind == 'CY'
 
 
 def _parse_equipment_summary(booking: Dict[str, Any]):
@@ -151,8 +144,6 @@ def _watermark(canvas, doc, approval_status):
         canvas.translate(A4[0] / 2, A4[1] / 2)
         canvas.rotate(35)
         canvas.drawCentredString(0, 0, 'DRAFT')
-    canvas.setFillColor(colors.grey)
-    canvas.setFont(THAI_FONT, 8)
     canvas.restoreState()
     canvas.saveState()
     canvas.setFont(THAI_FONT, 8)
@@ -180,41 +171,42 @@ def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None, appro
     story = [_header(stl), Spacer(1, 4 * mm), Paragraph('BOOKING CONFIRMATION', stl['title'])]
 
     story += [_grid([
-        ('Booking No.', booking.get('booking_no'), 'Customer', booking.get('customer_name')),
+        ('Booking No.', booking.get('booking_no'), 'Carrier Booking No.', booking.get('carrier_booking_no')),
+        ('Customer', booking.get('customer_name'), 'Job Type', booking.get('job_type')),
         ('Shipper', booking.get('shipper'), 'Consignee', booking.get('consignee')),
-        ('Notify Party', booking.get('notify_party'), 'Job Type', booking.get('job_type')),
         ('ETD', _fmt(booking.get('etd')), 'ETA', _fmt(booking.get('eta'))),
     ], stl, header='Booking Details', color=BLUE), Spacer(1, 4 * mm)]
 
+    vessel = resolve_vessel(booking.get('m_vessel') or booking.get('mother_vessel'), booking.get('vessel'))
     story += [_grid([
         ('POL', booking.get('pol'), 'POR', booking.get('por')),
-        ('POD', booking.get('pod'), 'Final Destination', booking.get('final_destination')),
-        ('Transshipment Port', booking.get('transhipment_port'), 'Carrier', booking.get('carrier') or booking.get('liner')),
-        ('Mother Vessel', booking.get('m_vessel') or booking.get('mother_vessel') or booking.get('vessel'), 'Voyage', booking.get('voyage')),
+        ('Transshipment Port', booking.get('transhipment_port'), 'POD', booking.get('pod')),
+        ('Liner', booking.get('liner') or booking.get('carrier'), 'Vessel', vessel),
+        ('Voyage', booking.get('voyage'), 'Final Destination', booking.get('final_destination')),
     ], stl, header='Routing & Vessel', color=BLUE), Spacer(1, 4 * mm)]
 
-    mode = _mode(booking)
-    cargo = _cargo_type(booking)
+    profile = get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type'))
 
-    if mode == 'SEA' and cargo == 'FCL':
+    if profile.volume_kind == 'CONTAINER':
         equipment_rows = _parse_equipment_summary(booking)
         cargo_rows = []
         if equipment_rows:
-            first_type, first_qty = equipment_rows[0]
-            cargo_rows.append(('Container Type', first_type, 'Quantity', first_qty))
-            for extra_type, extra_qty in equipment_rows[1:]:
-                cargo_rows.append(('', extra_type, '', extra_qty))
+            for idx, (ctype, qty) in enumerate(equipment_rows):
+                if idx == 0:
+                    cargo_rows.append(('Container Type', ctype, 'Quantity', qty))
+                else:
+                    cargo_rows.append(('', ctype, '', qty))
         else:
             cargo_rows.append(('Equipment', booking.get('container_summary'), 'Quantity', booking.get('quantity') or booking.get('container_quantity')))
         story += [_grid(cargo_rows, stl, header='Cargo & Equipment', color=BLUE), Spacer(1, 4 * mm)]
-    elif mode == 'AIR':
+    elif profile.volume_kind == 'KG':
         story += [_grid([
             ('Packages', f"{_s(booking.get('package_qty'), '0')} {_s(booking.get('package_unit'), 'PKGS')}", 'Gross Weight', f"{_s(booking.get('gross_weight'), '0')} KG"),
             ('Chargeable Weight', f"{_s(booking.get('chargeable_weight'), '—')} KG", 'Commodity', booking.get('commodity')),
         ], stl, header='Cargo Details', color=BLUE), Spacer(1, 4 * mm)]
-    elif mode == 'TRUCK' and cargo == 'FTL':
+    elif profile.volume_kind == 'TRUCK':
         story += [_grid([
-            ('Truck Type', booking.get('container_summary') or booking.get('truck_type'), 'Quantity', booking.get('quantity') or booking.get('truck_quantity')),
+            ('Truck Type', booking.get('truck_type') or booking.get('container_summary'), 'Quantity', booking.get('quantity') or booking.get('truck_quantity')),
             ('Commodity', booking.get('commodity'), 'Gross Weight', f"{_s(booking.get('gross_weight'), '0')} KG"),
         ], stl, header='Transport Equipment', color=BLUE), Spacer(1, 4 * mm)]
     else:
@@ -223,17 +215,17 @@ def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None, appro
             ('Volume', f"{_s(booking.get('measurement_cbm'), '0')} CBM", 'Commodity', booking.get('commodity')),
         ], stl, header='Cargo Details', color=BLUE), Spacer(1, 4 * mm)]
 
-    if _is_sea_fcl(booking):
+    if profile.show_cy:
         terminal_rows = [
             ('CY Date', _fmt(booking.get('cy_date')), 'CY Place', booking.get('cy_place')),
             ('Container Return Date', _fmt(booking.get('customer_return_date')), 'Return Place', booking.get('return_place')),
         ]
-        story += [_grid(terminal_rows, stl, header='Terminal Schedule', color=GOLD), Spacer(1, 4 * mm)]
-    else:
+        story += [_grid(terminal_rows, stl, header='CY / Container Schedule', color=GOLD), Spacer(1, 4 * mm)]
+    elif profile.show_cfs:
         terminal_rows = [
             ('CFS Date', _fmt(booking.get('cfs_date')), 'CFS Place', booking.get('cfs_place')),
         ]
-        story += [_grid(terminal_rows, stl, header='Cargo Receiving', color=GOLD), Spacer(1, 4 * mm)]
+        story += [_grid(terminal_rows, stl, header='CFS Receiving', color=GOLD), Spacer(1, 4 * mm)]
 
     remark = _s(booking.get('remark'), '')
     if remark:
