@@ -3,9 +3,9 @@
 -- CANONICAL POSTGRESQL PRODUCTION SCHEMA
 -- =====================================================
 
--- =====================================================
--- USERS
--- =====================================================
+-- Production DDL changes are additive and belong in database/migrations/*.sql.
+-- Keep this file as the canonical baseline; do not replace it with migration fragments.
+
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
@@ -18,9 +18,6 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
--- =====================================================
--- SESSIONS
--- =====================================================
 CREATE TABLE IF NOT EXISTS sessions (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -30,9 +27,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 
--- =====================================================
--- CUSTOMERS
--- =====================================================
 CREATE TABLE IF NOT EXISTS customers (
     id SERIAL PRIMARY KEY,
     company_name TEXT NOT NULL,
@@ -49,9 +43,6 @@ CREATE TABLE IF NOT EXISTS customers (
 );
 CREATE INDEX IF NOT EXISTS idx_customers_company_name ON customers(company_name);
 
--- =====================================================
--- QUOTATIONS
--- =====================================================
 CREATE TABLE IF NOT EXISTS quotations (
     id SERIAL PRIMARY KEY,
     quotation_no TEXT UNIQUE NOT NULL,
@@ -95,9 +86,6 @@ CREATE TABLE IF NOT EXISTS quotations (
 );
 CREATE INDEX IF NOT EXISTS idx_quotations_no ON quotations(quotation_no);
 
--- =====================================================
--- QUOTATION ITEMS
--- =====================================================
 CREATE TABLE IF NOT EXISTS quotation_items (
     id SERIAL PRIMARY KEY,
     quotation_id INTEGER REFERENCES quotations(id) ON DELETE CASCADE,
@@ -113,9 +101,6 @@ CREATE TABLE IF NOT EXISTS quotation_items (
     sort_order INTEGER DEFAULT 0
 );
 
--- =====================================================
--- INVOICES
--- =====================================================
 CREATE TABLE IF NOT EXISTS invoices (
     id SERIAL PRIMARY KEY,
     doc_no TEXT UNIQUE NOT NULL,
@@ -145,9 +130,6 @@ CREATE TABLE IF NOT EXISTS invoices (
 CREATE INDEX IF NOT EXISTS idx_invoices_doc_no ON invoices(doc_no);
 CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_name);
 
--- =====================================================
--- INVOICE ITEMS
--- =====================================================
 CREATE TABLE IF NOT EXISTS invoice_items (
     id SERIAL PRIMARY KEY,
     invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
@@ -160,9 +142,6 @@ CREATE TABLE IF NOT EXISTS invoice_items (
     sort_order INTEGER DEFAULT 0
 );
 
--- =====================================================
--- INVOICE PAYMENTS
--- =====================================================
 CREATE TABLE IF NOT EXISTS invoice_payments (
     id SERIAL PRIMARY KEY,
     invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
@@ -174,9 +153,6 @@ CREATE TABLE IF NOT EXISTS invoice_payments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- =====================================================
--- SHIPMENTS
--- =====================================================
 CREATE TABLE IF NOT EXISTS shipments (
     id SERIAL PRIMARY KEY,
     job_no TEXT UNIQUE NOT NULL,
@@ -242,19 +218,12 @@ CREATE INDEX IF NOT EXISTS idx_shipments_booking_no ON shipments(booking_no);
 CREATE INDEX IF NOT EXISTS idx_shipments_etd ON shipments(etd);
 CREATE INDEX IF NOT EXISTS idx_shipments_eta ON shipments(eta);
 
--- =====================================================
--- JOB COUNTERS
--- =====================================================
 CREATE TABLE IF NOT EXISTS job_counters (
     job_type TEXT NOT NULL,
     yymm TEXT NOT NULL,
     last_running INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (job_type, yymm)
 );
-
--- =====================================================
--- DOC COUNTERS
--- =====================================================
 CREATE TABLE IF NOT EXISTS doc_counters (
     doc_type TEXT NOT NULL,
     yymm TEXT NOT NULL,
@@ -262,9 +231,6 @@ CREATE TABLE IF NOT EXISTS doc_counters (
     PRIMARY KEY (doc_type, yymm)
 );
 
--- =====================================================
--- SHIPMENT MILESTONES
--- =====================================================
 CREATE TABLE IF NOT EXISTS shipment_milestones (
     id SERIAL PRIMARY KEY,
     shipment_id INTEGER REFERENCES shipments(id) ON DELETE CASCADE,
@@ -279,9 +245,6 @@ CREATE TABLE IF NOT EXISTS shipment_milestones (
 );
 CREATE INDEX IF NOT EXISTS idx_shipment_milestones_job_no ON shipment_milestones(job_no);
 
--- =====================================================
--- BOOKINGS
--- =====================================================
 CREATE TABLE IF NOT EXISTS bookings (
     id SERIAL PRIMARY KEY,
     tenant_id TEXT DEFAULT 'default',
@@ -341,9 +304,6 @@ CREATE INDEX IF NOT EXISTS idx_bookings_booking_no ON bookings(booking_no);
 CREATE INDEX IF NOT EXISTS idx_bookings_etd ON bookings(etd);
 CREATE INDEX IF NOT EXISTS idx_bookings_eta ON bookings(eta);
 
--- =====================================================
--- BOOKING REVISIONS
--- =====================================================
 CREATE TABLE IF NOT EXISTS booking_revisions (
     id SERIAL PRIMARY KEY,
     booking_no TEXT NOT NULL,
@@ -355,9 +315,6 @@ CREATE TABLE IF NOT EXISTS booking_revisions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- =====================================================
--- BILLS OF LADING
--- =====================================================
 CREATE TABLE IF NOT EXISTS bills_of_lading (
     id SERIAL PRIMARY KEY,
     bl_no TEXT UNIQUE NOT NULL,
@@ -397,9 +354,6 @@ CREATE TABLE IF NOT EXISTS bills_of_lading (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- =====================================================
--- CONTAINERS
--- =====================================================
 CREATE TABLE IF NOT EXISTS containers (
     id SERIAL PRIMARY KEY,
     shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
@@ -432,9 +386,6 @@ CREATE TABLE IF NOT EXISTS containers (
 );
 CREATE INDEX IF NOT EXISTS idx_containers_job_no ON containers(job_no);
 
--- =====================================================
--- BL CONTAINERS (JUNCTION)
--- =====================================================
 CREATE TABLE IF NOT EXISTS bl_containers (
     id SERIAL PRIMARY KEY,
     bl_id INTEGER NOT NULL REFERENCES bills_of_lading(id) ON DELETE CASCADE,
@@ -443,9 +394,6 @@ CREATE TABLE IF NOT EXISTS bl_containers (
     UNIQUE(bl_id, container_id)
 );
 
--- =====================================================
--- JOB COSTS (P&L LEDGER LINES)
--- =====================================================
 CREATE TABLE IF NOT EXISTS job_costs (
     id SERIAL PRIMARY KEY,
     shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
@@ -464,9 +412,6 @@ CREATE TABLE IF NOT EXISTS job_costs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- =====================================================
--- PROFIT SHEETS
--- =====================================================
 CREATE TABLE IF NOT EXISTS profit_sheets (
     id SERIAL PRIMARY KEY,
     shipment_id INTEGER NOT NULL,
@@ -483,9 +428,6 @@ CREATE TABLE IF NOT EXISTS profit_sheets (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- =====================================================
--- FX RATES
--- =====================================================
 CREATE TABLE IF NOT EXISTS fx_rates (
     id SERIAL PRIMARY KEY,
     currency TEXT NOT NULL,
@@ -496,9 +438,6 @@ CREATE TABLE IF NOT EXISTS fx_rates (
     UNIQUE(currency, effective_date)
 );
 
--- =====================================================
--- AUDIT LOGS
--- =====================================================
 CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
     user_id INTEGER,
