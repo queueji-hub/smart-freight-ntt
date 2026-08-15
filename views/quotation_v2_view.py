@@ -13,12 +13,11 @@ from managers.auth_manager import can_write
 from managers.customer_manager import list_customers
 from managers.master_data_manager import list_sales_users
 from managers.quotation_manager import (
-    create_quotation,
     duplicate_quotation,
     get_quotation_by_no,
     list_quotations,
-    update_quotation,
 )
+from managers.quotation_ssot_service import create_quotation_ssot
 from ui.design_system import page_header, section
 
 CURRENCY_OPTIONS = ["USD", "THB", "CNY", "EUR", "JPY"]
@@ -131,7 +130,7 @@ def _create_form(user: Dict[str, Any]):
         subject = st.text_input("Subject")
 
         section("Pricing")
-        st.caption("Use one standardized charge name per line. Charge Master integration will replace free-text charges in the next data migration phase.")
+        st.caption("Select standardized charges. Charge Master will be the canonical pricing source.")
         items_df = _item_editor()
 
         section("Terms")
@@ -176,7 +175,7 @@ def _create_form(user: Dict[str, Any]):
             "status": "Draft",
         }
         try:
-            qno = create_quotation(payload, clean_items)
+            qno = create_quotation_ssot(payload, clean_items)
             st.success(f"Quotation {qno} saved as Draft.")
             st.rerun()
         except Exception as exc:
