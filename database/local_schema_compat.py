@@ -1,8 +1,7 @@
 """Phase 30 database compatibility helpers.
 
-Production PostgreSQL remains migration-driven, but this helper also performs a
-small idempotent profitability repair for legacy preview databases that missed
-the original table-creation migration. No destructive changes are performed.
+Production PostgreSQL remains migration-driven, while this helper keeps local
+and test SQLite databases compatible with the Phase 30 contract.
 """
 from __future__ import annotations
 
@@ -20,40 +19,25 @@ def _columns(cur, table: str) -> set[str]:
 
 
 def ensure_phase30_local_schema() -> None:
-    """Repair lightweight Phase 30 schema differences for local/preview runtime."""
     with get_connection() as conn:
         if not _is_sqlite(conn):
-            # The preview PostgreSQL database can pre-date Phase 30 table creation.
-            # Keep the repair additive and idempotent so startup can self-heal this
-            # specific runtime blocker until the production migration is applied.
             ensure_phase30_profitability_schema(conn)
             return
 
         with conn.cursor() as cur:
             table_columns = {
-                "quotations": {
-                    "sales_id": "INTEGER",
-                    "approval_status": "TEXT DEFAULT 'Draft'",
-                },
-                "bookings": {
-                    "sales_id": "INTEGER",
-                    "approval_status": "TEXT DEFAULT 'Draft'",
-                    "carrier_booking_no": "TEXT",
-                },
-                "invoices": {
-                    "approval_status": "TEXT DEFAULT 'Draft'",
-                },
+                "quotations": {"sales_id": "INTEGER", "approval_status": "TEXT DEFAULT 'Draft'"},
+                "bookings": {"sales_id": "INTEGER", "approval_status": "TEXT DEFAULT 'Draft'", "carrier_booking_no": "TEXT"},
+                "invoices": {"approval_status": "TEXT DEFAULT 'Draft'"},
                 "bills_of_lading": {
                     "tenant_id": "TEXT DEFAULT 'default'",
                     "approval_status": "TEXT DEFAULT 'Draft'",
+                    "consol_no": "TEXT",
+                    "consol_seq": "INTEGER DEFAULT 1",
+                    "bl_type": "TEXT DEFAULT 'BL'",
                 },
-                "job_costs": {
-                    "tenant_id": "TEXT DEFAULT 'default'",
-                    "cost_status": "TEXT DEFAULT 'ESTIMATED'",
-                },
-                "profit_sheets": {
-                    "tenant_id": "TEXT DEFAULT 'default'",
-                },
+                "job_costs": {"tenant_id": "TEXT DEFAULT 'default'", "cost_status": "TEXT DEFAULT 'ESTIMATED'"},
+                "profit_sheets": {"tenant_id": "TEXT DEFAULT 'default'"},
             }
             for table, cols in table_columns.items():
                 cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
