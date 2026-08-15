@@ -1,12 +1,13 @@
-"""Local-only SQLite compatibility for the Phase 30 data contract.
+"""Phase 30 database compatibility helpers.
 
-Production PostgreSQL changes remain migration-driven. This helper only adds
-missing compatibility columns to existing local SQLite tables and does not
-create new business tables.
+Production PostgreSQL remains migration-driven, but this helper also performs a
+small idempotent profitability repair for legacy preview databases that missed
+the original table-creation migration. No destructive changes are performed.
 """
 from __future__ import annotations
 
 from database.connection import get_connection
+from database.postgres_compat import ensure_phase30_profitability_schema
 
 
 def _is_sqlite(conn) -> bool:
@@ -19,10 +20,15 @@ def _columns(cur, table: str) -> set[str]:
 
 
 def ensure_phase30_local_schema() -> None:
-    """Add missing compatibility columns to an existing local SQLite database."""
+    """Repair lightweight Phase 30 schema differences for local/preview runtime."""
     with get_connection() as conn:
         if not _is_sqlite(conn):
+            # The preview PostgreSQL database can pre-date Phase 30 table creation.
+            # Keep the repair additive and idempotent so startup can self-heal this
+            # specific runtime blocker until the production migration is applied.
+            ensure_phase30_profitability_schema(conn)
             return
+
         with conn.cursor() as cur:
             table_columns = {
                 "quotations": {
