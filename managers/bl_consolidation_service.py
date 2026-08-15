@@ -12,10 +12,30 @@ from database.connection import get_connection
 from managers.tenant_context import get_current_tenant_id
 
 
+PORT_CODE_ALIASES = {
+    "LAEM CHABANG": "LCH",
+    "LAEM CHABANG, THAILAND": "LCH",
+    "NAHA": "NAH",
+    "NAHA, OKINAWA, JAPAN": "NAH",
+    "BANGKOK": "BKK",
+    "BANGKOK, THAILAND": "BKK",
+    "SINGAPORE": "SIN",
+    "SINGAPORE, SINGAPORE": "SIN",
+    "ROTTERDAM": "RTM",
+    "ROTTERDAM, NETHERLANDS": "RTM",
+}
+
+
 def _norm_place(value: Any) -> str:
     text = str(value or "").strip().upper()
     if not text:
         return "XXX"
+    if text in PORT_CODE_ALIASES:
+        return PORT_CODE_ALIASES[text]
+    if "(" in text and ")" in text:
+        inside = text.split("(", 1)[1].split(")", 1)[0]
+        if len(inside) == 3 and inside.isalpha():
+            return inside
     letters = "".join(ch for ch in text if ch.isalnum())
     return (letters[:3] or "XXX").upper()
 
