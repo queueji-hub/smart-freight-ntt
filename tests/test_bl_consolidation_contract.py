@@ -22,8 +22,11 @@ def test_document_payload_carries_consolidation_context():
     assert payload["containers"][0]["container_no"] == "CAIU8226953"
 
 
-def test_manager_keeps_multi_bl_contract():
+def test_manager_keeps_multi_bl_and_atomic_sequence_contract():
     source = open("managers/bl_workflow_service.py", encoding="utf-8").read()
+    consolidation = open("managers/bl_consolidation_service.py", encoding="utf-8").read()
     assert '"consol_no"' in source
     assert '"consol_seq"' in source
     assert 'list_job_bls' in source
+    assert "CONSOL-{job_no}" in consolidation
+    assert "ON CONFLICT (tenant_id, doc_type, yymm)" in consolidation
