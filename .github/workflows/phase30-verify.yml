@@ -36,9 +36,12 @@ jobs:
           import views.billing_view
           import views.bl_view
           import core.freight_rules
+          import core.booking_presentation
           print("Phase 30 imports: PASS")
           PY
       - name: Test canonical freight rules
         run: pytest -q tests/test_freight_rules.py
+      - name: Test booking presentation
+        run: pytest -q tests/test_booking_presentation.py
       - name: Test approval workflow policy
         run: pytest -q tests/test_document_approval_manager.py
