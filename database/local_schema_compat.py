@@ -1,8 +1,8 @@
 """Local-only SQLite compatibility for the Phase 30 data contract.
 
 Production PostgreSQL changes remain migration-driven. This helper only adds
-missing columns/tables required by local development after the legacy SQLite
-schema already exists.
+missing compatibility columns to existing local SQLite tables and does not
+create new business tables.
 """
 from __future__ import annotations
 
@@ -16,11 +16,6 @@ def _is_sqlite(conn) -> bool:
 def _columns(cur, table: str) -> set[str]:
     cur.execute(f"PRAGMA table_info({table})")
     return {str(row[1]) for row in cur.fetchall()}
-
-
-def _add_column(cur, table: str, column: str, ddl: str) -> None:
-    if column not in _columns(cur, table):
-        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
 def ensure_phase30_local_schema() -> None:
@@ -55,8 +50,6 @@ def ensure_phase30_local_schema() -> None:
                 },
             }
             for table, cols in table_columns.items():
-                # Legacy local DBs may not contain every table. CREATE is not
-                # attempted here; those tables are owned by the existing app schema.
                 cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
                 if not cur.fetchone():
                     continue
