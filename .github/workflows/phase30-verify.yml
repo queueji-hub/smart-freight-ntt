@@ -22,8 +22,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest
       - name: Compile Python source
-        run: python -m compileall -q managers views database pdf Dashboard.py
+        run: python -m compileall -q managers views database pdf core tests Dashboard.py
       - name: Verify Phase 30 imports
         run: |
           python - <<'PY'
@@ -32,5 +33,8 @@ jobs:
           import managers.master_data_manager
           import views.billing_view
           import views.bl_view
+          import core.freight_rules
           print("Phase 30 imports: PASS")
           PY
+      - name: Test canonical freight rules
+        run: pytest -q tests/test_freight_rules.py
