@@ -34,6 +34,8 @@ jobs:
           import managers.document_approval_manager
           import managers.master_data_manager
           import managers.customer_manager
+          import managers.quotation_ssot_service
+          import managers.ssot_write_adapter
           import views.billing_view
           import views.bl_view
           import views.booking_v2_view
@@ -53,6 +55,8 @@ jobs:
         run: pytest -q tests/test_booking_v2_view.py
       - name: Test quotation workspace
         run: pytest -q tests/test_quotation_v2_view.py
+      - name: Test quotation SSOT write contract
+        run: pytest -q tests/test_quotation_ssot_service.py
       - name: Test approval workflow policy
         run: pytest -q tests/test_document_approval_manager.py
       - name: Test document preflight
