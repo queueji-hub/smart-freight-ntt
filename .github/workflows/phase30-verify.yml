@@ -3,7 +3,7 @@ name: Phase 30 Verification
 on:
   push:
     branches:
-      - phase30-live-ui-pdf
+      - feature/phase30-preview
   pull_request:
     branches:
       - main
@@ -28,6 +28,8 @@ jobs:
         run: |
           python - <<'PY'
           import managers.document_duplicate_service
+          import managers.document_approval_manager
+          import managers.master_data_manager
           import views.billing_view
           import views.bl_view
           print("Phase 30 imports: PASS")
