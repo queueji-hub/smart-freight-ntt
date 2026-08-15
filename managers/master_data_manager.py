@@ -9,12 +9,13 @@ from managers.tenant_context import get_current_tenant_id
 
 
 def list_sales_users() -> List[Dict[str, Any]]:
+    """Return active sales-capable users across boolean/integer legacy schemas."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, username, full_name, email, role
                 FROM users
-                WHERE is_active = 1
+                WHERE LOWER(COALESCE(is_active::text, '0')) IN ('1','true','t')
                   AND LOWER(COALESCE(role, '')) IN ('sales','admin','manager')
                 ORDER BY LOWER(COALESCE(full_name, username))
             """)
