@@ -39,8 +39,10 @@ jobs:
           import managers.ssot_write_adapter
           import managers.charge_master_manager
           import managers.profit_manager
+          import managers.bl_workflow_service
           import views.billing_view
           import views.bl_view
+          import views.bl_v2_view
           import views.booking_v2_view
           import views.quotation_v2_view
           import core.freight_rules
@@ -70,6 +72,8 @@ jobs:
         run: pytest -q tests/test_document_numbering_schema.py
       - name: Test profitability tenant contract
         run: pytest -q tests/test_profitability_contract.py
+      - name: Test B/L workspace
+        run: pytest -q tests/test_bl_v2_view.py
       - name: Test PDF smoke
         run: pytest -q tests/test_pdf_smoke.py
       - name: Test approval workflow policy
