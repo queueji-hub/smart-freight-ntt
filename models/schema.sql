@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS users (
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
 -- =====================================================
@@ -29,7 +28,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 
 -- =====================================================
@@ -49,7 +47,6 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX IF NOT EXISTS idx_customers_company_name ON customers(company_name);
 
 -- =====================================================
@@ -96,7 +93,6 @@ CREATE TABLE IF NOT EXISTS quotations (
     updated_by TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX IF NOT EXISTS idx_quotations_no ON quotations(quotation_no);
 
 -- =====================================================
@@ -146,7 +142,6 @@ CREATE TABLE IF NOT EXISTS invoices (
     wht_3_amount NUMERIC(15,2) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX IF NOT EXISTS idx_invoices_doc_no ON invoices(doc_no);
 CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_name);
 
@@ -242,7 +237,6 @@ CREATE TABLE IF NOT EXISTS shipments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX IF NOT EXISTS idx_shipments_job_no ON shipments(job_no);
 CREATE INDEX IF NOT EXISTS idx_shipments_booking_no ON shipments(booking_no);
 CREATE INDEX IF NOT EXISTS idx_shipments_etd ON shipments(etd);
@@ -283,7 +277,6 @@ CREATE TABLE IF NOT EXISTS shipment_milestones (
     created_by TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX IF NOT EXISTS idx_shipment_milestones_job_no ON shipment_milestones(job_no);
 
 -- =====================================================
@@ -344,7 +337,6 @@ CREATE TABLE IF NOT EXISTS bookings (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX IF NOT EXISTS idx_bookings_booking_no ON bookings(booking_no);
 CREATE INDEX IF NOT EXISTS idx_bookings_etd ON bookings(etd);
 CREATE INDEX IF NOT EXISTS idx_bookings_eta ON bookings(eta);
@@ -438,7 +430,6 @@ CREATE TABLE IF NOT EXISTS containers (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(shipment_id, container_no)
 );
-
 CREATE INDEX IF NOT EXISTS idx_containers_job_no ON containers(job_no);
 
 -- =====================================================
