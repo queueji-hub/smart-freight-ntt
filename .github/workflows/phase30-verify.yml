@@ -35,6 +35,7 @@ jobs:
           import managers.master_data_manager
           import managers.customer_manager
           import managers.quotation_ssot_service
+          import managers.booking_ssot_service
           import managers.ssot_write_adapter
           import views.billing_view
           import views.bl_view
@@ -53,6 +54,8 @@ jobs:
         run: pytest -q tests/test_booking_presentation.py
       - name: Test booking workspace
         run: pytest -q tests/test_booking_v2_view.py
+      - name: Test booking SSOT write contract
+        run: pytest -q tests/test_booking_ssot_service.py
       - name: Test quotation workspace
         run: pytest -q tests/test_quotation_v2_view.py
       - name: Test quotation SSOT write contract
