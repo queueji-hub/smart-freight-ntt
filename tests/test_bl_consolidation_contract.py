@@ -3,7 +3,7 @@ from managers.bl_workflow_service import BL_TYPES
 
 
 def test_place_normalization_is_stable():
-    assert _norm_place("Laem Chabang, Thailand") == "LAE"
+    assert _norm_place("Laem Chabang, Thailand") == "LCH"
     assert _norm_place("Naha, Okinawa, Japan") == "NAH"
 
 
