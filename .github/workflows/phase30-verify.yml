@@ -65,6 +65,8 @@ jobs:
         run: pytest -q tests/test_charge_master_manager.py
       - name: Test finance schema contract
         run: pytest -q tests/test_finance_schema_contract.py
+      - name: Test PDF smoke
+        run: pytest -q tests/test_pdf_smoke.py
       - name: Test approval workflow policy
         run: pytest -q tests/test_document_approval_manager.py
       - name: Test document preflight
