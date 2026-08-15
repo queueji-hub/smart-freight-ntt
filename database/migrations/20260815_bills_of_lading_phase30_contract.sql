@@ -1,4 +1,4 @@
--- Phase 30: Bills of Lading tenant/workflow contract.
+-- Phase 30: company-issued Bill of Lading and shipment consolidation contract.
 -- Additive and idempotent; preserves existing B/L records.
 
 CREATE TABLE IF NOT EXISTS bills_of_lading (
@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS bills_of_lading (
     job_no TEXT,
     shipment_id INTEGER,
     booking_no TEXT,
+    consol_no TEXT,
+    consol_seq INTEGER DEFAULT 1,
     shipper TEXT,
     consignee TEXT,
     notify_party TEXT,
@@ -34,7 +36,7 @@ CREATE TABLE IF NOT EXISTS bills_of_lading (
     hs_code TEXT,
     remarks TEXT,
     special_instructions TEXT,
-    bl_type TEXT DEFAULT 'HBL',
+    bl_type TEXT DEFAULT 'BL',
     status TEXT DEFAULT 'Draft',
     approval_status TEXT DEFAULT 'Draft',
     created_by TEXT,
@@ -48,6 +50,8 @@ ALTER TABLE bills_of_lading
     ADD COLUMN IF NOT EXISTS job_no TEXT,
     ADD COLUMN IF NOT EXISTS shipment_id INTEGER,
     ADD COLUMN IF NOT EXISTS booking_no TEXT,
+    ADD COLUMN IF NOT EXISTS consol_no TEXT,
+    ADD COLUMN IF NOT EXISTS consol_seq INTEGER DEFAULT 1,
     ADD COLUMN IF NOT EXISTS shipper TEXT,
     ADD COLUMN IF NOT EXISTS consignee TEXT,
     ADD COLUMN IF NOT EXISTS notify_party TEXT,
@@ -74,7 +78,7 @@ ALTER TABLE bills_of_lading
     ADD COLUMN IF NOT EXISTS hs_code TEXT,
     ADD COLUMN IF NOT EXISTS remarks TEXT,
     ADD COLUMN IF NOT EXISTS special_instructions TEXT,
-    ADD COLUMN IF NOT EXISTS bl_type TEXT DEFAULT 'HBL',
+    ADD COLUMN IF NOT EXISTS bl_type TEXT DEFAULT 'BL',
     ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Draft',
     ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'Draft',
     ADD COLUMN IF NOT EXISTS created_by TEXT,
@@ -85,8 +89,15 @@ UPDATE bills_of_lading
 SET tenant_id = 'default'
 WHERE tenant_id IS NULL OR btrim(tenant_id) = '';
 
+UPDATE bills_of_lading
+SET bl_type = 'BL'
+WHERE bl_type IS NULL OR btrim(bl_type) = '';
+
 CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_job
     ON bills_of_lading(tenant_id, job_no);
+
+CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_consol
+    ON bills_of_lading(tenant_id, consol_no);
 
 CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_created
     ON bills_of_lading(tenant_id, created_at DESC);
