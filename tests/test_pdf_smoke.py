@@ -73,3 +73,33 @@ def test_invoice_pdf_generates_draft(tmp_path):
     assert result == str(output)
     assert Path(result).exists()
     assert output.stat().st_size > 1000
+
+
+def test_profitability_pdf_generates(tmp_path):
+    from pdf.profitability_pdf import generate_profitability_pdf
+
+    output = tmp_path / "profitability.pdf"
+    job = {
+        "job_no": "JOB-2608-0001",
+        "customer_name": "Erawan",
+        "mode": "Sea",
+        "pol": "Laem Chabang",
+        "pod": "Rotterdam",
+        "etd": "2026-08-25",
+        "eta": "2026-10-06",
+        "status": "In Transit",
+    }
+    profit = {
+        "ar_estimated": 100000,
+        "ar_actual": 95000,
+        "ap_estimated": 60000,
+        "ap_accrued": 5000,
+        "ap_actual": 45000,
+        "ap_posted": 0,
+        "actual_net_profit": 45000,
+    }
+
+    result = generate_profitability_pdf(job, profit, output_path=str(output))
+    assert result == str(output)
+    assert output.exists()
+    assert output.stat().st_size > 1000
