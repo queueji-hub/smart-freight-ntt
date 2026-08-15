@@ -59,15 +59,9 @@ def ensure_phase30_profitability_schema(conn) -> None:
         )
         cur.execute("ALTER TABLE profit_sheets ADD COLUMN IF NOT EXISTS tenant_id TEXT DEFAULT 'default'")
         cur.execute("UPDATE profit_sheets SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''")
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_job_costs_tenant_shipment ON job_costs(tenant_id, shipment_id)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_job_costs_tenant_status ON job_costs(tenant_id, cost_type, cost_status)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_profit_sheets_tenant_shipment ON profit_sheets(tenant_id, shipment_id)"
-        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_job_costs_tenant_shipment ON job_costs(tenant_id, shipment_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_job_costs_tenant_status ON job_costs(tenant_id, cost_type, cost_status)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_profit_sheets_tenant_shipment ON profit_sheets(tenant_id, shipment_id)")
     conn.commit()
 
 
@@ -83,6 +77,8 @@ def ensure_phase30_bl_schema(conn) -> None:
                 job_no TEXT,
                 shipment_id INTEGER,
                 booking_no TEXT,
+                consol_no TEXT,
+                consol_seq INTEGER DEFAULT 1,
                 shipper TEXT,
                 consignee TEXT,
                 notify_party TEXT,
@@ -109,7 +105,7 @@ def ensure_phase30_bl_schema(conn) -> None:
                 hs_code TEXT,
                 remarks TEXT,
                 special_instructions TEXT,
-                bl_type TEXT DEFAULT 'HBL',
+                bl_type TEXT DEFAULT 'BL',
                 status TEXT DEFAULT 'Draft',
                 approval_status TEXT DEFAULT 'Draft',
                 created_by TEXT,
@@ -124,6 +120,8 @@ def ensure_phase30_bl_schema(conn) -> None:
             "job_no": "TEXT",
             "shipment_id": "INTEGER",
             "booking_no": "TEXT",
+            "consol_no": "TEXT",
+            "consol_seq": "INTEGER DEFAULT 1",
             "shipper": "TEXT",
             "consignee": "TEXT",
             "notify_party": "TEXT",
@@ -150,7 +148,7 @@ def ensure_phase30_bl_schema(conn) -> None:
             "hs_code": "TEXT",
             "remarks": "TEXT",
             "special_instructions": "TEXT",
-            "bl_type": "TEXT DEFAULT 'HBL'",
+            "bl_type": "TEXT DEFAULT 'BL'",
             "status": "TEXT DEFAULT 'Draft'",
             "approval_status": "TEXT DEFAULT 'Draft'",
             "created_by": "TEXT",
@@ -160,22 +158,12 @@ def ensure_phase30_bl_schema(conn) -> None:
         for column, ddl in columns.items():
             cur.execute(f"ALTER TABLE bills_of_lading ADD COLUMN IF NOT EXISTS {column} {ddl}")
 
-        cur.execute(
-            "UPDATE bills_of_lading SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''"
-        )
-        cur.execute(
-            "UPDATE bills_of_lading SET status='Draft' WHERE status IS NULL OR btrim(status)=''"
-        )
-        cur.execute(
-            "UPDATE bills_of_lading SET approval_status='Draft' WHERE approval_status IS NULL OR btrim(approval_status)=''"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_job ON bills_of_lading(tenant_id, job_no)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_created ON bills_of_lading(tenant_id, created_at DESC)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_bl_no ON bills_of_lading(tenant_id, bl_no)"
-        )
+        cur.execute("UPDATE bills_of_lading SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''")
+        cur.execute("UPDATE bills_of_lading SET status='Draft' WHERE status IS NULL OR btrim(status)=''")
+        cur.execute("UPDATE bills_of_lading SET approval_status='Draft' WHERE approval_status IS NULL OR btrim(approval_status)=''")
+        cur.execute("UPDATE bills_of_lading SET bl_type='BL' WHERE bl_type IS NULL OR btrim(bl_type)=''")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_job ON bills_of_lading(tenant_id, job_no)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_consol ON bills_of_lading(tenant_id, consol_no)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_created ON bills_of_lading(tenant_id, created_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_bl_no ON bills_of_lading(tenant_id, bl_no)")
     conn.commit()
