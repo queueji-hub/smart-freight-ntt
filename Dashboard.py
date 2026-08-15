@@ -48,6 +48,9 @@ PAGE_ROUTES = {
     for modules in ERP_MODULES.values()
     for page_id, _label, module_name in modules
 }
+# Phase 30: use the streamlined booking workspace while keeping the
+# canonical page id/permission key unchanged.
+PAGE_ROUTES["booking"] = ("views.booking_v2_view", "render")
 
 
 def _restore_user():
