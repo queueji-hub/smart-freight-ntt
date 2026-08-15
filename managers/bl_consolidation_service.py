@@ -6,6 +6,7 @@ belong to the same shipment without creating duplicate shipments.
 from __future__ import annotations
 
 from datetime import date, datetime
+import re
 from typing import Any, Dict, Optional
 
 from database.connection import get_connection
@@ -32,10 +33,9 @@ def _norm_place(value: Any) -> str:
         return "XXX"
     if text in PORT_CODE_ALIASES:
         return PORT_CODE_ALIASES[text]
-    if "(" in text and ")" in text:
-        inside = text.split("(", 1)[1].split(")", 1)[0]
-        if len(inside) == 3 and inside.isalpha():
-            return inside
+    match = re.search(r"\(([A-Z]{3})\)", text)
+    if match:
+        return match.group(1)
     letters = "".join(ch for ch in text if ch.isalnum())
     return (letters[:3] or "XXX").upper()
 
@@ -83,25 +83,37 @@ def generate_company_bl_no(pol: Any, pod: Any, ref_date: Any = None) -> str:
 
 
 def next_consol_sequence(job_no: str) -> int:
-    """Return the next 1-based B/L sequence within one Shipment/Job."""
+    """Atomically allocate the next B/L sequence within one Shipment/Job."""
     tenant = get_current_tenant_id()
+    if not tenant:
+        raise RuntimeError("tenant_id is required for consolidation sequencing")
+    counter_type = f"CONSOL-{job_no}"
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT COALESCE(MAX(consol_seq), 0) + 1
-                FROM bills_of_lading
-                WHERE tenant_id=%s AND job_no=%s
+                INSERT INTO document_counters (tenant_id, doc_type, yymm, last_running)
+                VALUES (%s, %s, %s, 1)
+                ON CONFLICT (tenant_id, doc_type, yymm)
+                DO UPDATE SET last_running = document_counters.last_running + 1
+                RETURNING last_running
                 """,
-                (tenant, job_no),
+                (tenant, counter_type, "0000"),
             )
             row = cur.fetchone()
-            return int(row[0] if not isinstance(row, dict) else next(iter(row.values())))
+            if not row:
+                raise RuntimeError("Unable to allocate consolidation sequence")
+            seq = row["last_running"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
+            conn.commit()
+            return int(seq)
 
 
-def build_bl_document_payload(bl: Dict[str, Any], job: Dict[str, Any] | None = None,
-                               booking: Dict[str, Any] | None = None,
-                               containers: Optional[list[dict]] = None) -> Dict[str, Any]:
+def build_bl_document_payload(
+    bl: Dict[str, Any],
+    job: Dict[str, Any] | None = None,
+    booking: Dict[str, Any] | None = None,
+    containers: Optional[list[dict]] = None,
+) -> Dict[str, Any]:
     """Build the pure document payload consumed by the PDF layer."""
     return {
         "bl": dict(bl),
