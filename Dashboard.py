@@ -49,9 +49,10 @@ PAGE_ROUTES = {
     for modules in ERP_MODULES.values()
     for page_id, _label, module_name in modules
 }
-# Phase 30: streamlined workspaces keep canonical page ids and permissions.
+# Phase 30: production-facing workspaces keep canonical page ids and permissions.
 PAGE_ROUTES["booking"] = ("views.booking_v2_view", "render")
 PAGE_ROUTES["quotation"] = ("views.quotation_v2_view", "render")
+PAGE_ROUTES["bl"] = ("views.bl_v2_view", "render")
 
 
 def _restore_user():
@@ -74,8 +75,6 @@ def _restore_user():
 def _bootstrap_db():
     try:
         init_database()
-        # Production uses PostgreSQL migrations. This is a local-only guard
-        # for legacy SQLite databases used during development/UAT.
         ensure_phase30_local_schema()
         return True
     except Exception as exc:
