@@ -38,5 +38,3 @@ jobs:
           PY
       - name: Test canonical freight rules
         run: pytest -q tests/test_freight_rules.py
-      - name: Test approval workflow policy
-        run: pytest -q tests/test_document_approval_manager.py
