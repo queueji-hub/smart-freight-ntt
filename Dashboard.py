@@ -5,6 +5,7 @@ import streamlit as st
 from managers.auth_manager import ROLE_LABELS, can_read
 from managers.session_manager import delete_session, get_user_by_token
 from database.connection import init_database
+from database.local_schema_compat import ensure_phase30_local_schema
 from ui.design_system import apply_theme, page_header
 
 st.set_page_config(
@@ -73,6 +74,9 @@ def _restore_user():
 def _bootstrap_db():
     try:
         init_database()
+        # Production uses PostgreSQL migrations. This is a local-only guard
+        # for legacy SQLite databases used during development/UAT.
+        ensure_phase30_local_schema()
         return True
     except Exception as exc:
         st.sidebar.warning("Database connection is unavailable.")
