@@ -90,3 +90,20 @@ def build_bl_document_payload(bl: Dict[str, Any], job: Dict[str, Any] | None = N
         "containers": list(containers or []),
         "company": {"name": "NATTAYARAAT CO., LTD."},
     }
+
+
+def assemble_bl_document_payload(bl_id: int) -> Dict[str, Any]:
+    """Read and validate B/L context in the manager layer for PDF rendering."""
+    from managers.bl_workflow_service import get_bl
+    from managers.shipment_manager import get_shipment
+    try:
+        from managers.bl_manager import list_bl_containers
+    except Exception:
+        list_bl_containers = lambda _bl_id: []
+
+    bl = get_bl(int(bl_id))
+    if not bl:
+        raise ValueError(f"B/L {bl_id} not found")
+    job = get_shipment(bl.get("job_no")) if bl.get("job_no") else {}
+    containers = list_bl_containers(int(bl_id)) or []
+    return build_bl_document_payload(bl, job=job or {}, containers=containers)
