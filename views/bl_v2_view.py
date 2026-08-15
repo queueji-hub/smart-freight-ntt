@@ -1,11 +1,11 @@
-"""Production-facing B/L workspace for Phase 30.
+"""Production-facing company Bill of Lading workspace for Phase 30.
 
-Keeps the screen focused on Job-derived B/L data, approval, editing and PDF output.
+A Shipment/Job is the consolidation parent. One shipment can issue multiple
+company B/Ls, each with its own shipper, consignee and cargo detail.
 """
 from __future__ import annotations
 
 import os
-from datetime import date
 from typing import Any, Dict
 
 import pandas as pd
@@ -13,7 +13,6 @@ import streamlit as st
 
 from managers.auth_manager import can_write
 from managers.bl_workflow_service import (
-    BL_TYPES,
     approve,
     create_bl_from_job,
     get_bl,
@@ -36,14 +35,8 @@ def _pdf_action(bl: Dict[str, Any]) -> None:
     key = f"bl_v2_{bl_id}"
     if st.button("PDF", key=f"{key}_prepare", type="primary", width="stretch"):
         try:
-            from pdf.bl_pdf import generate_bl_pdf
-            payload = {
-                "bl": {**bl, "approval_status": bl.get("approval_status", "Draft"), "status": bl.get("approval_status", bl.get("status", "Draft"))},
-                "job": {},
-                "booking": {},
-                "containers": [],
-            }
-            output = generate_bl_pdf(payload)
+            from pdf.forwarder_bl_pdf import generate_forwarder_bl_pdf
+            output = generate_forwarder_bl_pdf(bl_id)
             if not output or not os.path.exists(output):
                 raise FileNotFoundError("B/L PDF generator did not return a valid file.")
             with open(output, "rb") as fh:
@@ -57,7 +50,7 @@ def _pdf_action(bl: Dict[str, Any]) -> None:
         st.download_button(
             "Download",
             pdf_bytes,
-            file_name=st.session_state.get(f"{key}_name", f"BL_{bl_id}.pdf"),
+            file_name=st.session_state.get(f"{key}_name", f"{bl.get('bl_no', bl_id)}.pdf"),
             mime="application/pdf",
             key=f"{key}_download",
             width="stretch",
@@ -68,18 +61,18 @@ def _new_form(user: Dict[str, Any]) -> None:
     jobs = list_shipments(limit=200) or []
     job_options = [j.get("job_no") for j in jobs if j.get("job_no")]
     if not job_options:
-        st.info("Create a Job first before creating a B/L.")
+        st.info("Create a Job first before issuing a B/L.")
         return
 
-    section("New B/L")
+    section("Issue New B/L")
+    st.caption("One Shipment can contain multiple company B/Ls for consolidation.")
     with st.form("bl_v2_new"):
-        job_no = st.selectbox("Job", job_options)
-        bl_type = st.selectbox("B/L Type", list(BL_TYPES))
-        submit = st.form_submit_button("Create B/L", type="primary", width="stretch")
+        job_no = st.selectbox("Shipment / Job", job_options)
+        submit = st.form_submit_button("Issue New B/L", type="primary", width="stretch")
 
     if submit:
         try:
-            new_id = create_bl_from_job(job_no, bl_type, user)
+            new_id = create_bl_from_job(job_no, user)
             st.session_state["bl_v2_selected"] = new_id
             st.success("B/L created as Draft.")
             st.rerun()
@@ -129,6 +122,20 @@ def _edit_form(bl: Dict[str, Any]) -> None:
                 st.error(f"Unable to update B/L: {exc}")
 
 
+def _consol_summary(rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    total_bl = len(rows)
+    shippers = len({str(r.get("shipper") or "").strip().lower() for r in rows if str(r.get("shipper") or "").strip()})
+    total_pkg = sum(float(r.get("package_qty") or 0) for r in rows)
+    total_cbm = sum(float(r.get("measurement_cbm") or 0) for r in rows)
+    c = st.columns(4)
+    c[0].metric("B/Ls in Shipment", total_bl)
+    c[1].metric("Shippers", shippers)
+    c[2].metric("Packages", f"{total_pkg:,.0f}")
+    c[3].metric("CBM", f"{total_cbm:,.3f}")
+
+
 def render() -> None:
     page_header("bl", status_text="Online")
     user = st.session_state.get("user", {})
@@ -150,13 +157,13 @@ def render() -> None:
     display = pd.DataFrame([
         {
             "B/L No.": _s(r.get("bl_no")),
-            "Type": _s(r.get("bl_type")),
-            "Job": _s(r.get("job_no")),
-            "Customer": _s(r.get("customer_name"), "—"),
+            "Shipment": _s(r.get("job_no")),
+            "Consol Seq": _s(r.get("consol_seq"), "1"),
+            "Shipper": _s(r.get("shipper")),
+            "Consignee": _s(r.get("consignee")),
             "POL": _s(r.get("port_of_loading"), "—"),
             "POD": _s(r.get("port_of_discharge"), "—"),
-            "Vessel": _s(r.get("vessel"), "—"),
-            "Voyage": _s(r.get("voyage"), "—"),
+            "Vessel / Voyage": f"{_s(r.get('vessel'), '—')} / {_s(r.get('voyage'), '—')}",
             "Approval": _s(r.get("approval_status"), "Draft"),
         }
         for r in rows
@@ -171,7 +178,7 @@ def render() -> None:
         st.info("No B/L records found.")
         return
 
-    labels = {int(r["id"]): f"{r.get('bl_no')} · {r.get('bl_type')} · {r.get('approval_status', 'Draft')}" for r in rows if r.get("id") is not None}
+    labels = {int(r["id"]): f"{r.get('bl_no')} · {r.get('job_no')} · {r.get('shipper') or 'Shipper pending'}" for r in rows if r.get("id") is not None}
     default = ids.index(st.session_state.get("bl_v2_selected")) if st.session_state.get("bl_v2_selected") in ids else 0
     selected_id = st.selectbox("Select B/L", ids, index=default, format_func=lambda x: labels[x], key="bl_v2_selected_box")
     bl = get_bl(selected_id)
@@ -181,12 +188,17 @@ def render() -> None:
 
     st.session_state["bl_v2_selected"] = selected_id
     approval_status = _s(bl.get("approval_status"), "Draft")
+    shipment_bls = list_bls(bl.get("job_no"))
+
+    section("Consolidation")
+    st.caption(f"Shipment { _s(bl.get('job_no')) } · each B/L below is a separate shipper/consignee record under the same shipment.")
+    _consol_summary(shipment_bls)
 
     section("B/L Summary")
     summary = st.columns(5)
     summary[0].metric("B/L No.", _s(bl.get("bl_no")))
-    summary[1].metric("Type", _s(bl.get("bl_type")))
-    summary[2].metric("Job", _s(bl.get("job_no")))
+    summary[1].metric("Shipment", _s(bl.get("job_no")))
+    summary[2].metric("Consol Seq", _s(bl.get("consol_seq"), "1"))
     summary[3].metric("Vessel", _s(bl.get("vessel")))
     summary[4].metric("Status", approval_status)
 
@@ -211,7 +223,7 @@ def render() -> None:
                 except Exception as exc:
                     st.error(str(exc))
     with actions[3]:
-        st.caption("Official PDF only after approval.")
+        st.caption("Official PDF after approval.")
 
     section("Routing & Parties")
     info = st.columns(4)
