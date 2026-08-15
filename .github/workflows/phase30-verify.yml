@@ -40,6 +40,7 @@ jobs:
           import views.quotation_v2_view
           import core.freight_rules
           import core.booking_presentation
+          import core.document_preflight
           import ui.design_system
           import ui.document_actions
           print("Phase 30 imports: PASS")
@@ -54,3 +55,5 @@ jobs:
         run: pytest -q tests/test_quotation_v2_view.py
       - name: Test approval workflow policy
         run: pytest -q tests/test_document_approval_manager.py
+      - name: Test document preflight
+        run: pytest -q tests/test_document_preflight.py
