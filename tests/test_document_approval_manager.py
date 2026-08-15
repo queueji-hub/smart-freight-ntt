@@ -15,6 +15,7 @@ def test_transition_submit_and_approve(monkeypatch):
     state = {"value": "Draft"}
     monkeypatch.setattr(approval, "get_approval_status", lambda entity, doc_no: state["value"])
     monkeypatch.setattr(approval, "set_approval_status", lambda entity, doc_no, status: state.__setitem__("value", status))
+    monkeypatch.setattr(approval, "_assert_preflight", lambda entity, doc_no: None)
 
     assert approval.submit_for_approval("quotation", "QT-1", {"role": "sales"}) == "Pending Approval"
     with pytest.raises(PermissionError):
