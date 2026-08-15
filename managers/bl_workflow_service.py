@@ -1,11 +1,15 @@
-"""Tenant-safe B/L workflow service for the Phase 30 workspace.
+"""Tenant-safe Bill of Lading workflow for the production-facing workspace.
 
-The legacy B/L manager remains readable for historical code paths. This service
-owns new create/edit/status operations for the production-facing B/L workspace.
+One Shipment/Job is the consolidation parent. Multiple company-issued B/L
+records may exist under the same Shipment, each with its own shipper,
+consignee and cargo details. Legacy HBL/MBL storage is retained only for
+historical compatibility; the new UI/workflow uses a single BILL OF LADING
+concept.
 """
 from __future__ import annotations
 
 from datetime import date, datetime
+import re
 from typing import Any, Dict, List, Optional
 
 from database.connection import get_connection
@@ -13,7 +17,7 @@ from database.postgres_compat import ensure_phase30_bl_schema
 from managers.document_numbering_service import generate_document_number
 from managers.tenant_context import get_current_tenant_id
 
-BL_TYPES = ("HBL", "MBL")
+BL_TYPES = ("BL",)
 APPROVAL_STATES = ("Draft", "Pending Approval", "Approved")
 
 
@@ -37,8 +41,43 @@ def _safe_date(value: Any) -> Optional[date]:
         return None
 
 
+def _port_code(value: Any, fallback: str = "XXX") -> str:
+    text = _s(value, "").upper()
+    known = {
+        "LAEM CHABANG": "LCH",
+        "LAEM CHABANG, THAILAND": "LCH",
+        "NAHA": "NAH",
+        "NAHA, OKINAWA, JAPAN": "NAH",
+        "BANGKOK": "BKK",
+        "BANGKOK, THAILAND": "BKK",
+        "SINGAPORE": "SIN",
+        "SINGAPORE, SINGAPORE": "SIN",
+        "ROTTERDAM": "RTM",
+        "ROTTERDAM, NETHERLANDS": "RTM",
+    }
+    if text in known:
+        return known[text]
+    match = re.search(r"\(([A-Z]{3})\)", text)
+    if match:
+        return match.group(1)
+    tokens = re.findall(r"[A-Z]+", text)
+    candidate = tokens[0] if tokens else ""
+    return (candidate[:3] or fallback).ljust(3, "X")
+
+
+def _generate_company_bl_no(pol: Any, pod: Any, ref_date: Any = None) -> str:
+    """Generate company B/L number like NATTA-LCHNAH2608003."""
+    origin = _port_code(pol)
+    destination = _port_code(pod)
+    d = _safe_date(ref_date) or date.today()
+    yymm = d.strftime("%y%m")
+    generic = generate_document_number(f"BL-{origin}{destination}", d, digits=3)
+    match = re.search(r"-(\d{3})$", generic)
+    sequence = match.group(1) if match else "001"
+    return f"NATTA-{origin}{destination}{yymm}{sequence}"
+
+
 def _ensure_bl_schema(conn) -> None:
-    """Repair legacy PostgreSQL B/L schema before any B/L query/write."""
     if type(conn).__name__ != "SQLiteConnAdapter":
         ensure_phase30_bl_schema(conn)
 
@@ -52,10 +91,14 @@ def list_bls(job_no: Optional[str] = None) -> List[Dict[str, Any]]:
         if job_no:
             sql += " AND job_no=%s"
             params.append(job_no)
-        sql += " ORDER BY created_at DESC, id DESC"
+        sql += " ORDER BY job_no, consol_seq NULLS FIRST, created_at DESC, id DESC"
         with conn.cursor() as cur:
             cur.execute(sql, tuple(params))
             return [dict(row) for row in cur.fetchall()]
+
+
+def list_job_bls(job_no: str) -> List[Dict[str, Any]]:
+    return list_bls(job_no=job_no)
 
 
 def get_bl(bl_id: int) -> Optional[Dict[str, Any]]:
@@ -71,10 +114,7 @@ def get_bl(bl_id: int) -> Optional[Dict[str, Any]]:
             return dict(row) if row else None
 
 
-def create_bl_from_job(job_no: str, bl_type: str, user: Dict[str, Any], overrides: Optional[Dict[str, Any]] = None) -> int:
-    if bl_type not in BL_TYPES:
-        raise ValueError(f"B/L type must be one of {BL_TYPES}")
-
+def create_bl_from_job(job_no: str, user: Dict[str, Any], overrides: Optional[Dict[str, Any]] = None) -> int:
     tenant = get_current_tenant_id()
     from managers.shipment_manager import get_shipment
     job = get_shipment(job_no)
@@ -82,13 +122,18 @@ def create_bl_from_job(job_no: str, bl_type: str, user: Dict[str, Any], override
         raise ValueError(f"Job '{job_no}' not found.")
 
     etd = _safe_date(job.get("etd"))
+    existing = list_job_bls(job_no)
+    consol_seq = len(existing) + 1
+
     data: Dict[str, Any] = {
         "job_no": job_no,
         "shipment_id": job.get("id"),
         "booking_no": job.get("booking_no"),
-        "bl_type": bl_type,
+        "bl_type": "BL",
         "status": "Draft",
         "approval_status": "Draft",
+        "consol_no": job_no,
+        "consol_seq": consol_seq,
         "shipper": job.get("shipper"),
         "consignee": job.get("consignee"),
         "notify_party": job.get("notify_party"),
@@ -115,16 +160,20 @@ def create_bl_from_job(job_no: str, bl_type: str, user: Dict[str, Any], override
         data.update(overrides)
 
     if not data.get("bl_no"):
-        data["bl_no"] = generate_document_number(bl_type, etd)
+        data["bl_no"] = _generate_company_bl_no(
+            data.get("port_of_loading") or job.get("pol"),
+            data.get("port_of_discharge") or job.get("pod"),
+            data.get("etd") or etd,
+        )
 
     allowed = {
-        "tenant_id", "bl_no", "job_no", "shipment_id", "booking_no", "shipper",
-        "consignee", "notify_party", "place_of_receipt", "port_of_loading",
-        "port_of_discharge", "place_of_delivery", "final_destination", "vessel",
-        "voyage", "etd", "eta", "bl_date", "place_of_issue", "number_of_originals",
-        "freight_term", "freight_payable_at", "marks_numbers", "package_qty", "package_type",
-        "description_of_goods", "gross_weight", "measurement_cbm", "hs_code", "remarks",
-        "special_instructions", "bl_type", "status", "approval_status", "created_by",
+        "tenant_id", "bl_no", "job_no", "shipment_id", "booking_no", "consol_no", "consol_seq",
+        "shipper", "consignee", "notify_party", "place_of_receipt", "port_of_loading",
+        "port_of_discharge", "place_of_delivery", "final_destination", "vessel", "voyage",
+        "etd", "eta", "bl_date", "place_of_issue", "number_of_originals", "freight_term",
+        "freight_payable_at", "marks_numbers", "package_qty", "package_type", "description_of_goods",
+        "gross_weight", "measurement_cbm", "hs_code", "remarks", "special_instructions",
+        "bl_type", "status", "approval_status", "created_by",
     }
     data = {k: v for k, v in data.items() if k in allowed}
     cols = list(data)
