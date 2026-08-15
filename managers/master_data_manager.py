@@ -12,6 +12,9 @@ def list_sales_users() -> List[Dict[str, Any]]:
     """Return active sales-capable users across boolean/integer legacy schemas."""
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # is_active is historically inconsistent across environments.
+            # Compare its textual representation so integer 1 and boolean TRUE
+            # are both accepted without integer=boolean PostgreSQL errors.
             cur.execute("""
                 SELECT id, username, full_name, email, role
                 FROM users
@@ -30,8 +33,6 @@ def list_distinct_job_values(column: str) -> List[str]:
     tenant = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            # Booking schema uses transhipment_port spelling; vessel values are
-            # intentionally consolidated with Mother Vessel / vessel values.
             booking_col = "transhipment_port" if column == "transshipment_port" else column
             if column == "vessel":
                 shipment_sql = "SELECT vessel AS value FROM shipments WHERE tenant_id=%s AND vessel IS NOT NULL AND TRIM(vessel)<>''"
