@@ -1,299 +1,244 @@
-"""A4 Booking Confirmation PDF generator."""
+"""Modern Booking Confirmation PDF.
+Canonical wording: Booking Confirmation, Liner, Mother Vessel.
+Phase 30: transport-specific cargo/equipment and CY/CFS presentation.
+"""
 from pathlib import Path
-from datetime import date, datetime
+from datetime import datetime
+import re
 from typing import Dict, Any
-
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image,
-)
-
+from reportlab.lib.enums import TA_CENTER
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from config import COMPANY, OUTPUT_DIR
 from pdf.fonts import THAI_FONT, THAI_FONT_BOLD
+from core.freight_rules import get_freight_profile, resolve_vessel
 
-BRAND_BLUE = colors.HexColor("#1F4E9E")
-BRAND_GOLD = colors.HexColor("#C9A227")
-HEADER_GREY = colors.HexColor("#9CA3AF")
+BLUE = colors.HexColor('#1F4E9E')
+GOLD = colors.HexColor('#C9A227')
+LIGHT = colors.HexColor('#F5F8FC')
 
 
-def _fmt(d) -> str:
-    if not d:
-        return ""
-    if isinstance(d, str):
+def _s(v, default='—'):
+    if v is None:
+        return default
+    x = str(v).strip()
+    return default if not x or x.lower() in {'none', 'nan', 'nat'} else x
+
+
+def _fmt(v):
+    if not v:
+        return '—'
+    try:
+        return datetime.strptime(str(v)[:10], '%Y-%m-%d').strftime('%d-%b-%Y')
+    except Exception:
+        return _s(v)
+
+
+def _mode(booking: Dict[str, Any]) -> str:
+    return get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type')).transport
+
+
+def _cargo_type(booking: Dict[str, Any]) -> str:
+    return get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type')).cargo_type
+
+
+def _is_sea_fcl(booking: Dict[str, Any]) -> bool:
+    profile = get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type'))
+    return profile.volume_kind == 'CONTAINER' and profile.receiving_kind == 'CY'
+
+
+def _parse_equipment_summary(booking: Dict[str, Any]):
+    """Return [(container_type, qty)] from normalized container fields or legacy summary text."""
+    rows = []
+    ctype = _s(booking.get('container_type'), '').strip()
+    qty = booking.get('container_quantity') or booking.get('quantity')
+    if ctype and qty:
         try:
-            return datetime.strptime(d, "%Y-%m-%d").strftime("%d-%b-%Y")
-        except Exception:
-            return d
-    return d.strftime("%d-%b-%Y")
+            rows.append((ctype, int(float(qty))))
+        except (TypeError, ValueError):
+            rows.append((ctype, _s(qty)))
+
+    summary = _s(booking.get('container_summary'), '').strip()
+    if summary and summary != '—':
+        for match in re.finditer(r'(\d+)\s*[xX×]\s*([0-9\'A-Za-z\-]+)', summary):
+            parsed_qty = int(match.group(1))
+            parsed_type = match.group(2).replace('HC', "'HC").replace('GP', "'GP")
+            if (parsed_type, parsed_qty) not in rows:
+                rows.append((parsed_type, parsed_qty))
+
+    if not rows and summary and summary != '—':
+        rows.append((summary, _s(qty, '')))
+    return rows
 
 
 def _styles():
     base = getSampleStyleSheet()
     return {
-        "company": ParagraphStyle("c", parent=base["Normal"],
-            fontName=THAI_FONT_BOLD, fontSize=18,
-            textColor=BRAND_GOLD, alignment=TA_LEFT,
-            spaceAfter=10, leading=22),
-        "addr": ParagraphStyle("a", parent=base["Normal"],
-            fontName=THAI_FONT, fontSize=9, textColor=BRAND_BLUE,
-            leading=13, spaceBefore=4),
-        "title": ParagraphStyle("t", parent=base["Normal"],
-            fontName=THAI_FONT_BOLD, fontSize=18, textColor=BRAND_BLUE,
-            alignment=TA_CENTER, spaceBefore=4, spaceAfter=10),
-        "label": ParagraphStyle("l", parent=base["Normal"],
-            fontName=THAI_FONT_BOLD, fontSize=9),
-        "value": ParagraphStyle("v", parent=base["Normal"],
-            fontName=THAI_FONT, fontSize=9),
-        "body": ParagraphStyle("b", parent=base["Normal"],
-            fontName=THAI_FONT, fontSize=9, leading=12),
-        "footer": ParagraphStyle("f", parent=base["Normal"],
-            fontName=THAI_FONT, fontSize=8,
-            textColor=colors.grey, alignment=TA_CENTER),
+        'company': ParagraphStyle('company', parent=base['Normal'], fontName=THAI_FONT_BOLD, fontSize=18, textColor=GOLD, leading=22, spaceAfter=6),
+        'addr': ParagraphStyle('addr', parent=base['Normal'], fontName=THAI_FONT, fontSize=8.5, textColor=BLUE, leading=12),
+        'title': ParagraphStyle('title', parent=base['Normal'], fontName=THAI_FONT_BOLD, fontSize=18, textColor=BLUE, alignment=TA_CENTER, spaceBefore=5, spaceAfter=9),
+        'label': ParagraphStyle('label', parent=base['Normal'], fontName=THAI_FONT_BOLD, fontSize=8.5, leading=11),
+        'value': ParagraphStyle('value', parent=base['Normal'], fontName=THAI_FONT, fontSize=8.5, leading=11),
+        'body': ParagraphStyle('body', parent=base['Normal'], fontName=THAI_FONT, fontSize=8.5, leading=12),
+        'watermark': ParagraphStyle('watermark', parent=base['Normal'], fontName=THAI_FONT_BOLD, fontSize=42, textColor=colors.Color(0.75, 0.75, 0.75, alpha=0.22), alignment=TA_CENTER),
     }
 
 
 def _header(styles):
-    logo_path = COMPANY.get("logo_path")
+    logo_path = COMPANY.get('logo_path')
+    logo = Paragraph('', styles['body'])
     if logo_path and Path(logo_path).exists():
-        from reportlab.lib.utils import ImageReader
-        ir = ImageReader(logo_path)
-        iw, ih = ir.getSize()
-        scale = min(45*mm / iw, 28*mm / ih)
-        logo = Image(logo_path, width=iw*scale, height=ih*scale)
-    else:
-        logo = Paragraph("[LOGO]", styles["body"])
-    
-    addr = (f'<font color="#1F4E9E" size="9">'
-            f'{COMPANY["address_line1"]}<br/>'
-            f'{COMPANY["address_line2"]}<br/>'
-            f'{COMPANY["address_line3"]} Tax ID {COMPANY["tax_id"]}<br/>'
-            f'Tel {COMPANY["tel"]} · Email: {COMPANY["email"]}'
-            f'</font>')
-    
-    company_block = [
-        Paragraph(COMPANY["name"], styles["company"]),
-        Spacer(1, 3*mm),
-        Paragraph(addr, styles["addr"]),
-    ]
-    
-    tbl = Table([[logo, company_block]], colWidths=[45*mm, 135*mm])
-    tbl.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("LEFTPADDING", (0,0), (-1,-1), 0),
-        ("RIGHTPADDING", (0,0), (-1,-1), 0),
-        ("TOPPADDING", (0,0), (-1,-1), 0),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 0),
+        logo = Image(logo_path, width=35 * mm, height=22 * mm)
+    addr = f"{COMPANY['address_line1']}<br/>{COMPANY['address_line2']}<br/>{COMPANY['address_line3']}<br/>Tax ID {COMPANY['tax_id']} · Tel {COMPANY['tel']} · Email {COMPANY['email']}"
+    company = [Paragraph(COMPANY['name'], styles['company']), Paragraph(addr, styles['addr'])]
+    t = Table([[logo, company]], colWidths=[40 * mm, 140 * mm])
+    t.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
     ]))
-    return tbl
+    return t
 
 
-def _clean_str(val, default="") -> str:
-    if val is None:
-        return default
-    v = str(val).strip()
-    return default if not v or v.lower() in ("none", "nan") else v
-
-
-def _info_table(b, styles):
-    """Two-column info table."""
-    rev_no = b.get("revision_no")
-    rev_str = f"REV {rev_no}" if rev_no is not None else "REV 0"
-
-    gw = _clean_str(b.get("gross_weight"))
-    cbm = _clean_str(b.get("measurement_cbm"))
-    wt_cbm_str = f"{gw} KG / {cbm} CBM" if gw or cbm else "—"
-
-    pkg_qty = _clean_str(b.get("package_qty"))
-    pkg_unit = _clean_str(b.get("package_unit"), "PKGS")
-    pkg_str = f"{pkg_qty} {pkg_unit}" if pkg_qty else "—"
-
-    carrier = _clean_str(b.get("carrier"))
-    liner = _clean_str(b.get("liner"))
-    carrier_str = f"{carrier} / {liner}".strip(" /") if carrier or liner else "—"
-
-    vessel = _clean_str(b.get("vessel"))
-    voyage = _clean_str(b.get("voyage"))
-    vessel_str = f"{vessel} {voyage}".strip() if vessel or voyage else "—"
-
-    rows_left = [
-        ("Booking No.", _clean_str(b.get("booking_no"))),
-        ("Customer", _clean_str(b.get("customer_name"))),
-        ("Shipper", _clean_str(b.get("shipper"))),
-        ("Consignee", _clean_str(b.get("consignee"))),
-        ("Notify Party", _clean_str(b.get("notify_party"))),
-        ("Cargo Type", _clean_str(b.get("cargo_type"))),
-        ("Commodity", _clean_str(b.get("commodity"))),
-        ("Weight / CBM", wt_cbm_str),
-        ("Packages", pkg_str),
-    ]
-    rows_right = [
-        ("Revision No.", rev_str),
-        ("Job Type", _clean_str(b.get("job_type"))),
-        ("ETD", _fmt(b.get("etd")) or "—"),
-        ("ETA", _fmt(b.get("eta")) or "—"),
-        ("Carrier / Liner", carrier_str),
-        ("Vessel / Voy", vessel_str),
-        ("Containers", _clean_str(b.get("container_summary")) or "—"),
-        ("Freight Term", _clean_str(b.get("freight_term")) or "—"),
-        ("Closing Time", _clean_str(b.get("closing_time")) or "—"),
-    ]
-    
+def _grid(rows, styles, header=None, color=LIGHT):
     data = []
-    for (ll, lv), (rl, rv) in zip(rows_left, rows_right):
+    if header:
+        data.append([Paragraph(f'<b>{header}</b>', styles['label']), '', '', ''])
+    for a, b, c, d in rows:
         data.append([
-            Paragraph(f"<b>{ll}</b>", styles["label"]),
-            Paragraph(f": {lv}", styles["value"]),
-            Paragraph(f"<b>{rl}</b>", styles["label"]),
-            Paragraph(f": {rv}", styles["value"]),
+            Paragraph(f'<b>{a}</b>', styles['label']),
+            Paragraph(_s(b), styles['value']),
+            Paragraph(f'<b>{c}</b>', styles['label']),
+            Paragraph(_s(d), styles['value']),
         ])
-    
-    tbl = Table(data, colWidths=[28*mm, 62*mm, 28*mm, 62*mm])
-    tbl.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("LEFTPADDING", (0,0), (-1,-1), 3),
-        ("TOPPADDING", (0,0), (-1,-1), 2),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
-        ("LINEABOVE", (0,0), (-1,0), 1, colors.black),
-        ("LINEBELOW", (0,-1), (-1,-1), 1, colors.black),
-    ]))
-    return tbl
-
-
-def _ports_table(b, styles):
-    """Routing ports table."""
-    data = [
-        [Paragraph("<b>Routing</b>", styles["label"]), "", "", ""],
-        [Paragraph("<b>POL (Port of Loading)</b>", styles["label"]),
-         Paragraph(_clean_str(b.get("pol")) or "—", styles["value"]),
-         Paragraph("<b>POR (Port of Receipt)</b>", styles["label"]),
-         Paragraph(_clean_str(b.get("por")) or "—", styles["value"])],
-        [Paragraph("<b>POD (Port of Discharge)</b>", styles["label"]),
-         Paragraph(_clean_str(b.get("pod")) or "—", styles["value"]),
-         Paragraph("<b>Final Destination</b>", styles["label"]),
-         Paragraph(_clean_str(b.get("final_destination")) or "—", styles["value"])],
-        [Paragraph("<b>Transhipment Port</b>", styles["label"]),
-         Paragraph(_clean_str(b.get("transhipment_port")) or "—", styles["value"]),
-         "", ""],
+    t = Table(data, colWidths=[39 * mm, 51 * mm, 39 * mm, 51 * mm])
+    cmd = [
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('BOX', (0, 0), (-1, -1), .5, colors.grey),
+        ('INNERGRID', (0, 0), (-1, -1), .25, colors.lightgrey),
     ]
-    tbl = Table(data, colWidths=[40*mm, 50*mm, 40*mm, 50*mm])
-    tbl.setStyle(TableStyle([
-        ("SPAN", (0,0), (-1,0)),
-        ("BACKGROUND", (0,0), (-1,0), BRAND_BLUE),
-        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-        ("ALIGN", (0,0), (-1,0), "CENTER"),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("LEFTPADDING", (0,0), (-1,-1), 4),
-        ("TOPPADDING", (0,0), (-1,-1), 4),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
-        ("BOX", (0,0), (-1,-1), 0.5, colors.black),
-        ("INNERGRID", (0,0), (-1,-1), 0.3, colors.grey),
-    ]))
-    return tbl
+    if header:
+        cmd += [
+            ('SPAN', (0, 0), (-1, 0)),
+            ('BACKGROUND', (0, 0), (-1, 0), color),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ]
+    t.setStyle(TableStyle(cmd))
+    return t
 
 
-def _dates_table(b, styles):
-    """CY/CFS/Return dates table."""
-    data = [
-        [Paragraph("<b>Container Yard / CFS Schedule</b>", styles["label"]),
-         "", "", ""],
-        [Paragraph("<b>CY Date</b>", styles["label"]),
-         Paragraph(_fmt(b.get("cy_date")) or "—", styles["value"]),
-         Paragraph("<b>CY Place</b>", styles["label"]),
-         Paragraph(_clean_str(b.get("cy_place")) or "—", styles["value"])],
-        [Paragraph("<b>CFS Date</b>", styles["label"]),
-         Paragraph(_fmt(b.get("cfs_date")) or "—", styles["value"]),
-         Paragraph("<b>CFS Place</b>", styles["label"]),
-         Paragraph(_clean_str(b.get("cfs_place")) or "—", styles["value"])],
-        [Paragraph("<b>Customer Return Date</b>", styles["label"]),
-         Paragraph(_fmt(b.get("customer_return_date")) or "—", styles["value"]),
-         Paragraph("<b>Return Place</b>", styles["label"]),
-         Paragraph(_clean_str(b.get("return_place")) or "—", styles["value"])],
-    ]
-    tbl = Table(data, colWidths=[40*mm, 50*mm, 40*mm, 50*mm])
-    tbl.setStyle(TableStyle([
-        ("SPAN", (0,0), (-1,0)),
-        ("BACKGROUND", (0,0), (-1,0), BRAND_GOLD),
-        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-        ("ALIGN", (0,0), (-1,0), "CENTER"),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("LEFTPADDING", (0,0), (-1,-1), 4),
-        ("TOPPADDING", (0,0), (-1,-1), 4),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
-        ("BOX", (0,0), (-1,-1), 0.5, colors.black),
-        ("INNERGRID", (0,0), (-1,-1), 0.3, colors.grey),
-    ]))
-    return tbl
+def _watermark(canvas, doc, approval_status):
+    canvas.saveState()
+    if str(approval_status or 'Draft').strip().lower() in {'draft', 'pending approval', 'pending'}:
+        canvas.setFont(THAI_FONT_BOLD, 46)
+        canvas.setFillColor(colors.Color(0.72, 0.72, 0.72, alpha=0.24))
+        canvas.translate(A4[0] / 2, A4[1] / 2)
+        canvas.rotate(35)
+        canvas.drawCentredString(0, 0, 'DRAFT')
+    canvas.restoreState()
+    canvas.saveState()
+    canvas.setFont(THAI_FONT, 8)
+    canvas.setFillColor(colors.grey)
+    canvas.drawCentredString(A4[0] / 2, 10 * mm, f'Page {doc.page}')
+    canvas.restoreState()
 
 
-def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None) -> str:
-    """Generate Booking Confirmation PDF."""
-    bno = booking.get("booking_no", "booking")
-    rev = booking.get("revision_no", 0)
-    
+def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None, approval_status: str = 'Draft') -> str:
+    bno = _s(booking.get('booking_no'), 'BOOKING')
     if output_path is None:
-        if rev and int(rev) > 0:
-            output_path = str(Path(OUTPUT_DIR) / f"BC_{bno}_REV_{rev}.pdf")
-        else:
-            output_path = str(Path(OUTPUT_DIR) / f"BC_{bno}.pdf")
-    
+        output_path = str(Path(OUTPUT_DIR) / f'BC_{bno}.pdf')
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    
     doc = SimpleDocTemplate(
-        output_path, pagesize=A4,
-        leftMargin=15*mm, rightMargin=15*mm,
-        topMargin=15*mm, bottomMargin=20*mm,
-        title=f"Booking Confirmation {bno}",
-        author=COMPANY["name"],
+        output_path,
+        pagesize=A4,
+        leftMargin=15 * mm,
+        rightMargin=15 * mm,
+        topMargin=15 * mm,
+        bottomMargin=18 * mm,
+        title=f'Booking Confirmation {bno}',
+        author=COMPANY['name'],
     )
-    styles = _styles()
-    story = []
-    
-    story.append(_header(styles))
-    story.append(Spacer(1, 4*mm))
-    title_text = "BOOKING CONFIRMATION"
-    if rev and int(rev) > 0:
-        title_text += f" (REV {rev})"
-    story.append(Paragraph(title_text, styles["title"]))
-    story.append(_info_table(booking, styles))
-    story.append(Spacer(1, 4*mm))
-    story.append(_ports_table(booking, styles))
-    story.append(Spacer(1, 4*mm))
-    story.append(_dates_table(booking, styles))
-    story.append(Spacer(1, 4*mm))
-    
-    remark_val = _clean_str(booking.get("remark"))
-    if remark_val:
-        story.append(Paragraph("<b>Remark / Special Instructions:</b>",
-                                styles["label"]))
-        story.append(Paragraph(remark_val.replace("\n", "<br/>"),
-                                styles["body"]))
-        story.append(Spacer(1, 4*mm))
+    stl = _styles()
+    story = [_header(stl), Spacer(1, 4 * mm), Paragraph('BOOKING CONFIRMATION', stl['title'])]
 
-    
-    # Signature
-    sig_data = [[
-        [Paragraph("Yours sincerely,", styles["body"]),
-         Spacer(1, 18*mm),
-         Paragraph("_" * 30, styles["body"]),
-         Paragraph(f"<b>{COMPANY['signer_name']}</b>", styles["body"]),
-         Paragraph(COMPANY["signer_title"], styles["body"])],
-        [Spacer(1, 18*mm + 12),
-         Paragraph("_" * 30, styles["body"]),
-         Paragraph("Authorized Signature", styles["body"])],
-    ]]
-    sig = Table(sig_data, colWidths=[90*mm, 90*mm])
-    sig.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("ALIGN", (0,0), (-1,-1), "CENTER"),
-    ]))
-    story.append(Spacer(1, 8*mm))
-    story.append(sig)
-    
-    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    story += [_grid([
+        ('Booking No.', booking.get('booking_no'), 'Carrier Booking No.', booking.get('carrier_booking_no')),
+        ('Customer', booking.get('customer_name'), 'Job Type', booking.get('job_type')),
+        ('Shipper', booking.get('shipper'), 'Consignee', booking.get('consignee')),
+        ('ETD', _fmt(booking.get('etd')), 'ETA', _fmt(booking.get('eta'))),
+    ], stl, header='Booking Details', color=BLUE), Spacer(1, 4 * mm)]
+
+    vessel = resolve_vessel(booking.get('m_vessel') or booking.get('mother_vessel'), booking.get('vessel'))
+    story += [_grid([
+        ('POL', booking.get('pol'), 'POR', booking.get('por')),
+        ('Transshipment Port', booking.get('transhipment_port'), 'POD', booking.get('pod')),
+        ('Liner', booking.get('liner') or booking.get('carrier'), 'Vessel', vessel),
+        ('Voyage', booking.get('voyage'), 'Final Destination', booking.get('final_destination')),
+    ], stl, header='Routing & Vessel', color=BLUE), Spacer(1, 4 * mm)]
+
+    profile = get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type'))
+
+    if profile.volume_kind == 'CONTAINER':
+        equipment_rows = _parse_equipment_summary(booking)
+        cargo_rows = []
+        if equipment_rows:
+            for idx, (ctype, qty) in enumerate(equipment_rows):
+                if idx == 0:
+                    cargo_rows.append(('Container Type', ctype, 'Quantity', qty))
+                else:
+                    cargo_rows.append(('', ctype, '', qty))
+        else:
+            cargo_rows.append(('Equipment', booking.get('container_summary'), 'Quantity', booking.get('quantity') or booking.get('container_quantity')))
+        story += [_grid(cargo_rows, stl, header='Cargo & Equipment', color=BLUE), Spacer(1, 4 * mm)]
+    elif profile.volume_kind == 'KG':
+        story += [_grid([
+            ('Packages', f"{_s(booking.get('package_qty'), '0')} {_s(booking.get('package_unit'), 'PKGS')}", 'Gross Weight', f"{_s(booking.get('gross_weight'), '0')} KG"),
+            ('Chargeable Weight', f"{_s(booking.get('chargeable_weight'), '—')} KG", 'Commodity', booking.get('commodity')),
+        ], stl, header='Cargo Details', color=BLUE), Spacer(1, 4 * mm)]
+    elif profile.volume_kind == 'TRUCK':
+        story += [_grid([
+            ('Truck Type', booking.get('truck_type') or booking.get('container_summary'), 'Quantity', booking.get('quantity') or booking.get('truck_quantity')),
+            ('Commodity', booking.get('commodity'), 'Gross Weight', f"{_s(booking.get('gross_weight'), '0')} KG"),
+        ], stl, header='Transport Equipment', color=BLUE), Spacer(1, 4 * mm)]
+    else:
+        story += [_grid([
+            ('Packages', f"{_s(booking.get('package_qty'), '0')} {_s(booking.get('package_unit'), 'PKGS')}", 'Gross Weight', f"{_s(booking.get('gross_weight'), '0')} KG"),
+            ('Volume', f"{_s(booking.get('measurement_cbm'), '0')} CBM", 'Commodity', booking.get('commodity')),
+        ], stl, header='Cargo Details', color=BLUE), Spacer(1, 4 * mm)]
+
+    if profile.show_cy:
+        terminal_rows = [
+            ('CY Date', _fmt(booking.get('cy_date')), 'CY Place', booking.get('cy_place')),
+            ('Container Return Date', _fmt(booking.get('customer_return_date')), 'Return Place', booking.get('return_place')),
+        ]
+        story += [_grid(terminal_rows, stl, header='CY / Container Schedule', color=GOLD), Spacer(1, 4 * mm)]
+    elif profile.show_cfs:
+        terminal_rows = [
+            ('CFS Date', _fmt(booking.get('cfs_date')), 'CFS Place', booking.get('cfs_place')),
+        ]
+        story += [_grid(terminal_rows, stl, header='CFS Receiving', color=GOLD), Spacer(1, 4 * mm)]
+
+    remark = _s(booking.get('remark'), '')
+    if remark:
+        story += [Paragraph('<b>Remarks</b>', stl['label']), Paragraph(remark.replace('\n', '<br/>'), stl['body']), Spacer(1, 4 * mm)]
+
+    sig = Table([
+        [Paragraph('Yours sincerely,', stl['body']), Paragraph('_' * 30, stl['body'])],
+        [Spacer(1, 14 * mm), Paragraph(f"<b>{COMPANY['signer_name']}</b><br/>{COMPANY['signer_title']}", stl['body'])],
+    ], colWidths=[90 * mm, 90 * mm])
+    sig.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('ALIGN', (0, 0), (-1, -1), 'CENTER')]))
+    story += [Spacer(1, 7 * mm), sig]
+
+    doc.build(story, onFirstPage=lambda c, d: _watermark(c, d, approval_status), onLaterPages=lambda c, d: _watermark(c, d, approval_status))
     return output_path
 
 
@@ -301,5 +246,5 @@ def _footer(canvas, doc):
     canvas.saveState()
     canvas.setFont(THAI_FONT, 8)
     canvas.setFillColor(colors.grey)
-    canvas.drawCentredString(A4[0] / 2, 10*mm, f"Page {doc.page}")
+    canvas.drawCentredString(A4[0] / 2, 10 * mm, f'Page {doc.page}')
     canvas.restoreState()

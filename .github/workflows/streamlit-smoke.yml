@@ -1,0 +1,34 @@
+name: Streamlit Production Smoke
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+      - feature/phase30-preview
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+
+jobs:
+  streamlit-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Streamlit app smoke test
+        uses: streamlit/streamlit-app-action@v0.0.3
+        with:
+          app-path: Dashboard.py
+          ruff: false
+          skip-smoke: false
+          pytest-args: "-q tests"

@@ -3,7 +3,7 @@ name: Phase 30 Verification
 on:
   push:
     branches:
-      - phase30-live-ui-pdf
+      - feature/phase30-preview
   pull_request:
     branches:
       - main
@@ -11,6 +11,8 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,13 +24,70 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest
       - name: Compile Python source
-        run: python -m compileall -q managers views database pdf Dashboard.py
+        run: python -m compileall -q managers views database pdf core ui tests Dashboard.py
       - name: Verify Phase 30 imports
         run: |
           python - <<'PY'
           import managers.document_duplicate_service
+          import managers.document_approval_manager
+          import managers.master_data_manager
+          import managers.customer_manager
+          import managers.quotation_ssot_service
+          import managers.booking_ssot_service
+          import managers.ssot_write_adapter
+          import managers.charge_master_manager
+          import managers.profit_manager
+          import managers.bl_workflow_service
+          import managers.ap_manager
+          import managers.vendor_manager
           import views.billing_view
+          import views.finance_v2_view
           import views.bl_view
+          import views.bl_v2_view
+          import views.booking_v2_view
+          import views.quotation_v2_view
+          import views.document_v2_view
+          import core.freight_rules
+          import core.booking_presentation
+          import core.document_preflight
+          import ui.design_system
+          import ui.document_actions
+          import pdf.profitability_pdf
           print("Phase 30 imports: PASS")
           PY
+      - name: Test canonical freight rules
+        run: pytest -q tests/test_freight_rules.py
+      - name: Test booking presentation
+        run: pytest -q tests/test_booking_presentation.py
+      - name: Test booking workspace
+        run: pytest -q tests/test_booking_v2_view.py
+      - name: Test booking SSOT write contract
+        run: pytest -q tests/test_booking_ssot_service.py
+      - name: Test quotation workspace
+        run: pytest -q tests/test_quotation_v2_view.py
+      - name: Test quotation SSOT write contract
+        run: pytest -q tests/test_quotation_ssot_service.py
+      - name: Test charge master contract
+        run: pytest -q tests/test_charge_master_manager.py
+      - name: Test finance schema contract
+        run: pytest -q tests/test_finance_schema_contract.py
+      - name: Test document numbering schema
+        run: pytest -q tests/test_document_numbering_schema.py
+      - name: Test profitability tenant contract
+        run: pytest -q tests/test_profitability_contract.py
+      - name: Test Payables schema contract
+        run: pytest -q tests/test_payables_schema_contract.py
+      - name: Test B/L workspace
+        run: pytest -q tests/test_bl_v2_view.py
+      - name: Test Finance workspace
+        run: pytest -q tests/test_finance_v2_view.py
+      - name: Test Document Center workspace
+        run: pytest -q tests/test_document_v2_view.py
+      - name: Test PDF smoke
+        run: pytest -q tests/test_pdf_smoke.py
+      - name: Test approval workflow policy
+        run: pytest -q tests/test_document_approval_manager.py
+      - name: Test document preflight
+        run: pytest -q tests/test_document_preflight.py

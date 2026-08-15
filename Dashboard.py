@@ -2,288 +2,169 @@ import traceback
 import importlib
 import streamlit as st
 
-# =========================================================
-# PAGE CONFIG (ENTERPRISE STANDARD)
-# =========================================================
+from managers.auth_manager import ROLE_LABELS, can_read
+from managers.session_manager import delete_session, get_user_by_token
+from database.connection import init_database
+from database.local_schema_compat import ensure_phase30_local_schema
+from ui.design_system import apply_theme, page_header
+
 st.set_page_config(
-    page_title="FreightFlow NTT, | Enterprise Logistics ERP",
+    page_title="Smart Freight NTT",
     page_icon="🚢",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+apply_theme()
 
-# Custom CSS to global elements for professional look & feel
-st.markdown("""
-<style>
-    /* Main Content Padding Optimization */
-    .block-container {
-        padding-top: 1.5rem !important;
-        padding-bottom: 2rem !important;
-    }
-    /* Metric Card Polish */
-    div[data-testid="stMetric"] {
-        background-color: #0F172A;
-        border: 1px solid #1E293B;
-        padding: 1rem 1.25rem !important;
-        border-radius: 12px !important;
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-    }
-    div[data-testid="stMetric"] label {
-        color: #94A3B8 !important;
-        font-size: 0.85rem !important;
-        font-weight: 600 !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.05em !important;
-    }
-    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-        color: #F8FAFC !important;
-        font-size: 1.75rem !important;
-        font-weight: 700 !important;
-    }
-</style>
-""", unsafe_allow_html=True)
+ERP_MODULES = {
+    "EXECUTIVE": [
+        ("dashboard", "Home", "dashboard"),
+        ("reports", "Reports", "reports"),
+    ],
+    "SALES": [
+        ("crm", "Customers", "crm"),
+        ("quotation", "Quotations", "quotation"),
+        ("booking", "Bookings", "booking"),
+    ],
+    "OPERATIONS": [
+        ("job_control", "Jobs", "shipment"),
+        ("bl", "Bills of Lading", "bl"),
+    ],
+    "DOCUMENTS": [
+        ("document", "Documents", "document"),
+    ],
+    "FINANCE": [
+        ("billing", "Finance", "billing"),
+        ("ap", "Payables", "ap"),
+        ("profit", "Profitability", "profit"),
+    ],
+    "ADMIN": [
+        ("users", "Users", "users"),
+        ("settings", "Settings", "settings"),
+    ],
+}
 
-# =========================================================
-# IMPORTS SAFE (POSTGRESQL & SERVICE LAYER)
-# =========================================================
-try:
-    from managers.auth_manager import ROLE_LABELS, can_read
-    from managers.session_manager import delete_session, get_user_by_token
-except ImportError as ie:
-    st.error(f"❌ Critical Component Missing: {str(ie)}")
-    st.stop()
-
-try:
-    from database.connection import init_database
-except ImportError:
-    init_database = None
+PAGE_ROUTES = {
+    page_id: (f"views.{module_name}_view", "render")
+    for modules in ERP_MODULES.values()
+    for page_id, _label, module_name in modules
+}
+PAGE_ROUTES["booking"] = ("views.booking_v2_view", "render")
+PAGE_ROUTES["quotation"] = ("views.quotation_v2_view", "render")
+PAGE_ROUTES["bl"] = ("views.bl_v2_view", "render")
+PAGE_ROUTES["billing"] = ("views.finance_v2_view", "render")
+PAGE_ROUTES["document"] = ("views.document_v2_view", "render")
 
 
-# =========================================================
-# SAFE DATABASE BOOTSTRAP (POSTGRES RESILIENT MODE)
-# =========================================================
-def bootstrap():
-    if not init_database:
-        st.sidebar.error("⚠️ Database connection module could not be initialized.")
-        return False
-    try:
-        init_database()
-        return True
-    except Exception as e:
-        # Resilient implementation: Application keeps running with descriptive fallback warnings
-        st.sidebar.warning("⚠️ PostgreSQL Connection Failure. Operating in offline/degraded mode.")
-        print(f"[CRITICAL] DB BOOT ERROR (PostgreSQL): {str(e)}")
-        return False
-
-
-is_db_connected = bootstrap()
-
-
-# =========================================================
-# ROUTINE SESSION RESTORE
-# =========================================================
-def restore_session():
-    if "user" in st.session_state:
-        return st.session_state["user"]
-
+def _restore_user():
+    user = st.session_state.get("user")
+    if user:
+        return user
     token = st.query_params.get("token")
     if not token:
         return None
-
     try:
-        user_record = get_user_by_token(token)
-        if not user_record:
-            return None
-
-        st.session_state["user"] = user_record
-        st.session_state["session_token"] = token
-        return user_record
-    except Exception as e:
-        print(f"[SESSION RESTORE ERROR]: {str(e)}")
+        user = get_user_by_token(token)
+    except Exception:
         return None
+    if user:
+        st.session_state["user"] = user
+        st.session_state["session_token"] = token
+    return user
 
 
-user = restore_session()
-
-# =========================================================
-# SECURITY & AUTHENTICATION GATE
-# =========================================================
-if not user:
+def _bootstrap_db():
     try:
-        from views.login_view import render as render_login
-        render_login()
-    except Exception as e:
-        st.error("Authentication Service Unavailable.")
-        st.code(str(e), language="python")
-    st.stop()
+        init_database()
+        ensure_phase30_local_schema()
+        return True
+    except Exception as exc:
+        st.sidebar.warning("Database connection is unavailable.")
+        print(f"[DB BOOT ERROR] {exc}")
+        return False
 
 
-# =========================================================
-# ERP REPOSITORIES & ACCESS CONTROL
-# =========================================================
-# Professional ERP Hierarchy
-ERP_MODULES = {
-    "EXECUTIVE": [
-        ("dashboard", "📊 Dashboard", "dashboard"),
-        ("reports", "📈 Management Report", "reports"),
-    ],
-    "SALES": [
-        ("crm", "👥 Customers", "crm"),
-        ("quotation", "📄 Quotations", "quotation"),
-        ("booking", "📑 Bookings", "booking"),
-    ],
-    "OPERATIONS": [
-        ("job_control", "📦 Jobs / Job 360", "shipment"),
-        ("bl", "📜 Bills of Lading", "bl"),
-    ],
-    "DOCUMENTS": [
-        ("document", "📎 Document Center", "document"),
-    ],
-    "FINANCE": [
-        ("billing", "💰 AR (Billing)", "billing"),
-        ("ap", "💸 AP (Payable)", "ap"),
-        ("profit", "💹 Profitability", "profit"),
-    ],
-    "COMPLIANCE": [
-        ("regulatory", "⚖️ Compliance / Regulatory", "document"),
-    ],
-    "ADMIN": [
-        ("users", "👤 Users", "users"),
-        ("settings", "⚙️ Settings", "settings"),
-    ]
-}
+def _allowed_pages(role: str):
+    pages = []
+    for group, modules in ERP_MODULES.items():
+        allowed = [m for m in modules if can_read(role, m[2])]
+        if allowed:
+            pages.append((group, allowed))
+    return pages
 
-user_role = str(user.get("role", "guest")).lower()
 
-# Extract routing metadata safely
-query_params = st.query_params.to_dict()
-current_page = query_params.get("page", "dashboard")
+def _sync_navigation(allowed_ids):
+    query_page = st.query_params.get("page")
+    current = st.session_state.get("current_navigation")
+    if query_page in allowed_ids:
+        current = query_page
+    if current not in allowed_ids:
+        current = "dashboard" if "dashboard" in allowed_ids else allowed_ids[0]
+    st.session_state["current_navigation"] = current
+    st.query_params["page"] = current
+    return current
 
-# =========================================================
-# SIDEBAR UI (ENTERPRISE ERP STYLE)
-# =========================================================
-with st.sidebar:
-    # Corporate Identity Header Card
-    st.markdown(f"""
-    <div style="
-        padding: 20px;
-        border-radius: 14px;
-        background: linear-gradient(135deg, #1E293B, #0F172A);
-        border: 1px solid #334155;
-        margin-bottom: 24px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    ">
-        <div style="font-size: 20px; font-weight: 800; color: #F8FAFC; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px;">
-            <span>🚢</span> FreightFlow NTT,
-        </div>
-        <div style="height: 1px; background: #334155; margin: 12px 0;"></div>
-        <div style="font-size: 14px; font-weight: 600; color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-            {user.get('full_name', 'Operator Active')}
-        </div>
-        <div style="font-size: 11px; color: #38BDF8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">
-            ⚙️ {ROLE_LABELS.get(user_role, user_role.upper())}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
 
-    # Search Bar (Global Search hook placeholder)
-    st.text_input("🔍 Global Search (Job, Doc, HBL)", key="global_search", placeholder="Type and hit Enter...")
-    st.markdown("<hr style='margin-top:10px; margin-bottom:10px; opacity:0.2;'/>", unsafe_allow_html=True)
-
-    # Render Hierarchical Navigation
-    for category, modules in ERP_MODULES.items():
-        # Filter allowed modules based on RBAC
-        allowed_modules = [m for m in modules if can_read(user_role, m[2])]
-        
-        if allowed_modules:
-            with st.expander(category, expanded=any(m[0] == current_page for m in allowed_modules)):
-                for page_id, label, _ in allowed_modules:
-                    is_active = (current_page == page_id)
-                    if st.button(
-                        label,
-                        key=f"nav_btn_{page_id}",
-                        use_container_width=True,
-                        type="primary" if is_active else "secondary"
-                    ):
-                        st.query_params["page"] = page_id
-                        st.rerun()
-
-    st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
-    st.markdown("---")
-
-    # Logout Engine Execution
-    if st.button("🚪 System Terminate (Logout)", use_container_width=True):
+def main():
+    _bootstrap_db()
+    user = _restore_user()
+    if not user:
         try:
-            active_token = st.session_state.get("session_token")
-            if active_token:
-                delete_session(active_token)
-        except Exception as e:
-            print(f"[LOGOUT EXCEPTION]: {str(e)}")
-
-        st.session_state.clear()
-        st.query_params.clear()
-        st.rerun()
-
-
-# =========================================================
-# CENTRAL PAGE HEADER COMPONENT
-# =========================================================
-page_title_text = current_page.replace('_', ' ').title()
-st.markdown(f"""
-<div style="
-    padding: 20px 24px;
-    border-radius: 14px;
-    background: linear-gradient(90deg, #0F172A 0%, #1E293B 100%);
-    border: 1px solid #1E293B;
-    margin-bottom: 24px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
-            <h1 style="font-size: 24px; font-weight: 800; color: #F8FAFC; margin: 0; letter-spacing: -0.5px;">
-                {page_title_text}
-            </h1>
-            <p style="color: #94A3B8; font-size: 13px; margin: 4px 0 0 0; letter-spacing: 0.2px;">
-                Enterprise Logistics ERP System
-            </p>
-        </div>
-        <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.2); padding: 6px 12px; border-radius: 20px; color: #38BDF8; font-size: 11px; font-weight: 700; text-transform: uppercase;">
-            🟢 System Online
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-
-# =========================================================
-# ASYNCHRONOUS SAFE VIEW MODULE DYNAMIC ROUTER
-# =========================================================
-# Build a flat routing map from ERP_MODULES
-PAGE_ROUTES = {}
-for category, modules in ERP_MODULES.items():
-    for page_id, label, module_name in modules:
-        PAGE_ROUTES[page_id] = (f"views.{module_name}_view", "render")
-
-if current_page not in PAGE_ROUTES:
-    st.error("🎯 Resource Execution Failure: Target context router location mismatch.")
-    st.stop()
-
-module_path, fn_name = PAGE_ROUTES[current_page]
-
-try:
-    view_module = importlib.import_module(module_path)
-    
-    if not hasattr(view_module, fn_name):
-        st.error(f"❌ Compilation Error: View module missing expected entrypoint '{fn_name}'")
+            from views.login_view import render as render_login
+            render_login()
+        except Exception as exc:
+            st.error("Authentication service is unavailable.")
+            st.code(str(exc), language="text")
         st.stop()
-        
-    render_target = getattr(view_module, fn_name)
-    render_target()
 
-except Exception as view_exec_err:
-    st.error("🚨 Critical Crash Intercepted inside Runtime Pipeline View")
-    
-    with st.expander("Diagnostic Traceback Logs", expanded=True):
-        st.code(traceback.format_exc(), language="python")
-    
-    st.exception(view_exec_err)
+    role = str(user.get("role", "guest")).lower()
+    groups = _allowed_pages(role)
+    allowed_ids = [page_id for _group, modules in groups for page_id, _label, _module in modules]
+    current_page = _sync_navigation(allowed_ids)
+
+    with st.sidebar:
+        st.markdown("**SMART FREIGHT NTT**")
+        st.caption(f"{user.get('full_name', 'Operator')} · {ROLE_LABELS.get(role, role.upper())}")
+        st.divider()
+        for group, modules in groups:
+            st.caption(group.title())
+            for page_id, label, _module in modules:
+                if st.button(
+                    label,
+                    key=f"nav_{page_id}",
+                    width="stretch",
+                    type="primary" if page_id == current_page else "secondary",
+                ):
+                    st.session_state["current_navigation"] = page_id
+                    st.query_params["page"] = page_id
+                    st.rerun()
+        st.divider()
+        if st.button("Log out", width="stretch"):
+            try:
+                token = st.session_state.get("session_token")
+                if token:
+                    delete_session(token)
+            finally:
+                st.session_state.clear()
+                st.query_params.clear()
+                st.rerun()
+
+    page_header(current_page, status_text="Online")
+
+    module_path, fn_name = PAGE_ROUTES[current_page]
+    try:
+        module = importlib.import_module(module_path)
+        renderer = getattr(module, fn_name, None)
+        if not renderer:
+            st.error(f"View entrypoint '{fn_name}' is missing.")
+            st.stop()
+        renderer()
+    except Exception as exc:
+        st.error("Unable to load this module.")
+        with st.expander("Technical details", expanded=False):
+            st.code(traceback.format_exc(), language="python")
+        st.exception(exc)
+
+
+if __name__ == "__main__":
+    main()

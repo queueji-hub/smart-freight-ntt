@@ -29,7 +29,7 @@ from managers.document_duplicate_service import (
     get_invoice_snapshot,
     update_invoice_draft,
 )
-from pdf.invoice_pdf import generate_invoice_pdf
+from managers.document_approval_manager import get_approval_status
 
 DOC_TYPES: Dict[str, str] = {
     "INV": "Invoice",
@@ -65,6 +65,40 @@ def _render_kpis() -> None:
     c3.metric("Outstanding", f"฿ {float(kpi.get('outstanding', 0)):,.2f}")
 
 
+def _approval_status(doc_no: str, fallback: str = "Draft") -> str:
+    try:
+        return get_approval_status("invoice", doc_no)
+    except Exception:
+        value = str(fallback or "Draft").strip().upper()
+        return "Approved" if value == "APPROVED" else ("Pending Approval" if value in {"PENDING", "PENDING APPROVAL", "SUBMITTED"} else "Draft")
+
+
+def _prepare_invoice_pdf(doc_no: str) -> None:
+    """Generate the invoice PDF only after the user explicitly clicks PDF."""
+    bytes_key = f"inv_pdf_bytes_{doc_no}"
+    name_key = f"inv_pdf_name_{doc_no}"
+    try:
+        from pdf.invoice_pdf import generate_invoice_pdf
+
+        inv, _items = get_invoice_snapshot(doc_no)
+        status = _approval_status(doc_no, inv.get("status"))
+        # Keep the existing PDF generator signature unchanged. Its current
+        # watermark decision is based on payment_status/status, so map the
+        # approval state into a temporary render-only copy.
+        inv = dict(inv)
+        inv["approval_status"] = status
+        inv["status"] = status
+        inv["payment_status"] = "ISSUED" if status == "Approved" else "DRAFT"
+        pdf_path = generate_invoice_pdf(inv)
+        if not pdf_path or not os.path.exists(pdf_path):
+            raise FileNotFoundError("Invoice PDF generator did not return a valid file.")
+        with open(pdf_path, "rb") as fh:
+            st.session_state[bytes_key] = fh.read()
+        st.session_state[name_key] = os.path.basename(pdf_path)
+    except Exception as exc:
+        st.error(f"PDF: {exc}")
+
+
 def render() -> None:
     user = st.session_state.get("user", {})
     can_edit = can_write(user.get("role", ""), "billing")
@@ -75,7 +109,6 @@ def render() -> None:
     st.divider()
 
     tabs = st.tabs(["Documents", "Payments"] + (["New Document"] if can_edit else []))
-    # Keep the visual order predictable: Documents, Payments, New Document.
     with tabs[0]:
         _list_view(user, can_edit)
     with tabs[1]:
@@ -93,7 +126,7 @@ def _create_form(user: Dict[str, Any]) -> None:
         customers = list_customers() or []
         options = [(0, "Select customer")] + [(c.get("id"), c.get("company_name", "Unknown")) for c in customers]
         idx = st.selectbox("Customer", range(len(options)), format_func=lambda i: options[i][1], key="fin_new_customer")
-        customer_id, customer_name = options[idx]
+        customer_id, _customer_label = options[idx]
         jobs = list_shipments() or []
         jobs_opt = [("", "No linked Job")] + [(j.get("job_no"), f"{j.get('job_no')} — {j.get('customer_name', '')}") for j in jobs[:200]]
         job_idx = st.selectbox("Linked Job", range(len(jobs_opt)), format_func=lambda i: jobs_opt[i][1], key="fin_new_job")
@@ -137,7 +170,7 @@ def _create_form(user: Dict[str, Any]) -> None:
         try:
             payload = {
                 "doc_type": doc_type, "job_no": job_no or None, "customer_id": customer_id,
-                "customer_name": customer_name, "issue_date": issue_date.isoformat(),
+                "issue_date": issue_date.isoformat(),
                 "due_date": due_date.isoformat(), "currency": currency,
                 "ref_doc_no": ref_doc.strip(), "remark": remark.strip(),
                 "created_by": user.get("username", "System"), "status": "DRAFT",
@@ -190,15 +223,22 @@ def _list_view(user: Dict[str, Any], can_edit: bool) -> None:
     rec = next(r for r in filtered if r.get("doc_no") == selected)
     a1, a2, a3, a4 = st.columns([3, 1, 1, 1])
     with a1:
-        st.caption(f"{rec.get('doc_type', 'DOC')} · {rec.get('customer_name', '')} · {rec.get('status', '')}")
+        st.caption(f"{rec.get('doc_type', 'DOC')} · {rec.get('customer_name', '')} · {_approval_status(selected, rec.get('status'))}")
     with a2:
-        try:
-            inv, items = get_invoice_snapshot(selected)
-            pdf_path = generate_invoice_pdf(inv)
-            with open(pdf_path, "rb") as fh:
-                st.download_button("PDF", fh.read(), file_name=os.path.basename(pdf_path), mime="application/pdf", key=f"fin_pdf_{selected}", use_container_width=True)
-        except Exception as exc:
-            st.error(f"PDF: {exc}")
+        bytes_key = f"inv_pdf_bytes_{selected}"
+        name_key = f"inv_pdf_name_{selected}"
+        if st.button("PDF", key=f"fin_pdf_prepare_{selected}", type="primary", use_container_width=True):
+            _prepare_invoice_pdf(selected)
+            st.rerun()
+        if bytes_key in st.session_state:
+            st.download_button(
+                "Download",
+                st.session_state[bytes_key],
+                file_name=st.session_state.get(name_key, f"{selected}.pdf"),
+                mime="application/pdf",
+                key=f"fin_pdf_download_{selected}",
+                use_container_width=True,
+            )
     with a3:
         if can_edit and str(rec.get("status", "")).upper() == "DRAFT":
             if st.button("Edit", key=f"fin_edit_{selected}", use_container_width=True):
@@ -231,8 +271,23 @@ def _edit_form(doc_no: str, user: Dict[str, Any]) -> None:
         st.warning("Only DRAFT documents can be edited.")
         return
 
+    customers = list_customers() or []
+    customer_map = {c.get("id"): c.get("company_name", "Unknown") for c in customers if c.get("id")}
+    customer_ids = list(customer_map)
+    current_customer_id = inv.get("customer_id")
+    if current_customer_id not in customer_ids:
+        st.error("Customer master data is missing for this invoice.")
+        return
+    customer_index = customer_ids.index(current_customer_id)
+
     c1, c2 = st.columns(2)
-    customer_name = c1.text_input("Customer", value=str(inv.get("customer_name") or ""), key=f"fe_c_{doc_no}")
+    selected_customer_id = c1.selectbox(
+        "Customer",
+        customer_ids,
+        index=customer_index,
+        format_func=lambda x: customer_map.get(x, "Unknown"),
+        key=f"fe_customer_{doc_no}",
+    )
     job_no = c2.text_input("Linked Job", value=str(inv.get("job_no") or ""), key=f"fe_j_{doc_no}")
     d1, d2, d3 = st.columns(3)
     issue = d1.date_input("Issue Date", value=inv.get("issue_date") or date.today(), key=f"fe_i_{doc_no}")
@@ -254,7 +309,7 @@ def _edit_form(doc_no: str, user: Dict[str, Any]) -> None:
     if b1.button("Save", type="primary", key=f"fe_save_{doc_no}"):
         try:
             update_invoice_draft(doc_no, {
-                "customer_id": inv.get("customer_id"), "customer_name": customer_name,
+                "customer_id": selected_customer_id,
                 "job_no": job_no or None, "issue_date": issue.isoformat(), "due_date": due.isoformat(),
                 "currency": currency, "ref_doc_no": ref.strip(), "remark": remark.strip(),
             }, clean_items)

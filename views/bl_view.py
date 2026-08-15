@@ -16,24 +16,52 @@ from managers.bl_manager import (
 )
 from managers.shipment_manager import list_shipments
 from managers.document_duplicate_service import duplicate_bl, get_bl_snapshot
-from pdf.bl_pdf import generate_bl_pdf
+from managers.document_approval_manager import get_approval_status
 
 STATUS_OPTIONS = ["All Statuses", "Draft", "Submitted", "Approved", "Issued", "Surrendered", "Cancelled"]
 
 
 def _pdf_button(bl_id: int, key_prefix: str = "bl") -> None:
-    try:
-        payload = get_bl_snapshot(bl_id)
-        pdf_path = generate_bl_pdf(payload)
-        if pdf_path and os.path.exists(pdf_path):
+    """Generate the B/L PDF only after the user explicitly clicks PDF."""
+    bytes_key = f"{key_prefix}_pdf_bytes_{bl_id}"
+    name_key = f"{key_prefix}_pdf_name_{bl_id}"
+
+    if st.button("PDF", key=f"{key_prefix}_pdf_prepare_{bl_id}", type="primary", use_container_width=True):
+        try:
+            # Deferred import: PDF engine is not loaded during normal page render.
+            from pdf.bl_pdf import generate_bl_pdf
+
+            payload = get_bl_snapshot(bl_id)
+            bl_record = dict(payload.get("bl") or {})
+            bl_no = str(bl_record.get("bl_no") or bl_id)
+            approval_status = get_approval_status("bl", bl_no)
+
+            # Existing generator reads bl.status. Keep its public signature unchanged
+            # and pass the approval state through the payload instead.
+            bl_record["approval_status"] = approval_status
+            bl_record["status"] = approval_status
+            payload["bl"] = bl_record
+
+            pdf_path = generate_bl_pdf(payload)
+            if not pdf_path or not os.path.exists(pdf_path):
+                raise FileNotFoundError("B/L PDF generator did not return a valid file.")
+
             with open(pdf_path, "rb") as fh:
-                st.download_button(
-                    "PDF", fh.read(), file_name=os.path.basename(pdf_path),
-                    mime="application/pdf", key=f"{key_prefix}_pdf_{bl_id}",
-                    use_container_width=True, type="primary",
-                )
-    except Exception as exc:
-        st.error(f"PDF failed: {exc}")
+                st.session_state[bytes_key] = fh.read()
+            st.session_state[name_key] = os.path.basename(pdf_path)
+            st.rerun()
+        except Exception as exc:
+            st.error(f"PDF failed: {exc}")
+
+    if bytes_key in st.session_state:
+        st.download_button(
+            "Download",
+            st.session_state[bytes_key],
+            file_name=st.session_state.get(name_key, f"BL_{bl_id}.pdf"),
+            mime="application/pdf",
+            key=f"{key_prefix}_pdf_download_{bl_id}",
+            use_container_width=True,
+        )
 
 
 def render() -> None:
