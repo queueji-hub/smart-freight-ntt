@@ -3,18 +3,16 @@
 One Shipment/Job is the consolidation parent. Multiple company-issued B/L
 records may exist under the same Shipment, each with its own shipper,
 consignee and cargo details. Legacy HBL/MBL storage is retained only for
-historical compatibility; the new UI/workflow uses a single BILL OF LADING
-concept.
+historical compatibility; the new UI/workflow uses one BILL OF LADING concept.
 """
 from __future__ import annotations
 
 from datetime import date, datetime
-import re
 from typing import Any, Dict, List, Optional
 
 from database.connection import get_connection
 from database.postgres_compat import ensure_phase30_bl_schema
-from managers.document_numbering_service import generate_document_number
+from managers.bl_consolidation_service import generate_company_bl_no, next_consol_sequence
 from managers.tenant_context import get_current_tenant_id
 
 BL_TYPES = ("BL",)
@@ -39,42 +37,6 @@ def _safe_date(value: Any) -> Optional[date]:
         return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
     except Exception:
         return None
-
-
-def _port_code(value: Any, fallback: str = "XXX") -> str:
-    text = _s(value, "").upper()
-    known = {
-        "LAEM CHABANG": "LCH",
-        "LAEM CHABANG, THAILAND": "LCH",
-        "NAHA": "NAH",
-        "NAHA, OKINAWA, JAPAN": "NAH",
-        "BANGKOK": "BKK",
-        "BANGKOK, THAILAND": "BKK",
-        "SINGAPORE": "SIN",
-        "SINGAPORE, SINGAPORE": "SIN",
-        "ROTTERDAM": "RTM",
-        "ROTTERDAM, NETHERLANDS": "RTM",
-    }
-    if text in known:
-        return known[text]
-    match = re.search(r"\(([A-Z]{3})\)", text)
-    if match:
-        return match.group(1)
-    tokens = re.findall(r"[A-Z]+", text)
-    candidate = tokens[0] if tokens else ""
-    return (candidate[:3] or fallback).ljust(3, "X")
-
-
-def _generate_company_bl_no(pol: Any, pod: Any, ref_date: Any = None) -> str:
-    """Generate company B/L number like NATTA-LCHNAH2608003."""
-    origin = _port_code(pol)
-    destination = _port_code(pod)
-    d = _safe_date(ref_date) or date.today()
-    yymm = d.strftime("%y%m")
-    generic = generate_document_number(f"BL-{origin}{destination}", d, digits=3)
-    match = re.search(r"-(\d{3})$", generic)
-    sequence = match.group(1) if match else "001"
-    return f"NATTA-{origin}{destination}{yymm}{sequence}"
 
 
 def _ensure_bl_schema(conn) -> None:
@@ -122,8 +84,7 @@ def create_bl_from_job(job_no: str, user: Dict[str, Any], overrides: Optional[Di
         raise ValueError(f"Job '{job_no}' not found.")
 
     etd = _safe_date(job.get("etd"))
-    existing = list_job_bls(job_no)
-    consol_seq = len(existing) + 1
+    consol_seq = next_consol_sequence(job_no)
 
     data: Dict[str, Any] = {
         "job_no": job_no,
@@ -142,7 +103,7 @@ def create_bl_from_job(job_no: str, user: Dict[str, Any], overrides: Optional[Di
         "port_of_discharge": job.get("pod"),
         "place_of_delivery": job.get("place_of_delivery"),
         "final_destination": job.get("final_destination"),
-        "vessel": job.get("vessel"),
+        "vessel": job.get("mother_vessel") or job.get("vessel"),
         "voyage": job.get("voyage"),
         "etd": job.get("etd"),
         "eta": job.get("eta"),
@@ -160,7 +121,7 @@ def create_bl_from_job(job_no: str, user: Dict[str, Any], overrides: Optional[Di
         data.update(overrides)
 
     if not data.get("bl_no"):
-        data["bl_no"] = _generate_company_bl_no(
+        data["bl_no"] = generate_company_bl_no(
             data.get("port_of_loading") or job.get("pol"),
             data.get("port_of_discharge") or job.get("pod"),
             data.get("etd") or etd,
