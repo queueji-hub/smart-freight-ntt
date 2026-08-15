@@ -17,17 +17,7 @@ from managers.charge_master_manager import list_charges
 from managers.customer_manager import list_customers
 from managers.document_approval_manager import approve_document, can_approve, get_approval_status, submit_for_approval
 from managers.document_duplicate_service import duplicate_invoice, get_invoice_snapshot, update_invoice_draft
-from managers.invoice_manager import (
-    CURRENCIES if False else TAX_TYPES,  # kept below through explicit imports for compatibility
-)
-from managers.invoice_manager import (
-    TAX_TYPES,
-    WHT_TYPES,
-    calculate_summary,
-    create_invoice,
-    list_invoices,
-    record_payment,
-)
+from managers.invoice_manager import TAX_TYPES, WHT_TYPES, create_invoice, list_invoices, record_payment
 from managers.shipment_manager import list_shipments
 from ui.design_system import page_header, section
 
