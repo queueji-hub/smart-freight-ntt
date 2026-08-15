@@ -9,6 +9,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from database.connection import get_connection
+from database.postgres_compat import ensure_phase30_bl_schema
 from managers.document_numbering_service import generate_document_number
 from managers.tenant_context import get_current_tenant_id
 
@@ -36,16 +37,22 @@ def _safe_date(value: Any) -> Optional[date]:
         return None
 
 
+def _ensure_bl_schema(conn) -> None:
+    """Repair legacy PostgreSQL B/L schema before any B/L query/write."""
+    if type(conn).__name__ != "SQLiteConnAdapter":
+        ensure_phase30_bl_schema(conn)
+
+
 def list_bls(job_no: Optional[str] = None) -> List[Dict[str, Any]]:
     tenant = get_current_tenant_id()
-    sql = "SELECT * FROM bills_of_lading WHERE tenant_id=%s"
-    params: list[Any] = [tenant]
-    if job_no:
-        sql += " AND job_no=%s"
-        params.append(job_no)
-    sql += " ORDER BY created_at DESC, id DESC"
-
     with get_connection() as conn:
+        _ensure_bl_schema(conn)
+        sql = "SELECT * FROM bills_of_lading WHERE tenant_id=%s"
+        params: list[Any] = [tenant]
+        if job_no:
+            sql += " AND job_no=%s"
+            params.append(job_no)
+        sql += " ORDER BY created_at DESC, id DESC"
         with conn.cursor() as cur:
             cur.execute(sql, tuple(params))
             return [dict(row) for row in cur.fetchall()]
@@ -54,6 +61,7 @@ def list_bls(job_no: Optional[str] = None) -> List[Dict[str, Any]]:
 def get_bl(bl_id: int) -> Optional[Dict[str, Any]]:
     tenant = get_current_tenant_id()
     with get_connection() as conn:
+        _ensure_bl_schema(conn)
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT * FROM bills_of_lading WHERE id=%s AND tenant_id=%s LIMIT 1",
@@ -109,7 +117,6 @@ def create_bl_from_job(job_no: str, bl_type: str, user: Dict[str, Any], override
     if not data.get("bl_no"):
         data["bl_no"] = generate_document_number(bl_type, etd)
 
-    # Keep only columns owned by the B/L header table.
     allowed = {
         "tenant_id", "bl_no", "job_no", "shipment_id", "booking_no", "shipper",
         "consignee", "notify_party", "place_of_receipt", "port_of_loading",
@@ -124,6 +131,7 @@ def create_bl_from_job(job_no: str, bl_type: str, user: Dict[str, Any], override
     placeholders = ", ".join(["%s"] * len(cols))
 
     with get_connection() as conn:
+        _ensure_bl_schema(conn)
         with conn.cursor() as cur:
             cur.execute(
                 f"INSERT INTO bills_of_lading ({', '.join(cols)}) VALUES ({placeholders}) RETURNING id",
@@ -157,6 +165,7 @@ def update_bl(bl_id: int, patch: Dict[str, Any]) -> bool:
     sets = ", ".join(f"{k}=%s" for k in values)
     params = list(values.values()) + [bl_id, tenant]
     with get_connection() as conn:
+        _ensure_bl_schema(conn)
         with conn.cursor() as cur:
             cur.execute(
                 f"UPDATE bills_of_lading SET {sets}, updated_at=CURRENT_TIMESTAMP WHERE id=%s AND tenant_id=%s",
