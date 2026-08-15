@@ -9,7 +9,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from database.connection import get_connection
-from database.document_numbering_service import generate_document_number
+from managers.document_numbering_service import generate_document_number
 from database.postgres_compat import ensure_phase30_bl_schema
 from managers.tenant_context import get_current_tenant_id
 
