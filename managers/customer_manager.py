@@ -70,7 +70,7 @@ def create_customer(data: Dict[str, Any]) -> bool:
             """, (
                 data.get("company_name"), data.get("contact_person"), data.get("tel"), data.get("email"),
                 data.get("address"), data.get("tax_id"), data.get("credit_terms_days", 30), data.get("notes"),
-                1 if data.get("is_active", True) else 0, tenant_id,
+                bool(data.get("is_active", True)), tenant_id,
             ))
             customer_id = cur.fetchone()["id"]
             conn.commit()
