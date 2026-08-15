@@ -12,6 +12,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PYTHONPATH: .
+
 jobs:
   streamlit-smoke:
     runs-on: ubuntu-latest
@@ -28,4 +31,4 @@ jobs:
           app-path: Dashboard.py
           ruff: false
           skip-smoke: false
-          pytest-args: "-q"
+          pytest-args: "-q tests"
