@@ -23,11 +23,35 @@ Apply the additive PostgreSQL migrations in this order:
 
 After migration, verify the presence of the tenant/approval columns and indexes used by the Phase 30 contracts.
 
+Recommended verification:
+
+```sql
+-- tables
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_name IN ('customers','users','quotations','bookings','shipments','invoices','bills_of_lading','vendors','ap_vouchers','charge_master');
+
+-- Phase 30 columns
+SELECT table_name, column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND column_name IN ('tenant_id','approval_status','customer_id','sales_id');
+
+-- Phase 30 indexes
+SELECT indexname, tablename
+FROM pg_indexes
+WHERE schemaname = 'public'
+  AND indexname LIKE 'idx_%tenant%';
+```
+
 Do not replace the canonical baseline schema destructively. These changes are designed as additive production migrations.
 
 ## 3. Secrets / Runtime Gate
 
 The deployment environment must provide the configured PostgreSQL/Supabase connection and any application secrets required by the existing authentication/data layer. Secrets must be stored in the deployment platform secret store, not committed to Git.
+
+Verify production mode cannot silently fall back to SQLite.
 
 ## 4. Streamlit UAT Gate
 
@@ -48,14 +72,26 @@ Run the following happy-path sequence in the deployed application:
 13. Open Profitability for a Job and verify AR/AP/net profit/margin and PDF output.
 14. Open Document Center and verify Job-linked documents are discoverable.
 
+Record evidence for each step with the deployed URL, date/time, user role and result. A failed UAT step is a release blocker.
+
 ## 5. Security Gate
 
 - Verify a user from another tenant cannot read, update, duplicate or approve documents from the current tenant.
 - Verify locked/Issued documents cannot be edited.
 - Verify official financial PDFs cannot be issued before the required approval/preflight state.
 - Verify duplicate operations always create a new document number and never overwrite the source.
+- Verify production logs do not expose credentials, connection strings or sensitive customer data.
 
-## 6. Promotion Gate
+## 6. Current Automated Evidence
+
+The repository has automated green gates for the current Phase 30 code revision:
+
+- Phase 30 Verification: PASS.
+- Streamlit Production Smoke: PASS.
+
+These prove code/test/runtime-smoke health only. They do not prove that the connected production database has been migrated or that business UAT has been executed in the deployed environment.
+
+## 7. Promotion Gate
 
 Only after sections 1–5 pass should `feature/phase30-preview` be merged into `main` and the connected Streamlit deployment be promoted to production.
 
