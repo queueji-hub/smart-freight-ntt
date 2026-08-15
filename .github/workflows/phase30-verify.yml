@@ -37,6 +37,7 @@ jobs:
           import managers.quotation_ssot_service
           import managers.booking_ssot_service
           import managers.ssot_write_adapter
+          import managers.charge_master_manager
           import views.billing_view
           import views.bl_view
           import views.booking_v2_view
@@ -60,6 +61,8 @@ jobs:
         run: pytest -q tests/test_quotation_v2_view.py
       - name: Test quotation SSOT write contract
         run: pytest -q tests/test_quotation_ssot_service.py
+      - name: Test charge master contract
+        run: pytest -q tests/test_charge_master_manager.py
       - name: Test approval workflow policy
         run: pytest -q tests/test_document_approval_manager.py
       - name: Test document preflight
