@@ -40,6 +40,8 @@ jobs:
           import managers.charge_master_manager
           import managers.profit_manager
           import managers.bl_workflow_service
+          import managers.ap_manager
+          import managers.vendor_manager
           import views.billing_view
           import views.finance_v2_view
           import views.bl_view
@@ -75,6 +77,8 @@ jobs:
         run: pytest -q tests/test_document_numbering_schema.py
       - name: Test profitability tenant contract
         run: pytest -q tests/test_profitability_contract.py
+      - name: Test Payables schema contract
+        run: pytest -q tests/test_payables_schema_contract.py
       - name: Test B/L workspace
         run: pytest -q tests/test_bl_v2_view.py
       - name: Test Finance workspace
