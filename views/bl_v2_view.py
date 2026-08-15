@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 
 from managers.auth_manager import can_write
+from managers.bl_consolidation_service import assemble_bl_document_payload
 from managers.bl_workflow_service import (
     approve,
     create_bl_from_job,
@@ -35,10 +36,12 @@ def _pdf_action(bl: Dict[str, Any]) -> None:
     key = f"bl_v2_{bl_id}"
     if st.button("PDF", key=f"{key}_prepare", type="primary", width="stretch"):
         try:
-            from pdf.forwarder_bl_pdf import generate_forwarder_bl_pdf
-            output = generate_forwarder_bl_pdf(bl_id)
+            # Pure renderer: all DB reads happen through the manager payload service.
+            from pdf.bl_document_renderer import generate_company_bl_pdf
+            payload = assemble_bl_document_payload(bl_id)
+            output = generate_company_bl_pdf(payload)
             if not output or not os.path.exists(output):
-                raise FileNotFoundError("B/L PDF generator did not return a valid file.")
+                raise FileNotFoundError("B/L PDF renderer did not return a valid file.")
             with open(output, "rb") as fh:
                 st.session_state[f"{key}_bytes"] = fh.read()
             st.session_state[f"{key}_name"] = os.path.basename(output)
@@ -191,7 +194,7 @@ def render() -> None:
     shipment_bls = list_bls(bl.get("job_no"))
 
     section("Consolidation")
-    st.caption(f"Shipment { _s(bl.get('job_no')) } · each B/L below is a separate shipper/consignee record under the same shipment.")
+    st.caption(f"Shipment {_s(bl.get('job_no'))} · multiple company B/Ls can share this shipment.")
     _consol_summary(shipment_bls)
 
     section("B/L Summary")
