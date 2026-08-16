@@ -24,6 +24,7 @@ PAGE_ROUTES["booking"] = ("views.booking_v2_view", "render")
 PAGE_ROUTES["quotation"] = ("views.quotation_v2_view", "render")
 PAGE_ROUTES["bl"] = ("views.bl_v2_view", "render")
 PAGE_ROUTES["billing"] = ("views.finance_document_workspace", "render")
+PAGE_ROUTES["ap"] = ("views.ar_ap_workspace", "render")
 PAGE_ROUTES["document"] = ("views.document_v2_view", "render")
 
 
@@ -98,34 +99,22 @@ def main():
         for group, modules in groups:
             st.caption(group.title())
             for page_id, label, _module in modules:
-                if st.button(label, key=f"nav_{page_id}", width="stretch", type="primary" if page_id == current_page else "secondary"):
+                if st.button(label, key=f"nav_{page_id}", width="stretch"):
                     st.session_state["current_navigation"] = page_id
                     st.query_params["page"] = page_id
                     st.rerun()
         st.divider()
-        if st.button("Log out", width="stretch"):
-            try:
-                token = st.session_state.get("session_token")
-                if token:
-                    delete_session(token)
-            finally:
-                st.session_state.clear()
-                st.query_params.clear()
-                st.rerun()
-    page_header(current_page, status_text="Online")
-    module_path, fn_name = PAGE_ROUTES[current_page]
+        if st.button("Logout", key="nav_logout", width="stretch"):
+            delete_session(st.session_state.get("session_token"))
+            st.session_state.clear()
+            st.rerun()
+    module_name, function_name = PAGE_ROUTES.get(current_page, PAGE_ROUTES["dashboard"])
     try:
-        module = importlib.import_module(module_path)
-        renderer = getattr(module, fn_name, None)
-        if not renderer:
-            st.error(f"View entrypoint '{fn_name}' is missing.")
-            st.stop()
-        renderer()
+        module = importlib.import_module(module_name)
+        getattr(module, function_name)()
     except Exception as exc:
-        st.error("Unable to load this module.")
-        with st.expander("Technical details", expanded=False):
-            st.code(traceback.format_exc(), language="python")
-        st.exception(exc)
+        st.error("Unable to load this workspace.")
+        st.code(traceback.format_exc(), language="text")
 
 
 if __name__ == "__main__":
