@@ -21,12 +21,17 @@ def _d(v: Any) -> date:
     except Exception: return date.today()
 
 def _pdf(bl: Dict[str, Any]) -> None:
+    """Generate the official B/L from the persisted SSOT payload.
+
+    Do not assemble a partial UI payload here: the PDF engine resolves the
+    linked Job, Booking and container manifest from the B/L record itself.
+    This keeps PDF output consistent with the production document engine.
+    """
     bid = int(bl["id"]); key = f"bl_v2_{bid}"
     if st.button("PDF", key=f"{key}_make", type="primary", width="stretch"):
         try:
             from pdf.bl_pdf import generate_bl_pdf
-            payload = {"bl": {**bl, "approval_status": bl.get("approval_status", "Draft")}, "job": {}, "booking": {}, "containers": []}
-            path = generate_bl_pdf(payload)
+            path = generate_bl_pdf(bid)
             if not path or not os.path.exists(path): raise FileNotFoundError("B/L PDF generator returned no file.")
             with open(path, "rb") as fh: st.session_state[f"{key}_bytes"] = fh.read()
             st.session_state[f"{key}_name"] = os.path.basename(path)
