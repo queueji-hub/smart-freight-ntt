@@ -43,13 +43,19 @@ jobs:
           import managers.bl_consolidation_service
           import managers.ap_manager
           import managers.vendor_manager
+          import managers.job_handover_service
+          import managers.rate_lookup_service
           import views.billing_view
           import views.finance_v2_view
           import views.bl_view
           import views.bl_v2_view
           import views.booking_v2_view
+          import views.booking_workspace_view
           import views.quotation_v2_view
           import views.document_v2_view
+          import views.master_data_view
+          import views.rate_master_view
+          import views.job_handover_view
           import core.freight_rules
           import core.booking_presentation
           import core.document_preflight
@@ -91,6 +97,10 @@ jobs:
         run: pytest -q tests/test_bl_document_renderer.py
       - name: Test architecture boundaries
         run: pytest -q tests/test_architecture_boundaries.py
+      - name: Test production architecture contract
+        run: pytest -q tests/test_production_architecture_contract.py
+      - name: Test job handover contract
+        run: pytest -q tests/test_job_handover_contract.py
       - name: Test Finance workspace
         run: pytest -q tests/test_finance_v2_view.py
       - name: Test Document Center workspace
