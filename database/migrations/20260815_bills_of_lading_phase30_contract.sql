@@ -1,4 +1,4 @@
--- Phase 30: company-issued Bill of Lading and shipment consolidation contract.
+-- Phase 30: company-issued Bill of Lading and shipment consolidation/form contract.
 -- Additive and idempotent; preserves existing B/L records.
 
 CREATE TABLE IF NOT EXISTS bills_of_lading (
@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS bills_of_lading (
     shipper TEXT,
     consignee TEXT,
     notify_party TEXT,
+    delivery_agent TEXT,
+    pre_carriage_by TEXT,
     place_of_receipt TEXT,
     port_of_loading TEXT,
     port_of_discharge TEXT,
@@ -55,6 +57,8 @@ ALTER TABLE bills_of_lading
     ADD COLUMN IF NOT EXISTS shipper TEXT,
     ADD COLUMN IF NOT EXISTS consignee TEXT,
     ADD COLUMN IF NOT EXISTS notify_party TEXT,
+    ADD COLUMN IF NOT EXISTS delivery_agent TEXT,
+    ADD COLUMN IF NOT EXISTS pre_carriage_by TEXT,
     ADD COLUMN IF NOT EXISTS place_of_receipt TEXT,
     ADD COLUMN IF NOT EXISTS port_of_loading TEXT,
     ADD COLUMN IF NOT EXISTS port_of_discharge TEXT,
