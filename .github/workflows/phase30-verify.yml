@@ -83,6 +83,8 @@ jobs:
         run: pytest -q tests/test_bl_v2_view.py
       - name: Test Finance workspace
         run: pytest -q tests/test_finance_v2_view.py
+      - name: Test AR/AP workspace
+        run: pytest -q tests/test_ar_ap_workspace.py
       - name: Test Document Center workspace
         run: pytest -q tests/test_document_v2_view.py
       - name: Test PDF smoke
