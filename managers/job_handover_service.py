@@ -24,6 +24,30 @@ def _existing_job_for_quote(quotation_no: str) -> Optional[str]:
         return str(row["job_no"]) if row else None
 
 
+def _master_labels(customer_id: Any, sales_id: Any) -> tuple[Optional[str], Optional[str]]:
+    """Resolve display labels from canonical master IDs for legacy snapshot columns."""
+    tenant = _tenant()
+    customer_name: Optional[str] = None
+    sales_name: Optional[str] = None
+    with get_connection() as conn, conn.cursor() as cur:
+        if customer_id is not None:
+            cur.execute(
+                "SELECT company_name FROM customers WHERE tenant_id=%s AND id=%s LIMIT 1",
+                (tenant, customer_id),
+            )
+            row = cur.fetchone()
+            customer_name = str(row["company_name"]) if row and row.get("company_name") else None
+        if sales_id is not None:
+            cur.execute(
+                "SELECT full_name, username FROM users WHERE tenant_id=%s AND id=%s LIMIT 1",
+                (tenant, sales_id),
+            )
+            row = cur.fetchone()
+            if row:
+                sales_name = str(row.get("full_name") or row.get("username") or "") or None
+    return customer_name, sales_name
+
+
 def build_job_payload(quotation: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if not quotation:
         raise ValueError("Quotation data is required.")
@@ -31,18 +55,21 @@ def build_job_payload(quotation: Dict[str, Any], user: Optional[Dict[str, Any]] 
     if not quotation_no:
         raise ValueError("Quotation number is required.")
     customer_id = quotation.get("customer_id")
+    sales_id = quotation.get("sales_id")
     if customer_id is None:
         raise ValueError("Quotation customer_id is required before handover.")
     status = str(quotation.get("approval_status") or quotation.get("status") or "Draft").strip().lower()
     if status not in {"approved", "accepted"}:
         raise ValueError("Only approved quotations can be handed over to Operations.")
 
+    customer_name, sales_name = _master_labels(customer_id, sales_id)
     return {
         "status": "Proceed",
         "job_type": quotation.get("job_type"),
         "customer_id": customer_id,
-        "customer_name": quotation.get("customer_name"),
-        "sales_person": quotation.get("salesperson"),
+        "customer_name": customer_name,
+        "sales_id": sales_id,
+        "sales_person": sales_name,
         "quotation_no": quotation_no,
         "service_type": quotation.get("service_type"),
         "pol": quotation.get("pol"),
