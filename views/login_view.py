@@ -50,7 +50,13 @@ def render():
                 st.error("❌ Invalid credentials. Please try again.")
         
         # ซ่อน Demo accounts หากอยู่ใน Environment จริง
-        if st.secrets.get("DEBUG_MODE", False):
+        debug_mode = False
+        try:
+            debug_mode = st.secrets.get("DEBUG_MODE", False)
+        except Exception:
+            debug_mode = False
+
+        if debug_mode:
             with st.expander("ℹ️ Demo accounts"):
                 st.table({
                     "Role": ["Admin", "Sales", "Accounting"],

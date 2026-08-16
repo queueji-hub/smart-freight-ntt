@@ -146,7 +146,11 @@ def get_storage_provider() -> StorageProvider:
     global _storage_provider
     if _storage_provider is None:
         import streamlit as st
-        provider_type = st.secrets.get("STORAGE_PROVIDER", "LOCAL").upper()
+        try:
+            provider_type = st.secrets.get("STORAGE_PROVIDER", "LOCAL").upper()
+        except Exception:
+            provider_type = "LOCAL"
+
         if provider_type == "SUPABASE":
             try:
                 _storage_provider = SupabaseStorageProvider()

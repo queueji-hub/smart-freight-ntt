@@ -89,10 +89,15 @@ def get_connection():
     PostgreSQL connection manager for Supabase with automatic SQLite fallback.
     Yields exactly once and propagates exceptions cleanly.
     """
-    app_env = st.secrets.get("APP_ENV", "development")
     postgres_conn = None
+    app_env = "development"
 
     try:
+        try:
+            app_env = st.secrets.get("APP_ENV", "development")
+        except Exception:
+            app_env = "development"
+
         host = st.secrets.get("DB_HOST", st.secrets.get("host", "localhost"))
         port = int(st.secrets.get("DB_PORT", st.secrets.get("port", 5432)))
         dbname = st.secrets.get("DB_NAME", st.secrets.get("database", "postgres"))

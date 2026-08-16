@@ -10,10 +10,13 @@ from typing import Optional, List, Dict, Any
 from database.connection import get_connection
 
 def _get_smtp_config() -> Optional[Dict[str, Any]]:
-    import streamlit as st
-    if not hasattr(st, "secrets") or "smtp" not in st.secrets:
+    try:
+        import streamlit as st
+        if not hasattr(st, "secrets") or "smtp" not in st.secrets:
+            return None
+        return dict(st.secrets["smtp"])
+    except Exception:
         return None
-    return dict(st.secrets["smtp"])
 
 def send_email(to: str, subject: str, body: str,
                cc: Optional[str] = None, attachments: Optional[List[str]] = None,
