@@ -137,10 +137,11 @@ def _operations(j):
         vessel = c7.selectbox("Mother Vessel", _opts("vessel"), index=_idx(_opts("vessel"), j.get("mother_vessel") or j.get("vessel")))
         trans = c8.selectbox("Transshipment", _opts("transshipment_port"), index=_idx(_opts("transshipment_port"), j.get("transshipment_port")))
         voyage = c9.text_input("Voyage", value=_s(j.get("voyage"), ""))
-        c10, c11, c12 = st.columns(3)
+        c10, c11, c12, c13 = st.columns(4)
         etd = c10.date_input("ETD", value=_dt(j.get("etd")) or date.today())
         eta = c11.date_input("ETA", value=_dt(j.get("eta")) or date.today())
-        actual = c12.date_input("Actual Departure", value=_dt(j.get("actual_departure")))
+        actual_dep = c12.date_input("Actual Departure", value=_dt(j.get("actual_departure")), help="Required for In Transit")
+        actual_arr = c13.date_input("Actual Arrival", value=_dt(j.get("actual_arrival")), help="Required for Arrived / Finished / Closed")
         remarks = st.text_area("Remarks", value=_s(j.get("remark"), ""), height=80)
         save = st.form_submit_button("Save Changes", type="primary", use_container_width=True)
 
@@ -160,7 +161,8 @@ def _operations(j):
                 "voyage": voyage,
                 "etd": etd.isoformat(),
                 "eta": eta.isoformat(),
-                "actual_departure": actual.isoformat() if actual else None,
+                "actual_departure": actual_dep.isoformat() if actual_dep else None,
+                "actual_arrival": actual_arr.isoformat() if actual_arr else None,
                 "remark": remarks,
             }
             update_shipment(j["job_no"], payload)

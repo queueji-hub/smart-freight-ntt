@@ -1,55 +1,103 @@
+"""Database backup and persistence utilities."""
 import base64
+import hashlib
+import json
 import time
 import urllib.request
-import json
-import hashlib
-from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Tuple
 
-# import streamlit as st # ใช้ import ใน function เพื่อความปลอดภัย
+from config import DB_PATH
 
-def push_db_to_github(force: bool = False) -> tuple:
-    """Push DB to GitHub พร้อม Error Handling ที่เข้มงวดขึ้น"""
-    import streamlit as st
-    
+_LAST_PUSH_AT = 0.0
+_LAST_PUSH_HASH: Optional[str] = None
+
+
+def _get_config() -> Optional[dict]:
+    """Load GitHub configuration from Streamlit secrets safely."""
+    try:
+        import streamlit as st
+        gh = st.secrets.get("github", {})
+        if not gh:
+            return None
+        return {
+            "token": gh.get("token", ""),
+            "repo": gh.get("repo", ""),
+            "branch": gh.get("branch", "main"),
+            "db_path_in_repo": gh.get("db_path_in_repo", "data/smart_freight.db"),
+            "author_name": gh.get("author_name", "FreightFlow NTT Bot"),
+            "author_email": gh.get("author_email", "bot@nattayaraat.com"),
+        }
+    except Exception:
+        return None
+
+
+def _file_hash(path: Path) -> str:
+    """Calculate SHA256 hash of a file."""
+    if not path.exists():
+        return ""
+    hasher = hashlib.sha256()
+    with open(path, "rb") as fh:
+        while chunk := fh.read(65536):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _gh_request(url: str, token: str, method: str = "GET", data: Optional[dict] = None) -> dict:
+    """Perform GitHub API request safely with urllib."""
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "SmartFreightNTT-Persistence",
+    }
+    payload_bytes = json.dumps(data).encode("utf-8") if data else None
+    req = urllib.request.Request(url, data=payload_bytes, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else {"_status": resp.status}
+    except urllib.error.HTTPError as exc:
+        return {"_status": exc.code, "error": exc.reason}
+    except Exception as exc:
+        return {"_status": 500, "error": str(exc)}
+
+
+def push_db_to_github(force: bool = False) -> Tuple[bool, str]:
+    """Push local SQLite database backup to GitHub repository if configured."""
     global _LAST_PUSH_AT, _LAST_PUSH_HASH
     cfg = _get_config()
-    
-    if not cfg or not Path(DB_PATH).exists():
-        return False, "Not configured or DB missing"
 
-    # กรองไฟล์ DB ก่อนส่งเพื่อลดขนาด
-    current_hash = _file_hash()
+    db_file = Path(DB_PATH)
+    if not cfg or not db_file.exists():
+        return False, "GitHub persistence not configured or DB file missing"
+
+    current_hash = _file_hash(db_file)
     if not force and current_hash == _LAST_PUSH_HASH:
-        return False, "No changes"
+        return False, "No changes detected since last sync"
 
     try:
-        with open(DB_PATH, "rb") as f:
-            content_b64 = base64.b64encode(f.read()).decode("ascii")
-        
-        # ปรับปรุง: ใช้การเปรียบเทียบ SHA เพื่อเลี่ยงการดึงข้อมูลถ้าไม่จำเป็น
-        # (เก็บ log ไว้ใน st.session_state เพื่อลดการเรียก API ซ้ำซ้อน)
-        
+        file_size = db_file.stat().st_size
+        if file_size > 10 * 1024 * 1024:
+            return False, f"Database file too large ({file_size / (1024*1024):.1f} MB exceeds 10 MB limit)"
+
+        with open(db_file, "rb") as fh:
+            content_b64 = base64.b64encode(fh.read()).decode("ascii")
+
         payload = {
-            "message": f"Auto-backup: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "message": f"Auto-backup DB: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "content": content_b64,
             "branch": cfg["branch"],
-            "committer": {"name": cfg["author_name"], "email": cfg["author_email"]}
+            "committer": {"name": cfg["author_name"], "email": cfg["author_email"]},
         }
-        
-        # ใส่ความปลอดภัยเพิ่มเติม: ถ้าเกิน 10MB ให้เตือน (SQLite บวม)
-        if Path(DB_PATH).stat().st_size > 10 * 1024 * 1024:
-            return False, "DB too large"
 
-        result = _gh_request(f"https://api.github.com/repos/{cfg['repo']}/contents/{cfg['db_path_in_repo']}", 
-                             cfg["token"], "PUT", payload)
-        
+        url = f"https://api.github.com/repos/{cfg['repo']}/contents/{cfg['db_path_in_repo']}"
+        result = _gh_request(url, cfg["token"], "PUT", payload)
+
         if result.get("_status", 200) < 300:
             _LAST_PUSH_AT = time.time()
             _LAST_PUSH_HASH = current_hash
-            return True, "Synced"
-        return False, f"GitHub Error: {result.get('_status')}"
-
-    except Exception as e:
-        return False, str(e)
+            return True, "Synced successfully"
+        return False, f"GitHub sync error (status {result.get('_status')})"
+    except Exception as exc:
+        return False, str(exc)

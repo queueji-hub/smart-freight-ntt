@@ -1056,6 +1056,80 @@ def init_database():
                     )
                 """)
 
+                # =====================================================
+                # TRANSPORT ORDERS
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS transport_orders (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        tenant_id TEXT DEFAULT 'default',
+                        transport_order_no TEXT UNIQUE NOT NULL,
+                        order_type TEXT DEFAULT 'TRUCKING',
+                        job_no TEXT,
+                        customer_name TEXT,
+                        vendor_name TEXT,
+                        pickup_location TEXT,
+                        delivery_location TEXT,
+                        pickup_time TIMESTAMP,
+                        delivery_time TIMESTAMP,
+                        truck_type TEXT,
+                        vehicle_no TEXT,
+                        driver_name TEXT,
+                        container_no TEXT,
+                        cargo_details TEXT,
+                        special_instructions TEXT,
+                        status TEXT DEFAULT 'DRAFT',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                # =====================================================
+                # REGULATORY SUBMISSIONS
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS regulatory_submissions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        tenant_id TEXT DEFAULT 'default',
+                        submission_type TEXT,
+                        country TEXT,
+                        authority TEXT,
+                        job_no TEXT,
+                        hbl_no TEXT,
+                        mbl_no TEXT,
+                        container_no TEXT,
+                        submission_reference TEXT,
+                        submission_date TIMESTAMP,
+                        cut_off_date TIMESTAMP,
+                        submitted_by TEXT,
+                        status TEXT DEFAULT 'DRAFT',
+                        response TEXT,
+                        error_msg TEXT,
+                        version INTEGER DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                # =====================================================
+                # COMMISSIONS
+                # =====================================================
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS commissions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        tenant_id TEXT DEFAULT 'default',
+                        job_no TEXT,
+                        sales_person TEXT,
+                        basis TEXT,
+                        rate NUMERIC(5,2) DEFAULT 0,
+                        commission_amount NUMERIC(15,2) DEFAULT 0,
+                        status TEXT DEFAULT 'DRAFT',
+                        approved_by TEXT,
+                        calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
                 conn.commit()
 
         except Exception:

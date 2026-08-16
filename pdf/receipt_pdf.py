@@ -81,7 +81,7 @@ def _header(styles, copy_label: str, invoice: Dict[str, Any]):
         f"{COMPANY.get('name_en', COMPANY.get('name', ''))}<br/>"
         f"{COMPANY.get('address_line1', '')}<br/>"
         f"{COMPANY.get('address_line2', '')} {COMPANY.get('address_line3', '')}<br/>"
-        f"Tax ID: {COMPANY.get('tax_id', '')} &nbsp; Tel: {COMPANY.get('tel', '')}"
+        f"Tax ID: {COMPANY.get('tax_id', '')} ({COMPANY.get('branch_th', 'สำนักงานใหญ่')}) &nbsp; Tel: {COMPANY.get('tel', '')}"
     )
     doc_title = "ใบเสร็จรับเงิน/ใบกำกับภาษี"
     en_title = "Receipt / Tax Invoice"

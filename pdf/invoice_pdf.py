@@ -131,7 +131,7 @@ def _header(styles, accent):
         f'<b>{COMPANY.get("name_th", "")}</b><br/>'
         f'{COMPANY.get("address_line1", "")}<br/>'
         f'{COMPANY.get("address_line2", "")} {COMPANY.get("address_line3", "")}<br/>'
-        f'<b>Tax ID: {COMPANY.get("tax_id", "—")}</b> · '
+        f'<b>Tax ID: {COMPANY.get("tax_id", "—")}</b> ({COMPANY.get("branch_th", "สำนักงานใหญ่")}) · '
         f'Tel: {COMPANY.get("tel", "—")}<br/>'
         f'{COMPANY.get("email", "—")} · {COMPANY.get("website", "—")}'
     )
