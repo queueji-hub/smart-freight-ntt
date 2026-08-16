@@ -1,11 +1,13 @@
 """Production-facing company Bill of Lading workspace for Phase 30.
 
-A Shipment/Job is the consolidation parent. One shipment can issue multiple
-company B/Ls, each with its own shipper, consignee and cargo detail.
+The screen mirrors the approved B/L form order: parties -> routing -> cargo ->
+freight/terms -> issuance. One Shipment/Job is the consolidation parent and
+can contain multiple company-issued B/Ls.
 """
 from __future__ import annotations
 
 import os
+from datetime import date
 from typing import Any, Dict
 
 import pandas as pd
@@ -29,6 +31,17 @@ from ui.design_system import page_header, section
 def _s(value: Any, default: str = "—") -> str:
     text = str(value or "").strip()
     return default if not text or text.lower() in {"none", "nan", "nat"} else text
+
+
+def _safe_date_for_ui(value: Any):
+    if not value:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except Exception:
+        return None
 
 
 def _pdf_action(bl: Dict[str, Any]) -> None:
@@ -83,23 +96,57 @@ def _new_form(user: Dict[str, Any]) -> None:
 
 
 def _edit_form(bl: Dict[str, Any]) -> None:
+    """Edit screen laid out in the same order as the approved BL workbook form."""
     bl_id = int(bl["id"])
-    with st.expander("Edit B/L", expanded=True):
+    with st.expander("B/L Form", expanded=True):
         with st.form(f"bl_v2_edit_{bl_id}"):
-            c1, c2 = st.columns(2)
-            shipper = c1.text_area("Shipper", _s(bl.get("shipper"), ""))
-            consignee = c2.text_area("Consignee", _s(bl.get("consignee"), ""))
-            c3, c4, c5 = st.columns(3)
-            pol = c3.text_input("POL", _s(bl.get("port_of_loading"), ""))
-            pod = c4.text_input("POD", _s(bl.get("port_of_discharge"), ""))
-            vessel = c5.text_input("Vessel", _s(bl.get("vessel"), ""))
-            c6, c7, c8 = st.columns(3)
-            voyage = c6.text_input("Voyage", _s(bl.get("voyage"), ""))
-            packages = c7.number_input("Packages", min_value=0, value=int(bl.get("package_qty") or 0), step=1)
-            gross = c8.number_input("Gross Weight (KG)", min_value=0.0, value=float(bl.get("gross_weight") or 0), step=0.01)
-            cbm = st.number_input("Measurement (CBM)", min_value=0.0, value=float(bl.get("measurement_cbm") or 0), step=0.01)
-            goods = st.text_area("Description of Goods", _s(bl.get("description_of_goods"), ""))
-            save = st.form_submit_button("Save Changes", type="primary", width="stretch")
+            section("Parties")
+            p1, p2 = st.columns(2)
+            shipper = p1.text_area("Shipper", _s(bl.get("shipper"), ""), height=120)
+            consignee = p2.text_area("Consignee", _s(bl.get("consignee"), ""), height=120)
+            p3, p4 = st.columns(2)
+            notify = p3.text_area("Notify Party", _s(bl.get("notify_party") or "SAME AS CONSIGNEE", ""), height=100)
+            delivery_agent = p4.text_area("For Delivery of Goods Please Apply to", _s(bl.get("delivery_agent") or bl.get("place_of_delivery"), ""), height=100)
+
+            section("Routing")
+            r1, r2 = st.columns(2)
+            pre_carriage = r1.text_input("Pre-Carriage by", _s(bl.get("pre_carriage_by"), ""))
+            place_receipt = r2.text_input("Place of Receipt", _s(bl.get("place_of_receipt"), ""))
+            r3, r4 = st.columns(2)
+            vessel = r3.text_input("Ocean Vessel", _s(bl.get("vessel"), ""))
+            voyage = r4.text_input("Voyage No.", _s(bl.get("voyage"), ""))
+            r5, r6 = st.columns(2)
+            pol = r5.text_input("Port of Loading", _s(bl.get("port_of_loading"), ""))
+            pod = r6.text_input("Port of Discharge", _s(bl.get("port_of_discharge"), ""))
+            r7, r8 = st.columns(2)
+            place_delivery = r7.text_input("Place of Delivery", _s(bl.get("place_of_delivery"), ""))
+            final_destination = r8.text_input("Final Destination (For The Merchant's Reference Only)", _s(bl.get("final_destination"), ""))
+
+            section("Cargo")
+            c1, c2, c3 = st.columns(3)
+            marks = c1.text_area("Marks and Numbers / Container & Seal Numbers", _s(bl.get("marks_numbers"), ""), height=90)
+            packages = c2.number_input("No. of Packages", min_value=0, value=int(bl.get("package_qty") or 0), step=1)
+            package_type = c3.text_input("Package Type", _s(bl.get("package_type"), ""))
+            cargo_desc = st.text_area("Description of Packages and Goods / Packages Forwarded by Shipper", _s(bl.get("description_of_goods"), ""), height=120)
+            g1, g2 = st.columns(2)
+            gross = g1.number_input("Gross Weight Kgs", min_value=0.0, value=float(bl.get("gross_weight") or 0), step=0.01)
+            cbm = g2.number_input("Measurement CBM", min_value=0.0, value=float(bl.get("measurement_cbm") or 0), step=0.001)
+            hs_code = st.text_input("HS CODE", _s(bl.get("hs_code"), ""))
+
+            section("Freight and Disbursements")
+            f1, f2, f3 = st.columns(3)
+            freight_term = f1.selectbox("Freight", ["PREPAID", "COLLECT"], index=0 if str(bl.get("freight_term") or "PREPAID").upper() == "PREPAID" else 1)
+            freight_payable = f2.text_input("Freight payable at", _s(bl.get("freight_payable_at"), ""))
+            f3.text_input("Rate at KGS/Tons", "")
+
+            section("Issuance")
+            i1, i2, i3 = st.columns(3)
+            place_issue = i1.text_input("Place of Issue", _s(bl.get("place_of_issue"), "THAILAND"))
+            bl_date = i2.date_input("Place and date of issue", value=_safe_date_for_ui(bl.get("bl_date")) or date.today())
+            originals = i3.number_input("Number of original B/Ls", min_value=1, value=int(bl.get("number_of_originals") or 3), step=1)
+            remarks = st.text_area("Additional Clauses / Remarks", _s(bl.get("remarks") or bl.get("special_instructions"), ""), height=80)
+
+            save = st.form_submit_button("Save B/L", type="primary", width="stretch")
 
         if save:
             try:
@@ -108,14 +155,29 @@ def _edit_form(bl: Dict[str, Any]) -> None:
                     {
                         "shipper": shipper.strip(),
                         "consignee": consignee.strip(),
+                        "notify_party": notify.strip(),
+                        "delivery_agent": delivery_agent.strip(),
+                        "pre_carriage_by": pre_carriage.strip(),
+                        "place_of_receipt": place_receipt.strip(),
                         "port_of_loading": pol.strip(),
                         "port_of_discharge": pod.strip(),
+                        "place_of_delivery": place_delivery.strip(),
+                        "final_destination": final_destination.strip(),
                         "vessel": vessel.strip() or None,
                         "voyage": voyage.strip() or None,
+                        "marks_numbers": marks.strip(),
                         "package_qty": packages,
+                        "package_type": package_type.strip(),
+                        "description_of_goods": cargo_desc.strip(),
                         "gross_weight": gross,
                         "measurement_cbm": cbm,
-                        "description_of_goods": goods.strip(),
+                        "hs_code": hs_code.strip(),
+                        "freight_term": freight_term,
+                        "freight_payable_at": freight_payable.strip(),
+                        "place_of_issue": place_issue.strip(),
+                        "bl_date": bl_date,
+                        "number_of_originals": originals,
+                        "remarks": remarks.strip(),
                     },
                 )
                 st.success("B/L updated.")
@@ -227,12 +289,16 @@ def render() -> None:
     with actions[3]:
         st.caption("Official PDF after approval.")
 
-    section("Routing & Parties")
-    info = st.columns(4)
-    info[0].write(f"**Shipper**\n\n{_s(bl.get('shipper'))}")
-    info[1].write(f"**Consignee**\n\n{_s(bl.get('consignee'))}")
-    info[2].write(f"**POL / POD**\n\n{_s(bl.get('port_of_loading'))} / {_s(bl.get('port_of_discharge'))}")
-    info[3].write(f"**Vessel / Voyage**\n\n{_s(bl.get('vessel') or bl.get('mother_vessel'))} / {_s(bl.get('voyage'))}")
+    section("B/L Form Preview")
+    preview = st.columns(2)
+    with preview[0]:
+        st.markdown(f"**Shipper**\n\n{_s(bl.get('shipper'))}")
+        st.markdown(f"**Consignee**\n\n{_s(bl.get('consignee'))}")
+        st.markdown(f"**Notify Party**\n\n{_s(bl.get('notify_party'), 'SAME AS CONSIGNEE')}")
+    with preview[1]:
+        st.markdown(f"**B/L No.**\n\n{_s(bl.get('bl_no'))}")
+        st.markdown(f"**Ocean Vessel/Voyage No.**\n\n{_s(bl.get('vessel') or bl.get('mother_vessel'))} / {_s(bl.get('voyage'))}")
+        st.markdown(f"**Port of Loading / Port of Discharge**\n\n{_s(bl.get('port_of_loading'))} / {_s(bl.get('port_of_discharge'))}")
 
     if can_edit and approval_status in {"Draft", "Pending Approval"}:
         _edit_form(bl)
