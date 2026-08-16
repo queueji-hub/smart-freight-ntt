@@ -80,69 +80,106 @@ class SQLiteConnAdapter:
         self._conn.close()
 
 
+import threading
+import psycopg2.pool
+
+_pg_pool = None
+_pg_pool_lock = threading.Lock()
+
+def get_pool():
+    global _pg_pool
+    if _pg_pool is not None and not _pg_pool.closed:
+        return _pg_pool
+    with _pg_pool_lock:
+        if _pg_pool is not None and not _pg_pool.closed:
+            return _pg_pool
+        try:
+            try:
+                host = st.secrets.get("DB_HOST", st.secrets.get("host", "localhost"))
+                port = int(st.secrets.get("DB_PORT", st.secrets.get("port", 5432)))
+                dbname = st.secrets.get("DB_NAME", st.secrets.get("database", "postgres"))
+                user = st.secrets.get("DB_USER", st.secrets.get("user", "postgres"))
+                password = st.secrets.get("DB_PASSWORD", st.secrets.get("password", ""))
+                sslmode = st.secrets.get("sslmode", "require")
+            except Exception:
+                host = "localhost"
+                port = 5432
+                dbname = "postgres"
+                user = "postgres"
+                password = ""
+                sslmode = "require"
+
+            _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=1,
+                maxconn=20,
+                host=host,
+                port=port,
+                dbname=dbname,
+                user=user,
+                password=password,
+                cursor_factory=psycopg2.extras.RealDictCursor,
+                sslmode=sslmode,
+                connect_timeout=3
+            )
+            return _pg_pool
+        except Exception:
+            return None
+
 # =========================================================
 # DATABASE CONNECTION (WITH RESILIENT LOCAL FALLBACK)
 # =========================================================
 @contextmanager
 def get_connection():
     """
-    PostgreSQL connection manager for Supabase with automatic SQLite fallback.
+    PostgreSQL connection manager for Supabase with ThreadedConnectionPool and automatic SQLite fallback.
     Yields exactly once and propagates exceptions cleanly.
     """
-    postgres_conn = None
     app_env = "development"
-
     try:
-        try:
-            app_env = st.secrets.get("APP_ENV", "development")
-        except Exception:
-            app_env = "development"
+        app_env = st.secrets.get("APP_ENV", "development")
+    except Exception:
+        app_env = "development"
 
-        host = st.secrets.get("DB_HOST", st.secrets.get("host", "localhost"))
-        port = int(st.secrets.get("DB_PORT", st.secrets.get("port", 5432)))
-        dbname = st.secrets.get("DB_NAME", st.secrets.get("database", "postgres"))
-        user = st.secrets.get("DB_USER", st.secrets.get("user", "postgres"))
-        password = st.secrets.get("DB_PASSWORD", st.secrets.get("password", ""))
-
-        postgres_conn = psycopg2.connect(
-            host=host,
-            port=port,
-            dbname=dbname,
-            user=user,
-            password=password,
-            cursor_factory=psycopg2.extras.RealDictCursor,
-            sslmode=st.secrets.get("sslmode", "require"),
-            connect_timeout=3
-        )
-    except Exception as e:
-        if app_env == "production":
-            raise RuntimeError(f"PostgreSQL connection failed in production mode: {type(e).__name__} - {str(e)}") from e
-        
-        # Fall back to local SQLite database if PostgreSQL/Supabase is unreachable (dev only)
-        db_file = Path(__file__).resolve().parent.parent / "data" / "smart_freight.db"
-        db_file.parent.mkdir(exist_ok=True, parents=True)
-        sqlite_conn = sqlite3.connect(db_file)
-        sqlite_conn.row_factory = sqlite3.Row
-        adapter = SQLiteConnAdapter(sqlite_conn)
+    pool = get_pool()
+    if pool is not None:
+        conn = None
         try:
-            yield adapter
-        except Exception:
-            adapter.rollback()
-            raise
+            conn = pool.getconn()
+            if conn.closed:
+                pool.putconn(conn, close=True)
+                conn = pool.getconn()
+            yield conn
+        except Exception as e:
+            if conn:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            raise e
         finally:
-            adapter.close()
+            if conn:
+                try:
+                    pool.putconn(conn)
+                except Exception:
+                    pass
         return
 
-    # If PostgreSQL connected successfully
+    if app_env == "production":
+        raise RuntimeError("PostgreSQL connection pool failed in production mode")
+
+    # Fall back to local SQLite database if PostgreSQL/Supabase is unreachable (dev only)
+    db_file = Path(__file__).resolve().parent.parent / "data" / "smart_freight.db"
+    db_file.parent.mkdir(exist_ok=True, parents=True)
+    sqlite_conn = sqlite3.connect(db_file)
+    sqlite_conn.row_factory = sqlite3.Row
+    adapter = SQLiteConnAdapter(sqlite_conn)
     try:
-        yield postgres_conn
+        yield adapter
     except Exception:
-        if postgres_conn:
-            postgres_conn.rollback()
+        adapter.rollback()
         raise
     finally:
-        if postgres_conn:
-            postgres_conn.close()
+        adapter.close()
 
 
 

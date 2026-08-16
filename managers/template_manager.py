@@ -3,8 +3,13 @@ import re
 from typing import Dict, List, Any, Optional
 from database.connection import get_connection
 
+_templates_table_ensured = False
+
 def ensure_templates_table():
     """Ensure that the email_templates table exists in the database."""
+    global _templates_table_ensured
+    if _templates_table_ensured:
+        return
     with get_connection() as conn:
         with conn.cursor() as cur:
             try:
@@ -17,6 +22,7 @@ def ensure_templates_table():
                     )
                 """)
                 conn.commit()
+                _templates_table_ensured = True
             except Exception:
                 conn.rollback()
 

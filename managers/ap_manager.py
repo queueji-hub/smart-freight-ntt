@@ -57,22 +57,23 @@ def create_ap_voucher(data: Dict[str, Any], user: Dict[str, Any]) -> int:
                     data.get('subtotal', 0.0),
                     data.get('tax', 0.0),
                     data.get('total', 0.0),
-                    user["username"] if user else 'system'
+                    user.get("username", "system") if isinstance(user, dict) else (str(user) if user else 'system')
                 ))
                 row = cur.fetchone()
                 try:
-                    voucher_id = row["id"]
+                    voucher_id = row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
                 except Exception:
                     voucher_id = row[0]
                 conn.commit()
                 if user:
-                    log_action(user["id"], tenant_id, "ap_voucher", str(voucher_id), "CREATED")
+                    user_id = user.get("id", 1) if isinstance(user, dict) else 1
+                    log_action(user_id, tenant_id, "ap_voucher", str(voucher_id), "CREATED")
                 return voucher_id
         except Exception as e:
             conn.rollback()
             raise RuntimeError(f"Failed to create AP voucher: {str(e)}")
 
-def update_ap_voucher_status(voucher_id: int, new_status: str, user: Dict[str, Any]):
+def update_ap_voucher_status(voucher_id: int, new_status: str, user: Dict[str, Any] = None):
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         try:
@@ -86,7 +87,8 @@ def update_ap_voucher_status(voucher_id: int, new_status: str, user: Dict[str, A
                     raise ValueError("AP voucher not found or unauthorized")
                 conn.commit()
                 if user:
-                    log_action(user["id"], tenant_id, "ap_voucher", str(voucher_id), f"STATUS_{new_status}")
+                    user_id = user.get("id", 1) if isinstance(user, dict) else 1
+                    log_action(user_id, tenant_id, "ap_voucher", str(voucher_id), f"STATUS_{new_status}")
         except Exception as e:
             conn.rollback()
             raise RuntimeError(f"Failed to update AP voucher status: {str(e)}")

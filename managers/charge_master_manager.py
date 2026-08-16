@@ -8,10 +8,16 @@ from database.postgres_compat import ensure_phase30_charge_master_schema
 from managers.tenant_context import get_current_tenant_id
 
 
+_charge_schema_ensured = False
+
 def _ensure_schema(conn) -> None:
+    global _charge_schema_ensured
+    if _charge_schema_ensured:
+        return
     try:
         if type(conn).__name__ != "SQLiteConnAdapter":
             ensure_phase30_charge_master_schema(conn)
+        _charge_schema_ensured = True
     except Exception:
         pass
 

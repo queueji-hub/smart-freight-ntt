@@ -12,9 +12,15 @@ def _tenant(user: Optional[Dict[str, Any]] = None) -> str:
     return str((user or {}).get("tenant_id") or get_current_tenant_id() or "default")
 
 
+_rate_schema_ensured = False
+
 def _ensure(conn) -> None:
+    global _rate_schema_ensured
+    if _rate_schema_ensured:
+        return
     if type(conn).__name__ != "SQLiteConnAdapter":
         ensure_phase30_master_data_schema(conn)
+    _rate_schema_ensured = True
 
 
 def list_rate_cards(active_only: bool = True, user: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:

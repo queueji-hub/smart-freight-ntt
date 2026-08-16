@@ -12,9 +12,15 @@ def _tenant(user: Optional[Dict[str, Any]] = None) -> str:
     return str((user or {}).get("tenant_id") or get_current_tenant_id() or "default")
 
 
+_charge_crud_schema_ensured = False
+
 def _ensure(conn) -> None:
+    global _charge_crud_schema_ensured
+    if _charge_crud_schema_ensured:
+        return
     if type(conn).__name__ != "SQLiteConnAdapter":
         ensure_phase30_charge_master_schema(conn)
+    _charge_crud_schema_ensured = True
 
 
 def list_charges(active_only: bool = False, user: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:

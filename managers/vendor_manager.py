@@ -42,22 +42,23 @@ def create_vendor(data: Dict[str, Any], user: Dict[str, Any]) -> int:
                     data.get('tax_id'),
                     data.get('country'),
                     data.get('currency', 'THB'),
-                    user["username"] if user else 'system'
+                    user.get("username", "system") if isinstance(user, dict) else (str(user) if user else 'system')
                 ))
                 row = cur.fetchone()
                 try:
-                    vendor_id = row["id"]
+                    vendor_id = row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
                 except Exception:
                     vendor_id = row[0]
                 conn.commit()
                 if user:
-                    log_action(user["id"], tenant_id, "vendor", str(vendor_id), "CREATED")
+                    user_id = user.get("id", 1) if isinstance(user, dict) else 1
+                    log_action(user_id, tenant_id, "vendor", str(vendor_id), "CREATED")
                 return vendor_id
         except Exception as e:
             conn.rollback()
             raise RuntimeError(f"Failed to create vendor: {str(e)}")
 
-def update_vendor(vendor_id: int, data: Dict[str, Any], user: Dict[str, Any]):
+def update_vendor(vendor_id: int, data: Dict[str, Any], user: Dict[str, Any] = None):
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         try:
@@ -84,7 +85,8 @@ def update_vendor(vendor_id: int, data: Dict[str, Any], user: Dict[str, Any]):
                     raise ValueError("Vendor not found or unauthorized")
                 conn.commit()
                 if user:
-                    log_action(user["id"], tenant_id, "vendor", str(vendor_id), "UPDATED")
+                    user_id = user.get("id", 1) if isinstance(user, dict) else 1
+                    log_action(user_id, tenant_id, "vendor", str(vendor_id), "UPDATED")
         except Exception as e:
             conn.rollback()
             raise RuntimeError(f"Failed to update vendor: {str(e)}")

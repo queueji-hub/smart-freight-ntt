@@ -126,11 +126,11 @@ def create_invoice(
                     summary["wht_total"],
                     summary["grand_total"],
                     summary["grand_total"],
-                    user["id"]
+                    user.get("id", 1) if isinstance(user, dict) else 1
                 ))
 
                 row = cur.fetchone()
-                invoice_id = row["id"] if isinstance(row, dict) else row[0]
+                invoice_id = row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
 
                 # Line items
                 for idx, item in enumerate(items):
@@ -158,7 +158,8 @@ def create_invoice(
                     ))
 
                 conn.commit()
-                log_action(user["id"], tenant_id, "invoice", doc_no, "CREATE")
+                user_id = user.get("id", 1) if isinstance(user, dict) else 1
+                log_action(user_id, tenant_id, "invoice", doc_no, "CREATE")
 
         except Exception as e:
             conn.rollback()
@@ -247,7 +248,8 @@ def record_payment(
                 ))
 
                 conn.commit()
-                log_action(user["id"], tenant_id, "invoice", str(row.get("doc_no", invoice_id)), "PAYMENT")
+                user_id = user.get("id", 1) if isinstance(user, dict) else 1
+                log_action(user_id, tenant_id, "invoice", str(row.get("doc_no", invoice_id)), "PAYMENT")
                 return True
 
         except ValueError:

@@ -33,10 +33,16 @@ def _safe_date(value: Any) -> Optional[date]:
         return None
 
 
+_bl_schema_ensured = False
+
 def _ensure_bl_schema(conn) -> None:
     """Repair legacy PostgreSQL B/L schema before the first B/L query/write."""
+    global _bl_schema_ensured
+    if _bl_schema_ensured:
+        return
     if type(conn).__name__ != "SQLiteConnAdapter":
         ensure_phase30_bl_schema(conn)
+    _bl_schema_ensured = True
 
 
 def list_bls(job_no: Optional[str] = None) -> List[Dict[str, Any]]:

@@ -54,7 +54,8 @@ def _restore_user():
     return user
 
 
-def _bootstrap_db():
+@st.cache_resource(show_spinner=False)
+def _bootstrap_db_cached():
     try:
         init_database()
         ensure_phase30_local_schema()
@@ -62,9 +63,12 @@ def _bootstrap_db():
             ensure_party_finance_schema(conn, sqlite=(type(conn).__name__ == "SQLiteConnAdapter"))
         return True
     except Exception as exc:
-        st.sidebar.warning("Database connection is unavailable.")
         print(f"[DB BOOT ERROR] {exc}")
         return False
+
+
+def _bootstrap_db():
+    return _bootstrap_db_cached()
 
 
 def _allowed_pages(role: str):

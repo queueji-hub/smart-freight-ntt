@@ -57,6 +57,7 @@ def upload_document(
         raise ValueError("File size exceeds 50MB limit")
         
     file_hash = hashlib.sha256(file_bytes).hexdigest()
+    created_by_val = user.get("username", "system") if isinstance(user, dict) else (str(user) if user else 'system')
     
     with get_connection() as conn:
         try:
@@ -64,19 +65,30 @@ def upload_document(
                 # Check if document already exists by number and type
                 cur.execute("""
                     SELECT id FROM documents 
-                    WHERE tenant_id=%s AND document_no=%s AND document_type=%s AND is_deleted=FALSE
+                    WHERE tenant_id=%s AND document_no=%s AND document_type=%s AND (is_deleted IS NOT TRUE)
                 """, (tenant_id, document_no, document_type))
                 existing_doc = cur.fetchone()
                 
                 if existing_doc:
-                    document_id = existing_doc["id"]
+                    document_id = existing_doc["id"] if isinstance(existing_doc, dict) or hasattr(existing_doc, "keys") else existing_doc[0]
                     # Get max version
                     cur.execute("""
                         SELECT COALESCE(MAX(version_number), 0) as max_v 
                         FROM document_versions 
                         WHERE document_id=%s
                     """, (document_id,))
-                    version_number = int(cur.fetchone()["max_v"]) + 1
+                    v_row = cur.fetchone()
+                    max_v = v_row["max_v"] if isinstance(v_row, dict) or hasattr(v_row, "keys") else v_row[0]
+                    version_number = int(max_v or 0) + 1
+                    
+                    if description or document_date:
+                        cur.execute("""
+                            UPDATE documents 
+                            SET description=COALESCE(%s, description),
+                                document_date=COALESCE(%s, document_date),
+                                updated_at=CURRENT_TIMESTAMP
+                            WHERE id=%s AND tenant_id=%s
+                        """, (description, document_date, document_id, tenant_id))
                 else:
                     # Create new document
                     cur.execute("""
@@ -85,29 +97,30 @@ def upload_document(
                             document_date, description, created_by
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
                     """, (tenant_id, document_no, document_type, document_category, 
-                          document_date, description, user["id"] if user else 'system'))
-                    document_id = cur.fetchone()["id"]
+                          document_date, description, created_by_val))
+                    row = cur.fetchone()
+                    document_id = row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
                     version_number = 1
                     
-                    provider = get_storage_provider()
-                    # Storage provider handles path security safely
-                    storage_key = provider.upload(
-                        str(tenant_id), 
-                        str(document_id), 
-                        str(version_number), 
-                        secure_filename(original_filename),
-                        file_bytes
-                    )
-                    
-                    cur.execute("""
-                        INSERT INTO document_versions (
-                            document_id, version_number, original_file_name,
-                            mime_type, file_size, storage_key, storage_provider,
-                            file_hash, uploaded_by
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (document_id, version_number, original_filename, 
-                          mime_type, file_size, storage_key, provider.__class__.__name__, file_hash,
-                          user["id"] if user else 'system'))
+                provider = get_storage_provider()
+                # Storage provider handles path security safely
+                storage_key = provider.upload(
+                    str(tenant_id), 
+                    str(document_id), 
+                    str(version_number), 
+                    secure_filename(original_filename),
+                    file_bytes
+                )
+                
+                cur.execute("""
+                    INSERT INTO document_versions (
+                        document_id, version_number, original_file_name,
+                        mime_type, file_size, storage_key, storage_provider,
+                        file_hash, uploaded_by
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (document_id, version_number, original_filename, 
+                      mime_type, file_size, storage_key, provider.__class__.__name__, file_hash,
+                      created_by_val))
                     
                 # Insert link if provided
                 if linked_entity_type and linked_entity_id:
@@ -121,12 +134,13 @@ def upload_document(
                         cur.execute("""
                             INSERT INTO document_links (document_id, entity_type, entity_id, created_by)
                             VALUES (%s, %s, %s, %s)
-                        """, (document_id, linked_entity_type, linked_entity_id, user["id"] if user else 'system'))
+                        """, (document_id, linked_entity_type, linked_entity_id, created_by_val))
                 
             conn.commit()
             
             if user:
-                log_action(user["id"], tenant_id, "document", str(document_id), "UPLOAD_VERSION")
+                user_id = user.get("id", 1) if isinstance(user, dict) else 1
+                log_action(user_id, tenant_id, "document", str(document_id), "UPLOAD_VERSION")
                 
             return document_id
             
@@ -150,7 +164,7 @@ def list_documents(entity_type: str = None, entity_id: str = None) -> List[Dict[
     """
     
     params = [tenant_id]
-    where_clauses = ["d.tenant_id = %s", "d.is_deleted = FALSE"]
+    where_clauses = ["d.tenant_id = %s", "(d.is_deleted IS NOT TRUE)"]
     
     if entity_type and entity_id:
         query += " JOIN document_links dl ON dl.document_id = d.id"
@@ -166,12 +180,31 @@ def list_documents(entity_type: str = None, entity_id: str = None) -> List[Dict[
             rows = cur.fetchall()
             return [dict(r) for r in rows] if rows else []
 
+def get_document(document_id: int) -> Optional[Dict[str, Any]]:
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT d.id, d.tenant_id, d.document_no, d.document_type, d.document_category, 
+                       d.document_date, d.description, d.status, d.created_at, d.created_by,
+                       dv.version_number, dv.original_file_name, dv.file_size, dv.uploaded_by, dv.uploaded_at
+                FROM documents d
+                LEFT JOIN (
+                    SELECT document_id, MAX(version_number) as max_v
+                    FROM document_versions GROUP BY document_id
+                ) latest_v ON d.id = latest_v.document_id
+                LEFT JOIN document_versions dv ON dv.document_id = d.id AND dv.version_number = latest_v.max_v
+                WHERE d.id = %s AND d.tenant_id = %s AND (d.is_deleted IS NOT TRUE)
+            """, (document_id, tenant_id))
+            row = cur.fetchone()
+            return dict(row) if row else None
+
 def get_document_versions(document_id: int) -> List[Dict[str, Any]]:
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             # Check ownership
-            cur.execute("SELECT id FROM documents WHERE id=%s AND tenant_id=%s AND is_deleted=FALSE", 
+            cur.execute("SELECT id FROM documents WHERE id=%s AND tenant_id=%s AND (is_deleted IS NOT TRUE)", 
                              (document_id, tenant_id))
             d = cur.fetchone()
             if not d:
@@ -189,15 +222,12 @@ def download_document_version(document_id: int, version: int = None) -> Optional
     
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT d.document_no, dv.* FROM documents d JOIN document_versions dv ON d.id = dv.document_id WHERE d.id=%s AND d.tenant_id=%s AND d.is_deleted=FALSE", 
-                             (document_id, tenant_id))
-                             
             if version is None:
                 cur.execute("""
                     SELECT d.document_no, dv.* 
                     FROM documents d 
                     JOIN document_versions dv ON d.id = dv.document_id 
-                    WHERE d.id=%s AND d.tenant_id=%s 
+                    WHERE d.id=%s AND d.tenant_id=%s AND (d.is_deleted IS NOT TRUE)
                     ORDER BY dv.version_number DESC LIMIT 1
                 """, (document_id, tenant_id))
             else:
@@ -205,7 +235,7 @@ def download_document_version(document_id: int, version: int = None) -> Optional
                     SELECT d.document_no, dv.* 
                     FROM documents d 
                     JOIN document_versions dv ON d.id = dv.document_id 
-                    WHERE d.id=%s AND d.tenant_id=%s AND dv.version_number=%s
+                    WHERE d.id=%s AND d.tenant_id=%s AND dv.version_number=%s AND (d.is_deleted IS NOT TRUE)
                 """, (document_id, tenant_id, version))
                 
             doc = cur.fetchone()
@@ -241,7 +271,7 @@ def search_documents(query_str: str) -> List[Dict[str, Any]]:
         ) latest_v ON d.id = latest_v.document_id
         JOIN document_versions dv ON dv.document_id = d.id AND dv.version_number = latest_v.max_v
         LEFT JOIN document_links dl ON dl.document_id = d.id
-        WHERE d.tenant_id = %s AND d.is_deleted = FALSE
+        WHERE d.tenant_id = %s AND (d.is_deleted IS NOT TRUE)
         AND (
             REPLACE(REPLACE(UPPER(d.document_no), '-', ''), ' ', '') LIKE %s
             OR REPLACE(REPLACE(UPPER(dl.entity_id), '-', ''), ' ', '') LIKE %s
@@ -279,13 +309,15 @@ def link_document(document_id: int, entity_type: str, entity_id: str, user: Dict
                 """, (document_id, entity_type, entity_id))
                 
                 if not cur.fetchone():
+                    created_by_val = user.get("username", "system") if isinstance(user, dict) else (str(user) if user else 'system')
                     cur.execute("""
                         INSERT INTO document_links (document_id, entity_type, entity_id, created_by)
                         VALUES (%s, %s, %s, %s)
-                    """, (document_id, entity_type, entity_id, user["id"] if user else 'system'))
+                    """, (document_id, entity_type, entity_id, created_by_val))
             conn.commit()
             if user:
-                log_action(user["id"], tenant_id, "document", str(document_id), f"LINKED_TO_{entity_type}_{entity_id}")
+                user_id = user.get("id", 1) if isinstance(user, dict) else 1
+                log_action(user_id, tenant_id, "document", str(document_id), f"LINKED_TO_{entity_type}_{entity_id}")
         except Exception as e:
             conn.rollback()
             raise
@@ -294,8 +326,10 @@ def get_related_entities(document_id: int) -> List[Dict[str, Any]]:
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM documents WHERE id=%s AND tenant_id=%s AND is_deleted=FALSE", 
-                             (document_id, tenant_id))
+            cur.execute("""
+                SELECT id FROM documents 
+                WHERE id=%s AND tenant_id=%s AND (is_deleted IS NOT TRUE)
+            """, (document_id, tenant_id))
             if not cur.fetchone():
                 return []
             
@@ -307,28 +341,32 @@ def get_related_entities(document_id: int) -> List[Dict[str, Any]]:
             rows = cur.fetchall()
             return [dict(r) for r in rows] if rows else []
 
-def update_document_status(document_id: int, status: str, user: Dict[str, Any]):
+def update_document_status(document_id: int, status: str, user: Dict[str, Any] = None):
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT id FROM documents WHERE id=%s AND tenant_id=%s AND is_deleted=FALSE", 
-                                 (document_id, tenant_id))
+                cur.execute("""
+                    SELECT id FROM documents 
+                    WHERE id=%s AND tenant_id=%s AND (is_deleted IS NOT TRUE)
+                """, (document_id, tenant_id))
                 d = cur.fetchone()
                 if not d:
                     raise ValueError("Document not found or unauthorized")
                     
                 cur.execute("""
                     UPDATE documents SET status=%s, updated_at=CURRENT_TIMESTAMP
-                    WHERE id=%s
-                """, (status, document_id))
+                    WHERE id=%s AND tenant_id=%s
+                """, (status, document_id, tenant_id))
             conn.commit()
-            log_action(user["id"], tenant_id, "document", str(document_id), f"STATUS_{status}")
+            if user:
+                user_id = user.get("id", 1) if isinstance(user, dict) else 1
+                log_action(user_id, tenant_id, "document", str(document_id), f"STATUS_{status}")
         except Exception as e:
             conn.rollback()
             raise
 
-def delete_document(document_id: int, user: Dict[str, Any]):
+def delete_document(document_id: int, user: Dict[str, Any] = None):
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         try:
@@ -338,7 +376,8 @@ def delete_document(document_id: int, user: Dict[str, Any]):
                 d = cur.fetchone()
                 if not d:
                     raise ValueError("Document not found or unauthorized")
-                    
+                
+                deleted_by_val = user.get("username", "system") if isinstance(user, dict) else (str(user) if user else 'system')
                 cur.execute("""
                     UPDATE documents SET 
                         is_deleted=TRUE, 
@@ -346,10 +385,15 @@ def delete_document(document_id: int, user: Dict[str, Any]):
                         deleted_by=%s,
                         delete_reason='User requested deletion',
                         updated_at=CURRENT_TIMESTAMP
-                    WHERE id=%s
-                """, (user["id"] if user else 'system', document_id))
+                    WHERE id=%s AND tenant_id=%s
+                """, (deleted_by_val, document_id, tenant_id))
             conn.commit()
-            log_action(user["id"], tenant_id, "document", str(document_id), "DELETED")
+            if user:
+                user_id = user.get("id", 1) if isinstance(user, dict) else 1
+                log_action(user_id, tenant_id, "document", str(document_id), "DELETED")
         except Exception:
             conn.rollback()
             raise
+
+link_document_to_entity = link_document
+
