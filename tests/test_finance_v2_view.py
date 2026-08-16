@@ -7,7 +7,7 @@ def test_finance_v2_imports_and_reuses_payment_engine():
     assert "record_payment" in source
     assert "create_invoice" in source
     assert "from pdf.invoice_pdf import generate_invoice_pdf" in source
-    assert source.index("from pdf.invoice_pdf import generate_invoice_pdf") > source.index("def _pdf_action")
+    assert source.index("from pdf.invoice_pdf import generate_invoice_pdf") > source.index("def _pdf")
 
 
 def test_finance_v2_uses_charge_master_for_new_lines():

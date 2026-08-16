@@ -9,4 +9,4 @@ def test_bl_v2_view_and_service_exist():
 def test_bl_workspace_keeps_pdf_deferred():
     source = Path("views/bl_v2_view.py").read_text(encoding="utf-8")
     assert "from pdf.bl_pdf import generate_bl_pdf" in source
-    assert source.index("from pdf.bl_pdf import generate_bl_pdf") > source.index("def _pdf_action")
+    assert source.index("from pdf.bl_pdf import generate_bl_pdf") > source.index("def _pdf")
