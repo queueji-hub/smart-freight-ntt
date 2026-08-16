@@ -98,6 +98,8 @@ def create_bl_from_job(job_no: str, user: Dict[str, Any], overrides: Optional[Di
         "shipper": job.get("shipper"),
         "consignee": job.get("consignee"),
         "notify_party": job.get("notify_party"),
+        "delivery_agent": job.get("delivery_agent") or job.get("place_of_delivery"),
+        "pre_carriage_by": job.get("pre_carriage_by"),
         "place_of_receipt": job.get("place_of_receipt"),
         "port_of_loading": job.get("pol"),
         "port_of_discharge": job.get("pod"),
@@ -129,12 +131,11 @@ def create_bl_from_job(job_no: str, user: Dict[str, Any], overrides: Optional[Di
 
     allowed = {
         "tenant_id", "bl_no", "job_no", "shipment_id", "booking_no", "consol_no", "consol_seq",
-        "shipper", "consignee", "notify_party", "place_of_receipt", "port_of_loading",
-        "port_of_discharge", "place_of_delivery", "final_destination", "vessel", "voyage",
-        "etd", "eta", "bl_date", "place_of_issue", "number_of_originals", "freight_term",
-        "freight_payable_at", "marks_numbers", "package_qty", "package_type", "description_of_goods",
-        "gross_weight", "measurement_cbm", "hs_code", "remarks", "special_instructions",
-        "bl_type", "status", "approval_status", "created_by",
+        "shipper", "consignee", "notify_party", "delivery_agent", "pre_carriage_by", "place_of_receipt",
+        "port_of_loading", "port_of_discharge", "place_of_delivery", "final_destination", "vessel", "voyage",
+        "etd", "eta", "bl_date", "place_of_issue", "number_of_originals", "freight_term", "freight_payable_at",
+        "marks_numbers", "package_qty", "package_type", "description_of_goods", "gross_weight", "measurement_cbm",
+        "hs_code", "remarks", "special_instructions", "bl_type", "status", "approval_status", "created_by",
     }
     data = {k: v for k, v in data.items() if k in allowed}
     cols = list(data)
@@ -160,12 +161,11 @@ def update_bl(bl_id: int, patch: Dict[str, Any]) -> bool:
         raise ValueError(f"B/L is {doc.get('status')} and cannot be edited.")
 
     allowed = {
-        "shipper", "consignee", "notify_party", "place_of_receipt", "port_of_loading",
-        "port_of_discharge", "place_of_delivery", "final_destination", "vessel", "voyage",
-        "etd", "eta", "bl_date", "place_of_issue", "number_of_originals", "freight_term",
-        "freight_payable_at", "marks_numbers", "package_qty", "package_type",
-        "description_of_goods", "gross_weight", "measurement_cbm", "hs_code", "remarks",
-        "special_instructions",
+        "shipper", "consignee", "notify_party", "delivery_agent", "pre_carriage_by", "place_of_receipt",
+        "port_of_loading", "port_of_discharge", "place_of_delivery", "final_destination", "vessel", "voyage",
+        "etd", "eta", "bl_date", "place_of_issue", "number_of_originals", "freight_term", "freight_payable_at",
+        "marks_numbers", "package_qty", "package_type", "description_of_goods", "gross_weight", "measurement_cbm",
+        "hs_code", "remarks", "special_instructions",
     }
     values = {k: v for k, v in patch.items() if k in allowed}
     if not values:
