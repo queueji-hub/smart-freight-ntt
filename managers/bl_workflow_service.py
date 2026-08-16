@@ -1,10 +1,4 @@
-"""Tenant-safe Bill of Lading workflow for the production-facing workspace.
-
-One Shipment/Job is the consolidation parent. Multiple company-issued B/L
-records may exist under the same Shipment, each with its own shipper,
-consignee and cargo details. Legacy HBL/MBL storage is retained only for
-historical compatibility; the new UI/workflow uses one BILL OF LADING concept.
-"""
+"""Tenant-safe Bill of Lading workflow for the production-facing workspace."""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -110,6 +104,9 @@ def create_bl_from_job(job_no: str, user: Dict[str, Any], overrides: Optional[Di
         "etd": job.get("etd"),
         "eta": job.get("eta"),
         "freight_term": job.get("freight_term"),
+        "freight_payable_at": job.get("freight_payable_at"),
+        "place_of_issue": job.get("place_of_issue") or "THAILAND",
+        "number_of_originals": job.get("number_of_originals") or 3,
         "description_of_goods": job.get("commodity"),
         "hs_code": job.get("hs_code"),
         "package_qty": job.get("package_quantity") or 0,
