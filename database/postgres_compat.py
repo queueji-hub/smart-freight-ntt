@@ -65,7 +65,7 @@ def ensure_phase30_profitability_schema(conn) -> None:
 
 
 def ensure_phase30_bl_schema(conn) -> None:
-    """Create/upgrade company-issued B/L table and consolidation fields."""
+    """Create/upgrade company-issued B/L table and consolidation/form fields."""
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -81,6 +81,8 @@ def ensure_phase30_bl_schema(conn) -> None:
                 shipper TEXT,
                 consignee TEXT,
                 notify_party TEXT,
+                delivery_agent TEXT,
+                pre_carriage_by TEXT,
                 place_of_receipt TEXT,
                 port_of_loading TEXT,
                 port_of_discharge TEXT,
@@ -117,12 +119,13 @@ def ensure_phase30_bl_schema(conn) -> None:
             "tenant_id": "TEXT DEFAULT 'default'", "bl_no": "TEXT", "job_no": "TEXT",
             "shipment_id": "INTEGER", "booking_no": "TEXT", "consol_no": "TEXT",
             "consol_seq": "INTEGER DEFAULT 1", "shipper": "TEXT", "consignee": "TEXT",
-            "notify_party": "TEXT", "place_of_receipt": "TEXT", "port_of_loading": "TEXT",
-            "port_of_discharge": "TEXT", "place_of_delivery": "TEXT", "final_destination": "TEXT",
-            "vessel": "TEXT", "voyage": "TEXT", "etd": "DATE", "eta": "DATE", "bl_date": "DATE",
-            "place_of_issue": "TEXT", "number_of_originals": "INTEGER DEFAULT 3", "freight_term": "TEXT",
-            "freight_payable_at": "TEXT", "marks_numbers": "TEXT", "package_qty": "NUMERIC(15,2) DEFAULT 0",
-            "package_type": "TEXT", "description_of_goods": "TEXT", "gross_weight": "NUMERIC(15,3) DEFAULT 0",
+            "notify_party": "TEXT", "delivery_agent": "TEXT", "pre_carriage_by": "TEXT",
+            "place_of_receipt": "TEXT", "port_of_loading": "TEXT", "port_of_discharge": "TEXT",
+            "place_of_delivery": "TEXT", "final_destination": "TEXT", "vessel": "TEXT", "voyage": "TEXT",
+            "etd": "DATE", "eta": "DATE", "bl_date": "DATE", "place_of_issue": "TEXT",
+            "number_of_originals": "INTEGER DEFAULT 3", "freight_term": "TEXT", "freight_payable_at": "TEXT",
+            "marks_numbers": "TEXT", "package_qty": "NUMERIC(15,2) DEFAULT 0", "package_type": "TEXT",
+            "description_of_goods": "TEXT", "gross_weight": "NUMERIC(15,3) DEFAULT 0",
             "measurement_cbm": "NUMERIC(15,3) DEFAULT 0", "hs_code": "TEXT", "remarks": "TEXT",
             "special_instructions": "TEXT", "bl_type": "TEXT DEFAULT 'BL'", "status": "TEXT DEFAULT 'Draft'",
             "approval_status": "TEXT DEFAULT 'Draft'", "created_by": "TEXT",
