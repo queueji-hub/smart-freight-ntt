@@ -4,12 +4,22 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from database.connection import get_connection
+from database.postgres_compat import ensure_phase30_charge_master_schema
 from managers.tenant_context import get_current_tenant_id
+
+
+def _ensure_schema(conn) -> None:
+    try:
+        if type(conn).__name__ != "SQLiteConnAdapter":
+            ensure_phase30_charge_master_schema(conn)
+    except Exception:
+        pass
 
 
 def list_charges(active_only: bool = True) -> List[Dict[str, Any]]:
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
+        _ensure_schema(conn)
         with conn.cursor() as cur:
             where = "WHERE tenant_id=%s"
             params: list[Any] = [tenant_id]
@@ -28,7 +38,6 @@ def list_charges(active_only: bool = True) -> List[Dict[str, Any]]:
                 )
                 return [dict(row) for row in cur.fetchall()]
             except Exception:
-                # Schema may not yet have the additive migration. Keep callers safe.
                 return []
 
 
@@ -38,6 +47,7 @@ def get_charge(charge_code: str) -> Optional[Dict[str, Any]]:
         return None
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
+        _ensure_schema(conn)
         with conn.cursor() as cur:
             try:
                 cur.execute(

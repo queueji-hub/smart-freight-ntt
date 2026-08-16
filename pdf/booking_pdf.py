@@ -1,5 +1,5 @@
 """Modern Booking Confirmation PDF.
-Canonical wording: Booking Confirmation, Liner, Mother Vessel.
+Canonical wording: Booking Confirmation, Carrier, Vessel / Voyage, Mother Vessel.
 Phase 30: transport-specific cargo/equipment and CY/CFS presentation.
 """
 from pathlib import Path
@@ -14,7 +14,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from config import COMPANY, OUTPUT_DIR
 from pdf.fonts import THAI_FONT, THAI_FONT_BOLD
-from core.freight_rules import get_freight_profile, resolve_vessel
+from core.freight_rules import get_freight_profile
 
 BLUE = colors.HexColor('#1F4E9E')
 GOLD = colors.HexColor('#C9A227')
@@ -51,7 +51,6 @@ def _is_sea_fcl(booking: Dict[str, Any]) -> bool:
 
 
 def _parse_equipment_summary(booking: Dict[str, Any]):
-    """Return [(container_type, qty)] from normalized container fields or legacy summary text."""
     rows = []
     ctype = _s(booking.get('container_type'), '').strip()
     qty = booking.get('container_quantity') or booking.get('quantity')
@@ -60,7 +59,6 @@ def _parse_equipment_summary(booking: Dict[str, Any]):
             rows.append((ctype, int(float(qty))))
         except (TypeError, ValueError):
             rows.append((ctype, _s(qty)))
-
     summary = _s(booking.get('container_summary'), '').strip()
     if summary and summary != '—':
         for match in re.finditer(r'(\d+)\s*[xX×]\s*([0-9\'A-Za-z\-]+)', summary):
@@ -68,7 +66,6 @@ def _parse_equipment_summary(booking: Dict[str, Any]):
             parsed_type = match.group(2).replace('HC', "'HC").replace('GP', "'GP")
             if (parsed_type, parsed_qty) not in rows:
                 rows.append((parsed_type, parsed_qty))
-
     if not rows and summary and summary != '—':
         rows.append((summary, _s(qty, '')))
     return rows
@@ -157,45 +154,34 @@ def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None, appro
     if output_path is None:
         output_path = str(Path(OUTPUT_DIR) / f'BC_{bno}.pdf')
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    doc = SimpleDocTemplate(
-        output_path,
-        pagesize=A4,
-        leftMargin=15 * mm,
-        rightMargin=15 * mm,
-        topMargin=15 * mm,
-        bottomMargin=18 * mm,
-        title=f'Booking Confirmation {bno}',
-        author=COMPANY['name'],
-    )
+    doc = SimpleDocTemplate(output_path, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm, topMargin=15 * mm, bottomMargin=18 * mm, title=f'Booking Confirmation {bno}', author=COMPANY['name'])
     stl = _styles()
     story = [_header(stl), Spacer(1, 4 * mm), Paragraph('BOOKING CONFIRMATION', stl['title'])]
 
     story += [_grid([
         ('Booking No.', booking.get('booking_no'), 'Carrier Booking No.', booking.get('carrier_booking_no')),
-        ('Customer', booking.get('customer_name'), 'Job Type', booking.get('job_type')),
+        ('Booking Date', _fmt(booking.get('booking_date')), 'Customer', booking.get('customer_name')),
         ('Shipper', booking.get('shipper'), 'Consignee', booking.get('consignee')),
         ('ETD', _fmt(booking.get('etd')), 'ETA', _fmt(booking.get('eta'))),
     ], stl, header='Booking Details', color=BLUE), Spacer(1, 4 * mm)]
 
-    vessel = resolve_vessel(booking.get('m_vessel') or booking.get('mother_vessel'), booking.get('vessel'))
+    vessel_name = _s(booking.get('vessel') or booking.get('m_vessel') or booking.get('mother_vessel'))
+    vessel_voyage = vessel_name if vessel_name == '—' else f"{vessel_name} / {_s(booking.get('voyage'))}".strip(' /')
+    mother_vessel = _s(booking.get('m_vessel') or booking.get('mother_vessel'))
     story += [_grid([
         ('POL', booking.get('pol'), 'POR', booking.get('por')),
         ('Transshipment Port', booking.get('transhipment_port'), 'POD', booking.get('pod')),
-        ('Liner', booking.get('liner') or booking.get('carrier'), 'Vessel', vessel),
-        ('Voyage', booking.get('voyage'), 'Final Destination', booking.get('final_destination')),
+        ('Carrier', booking.get('carrier'), 'Vessel / Voyage', vessel_voyage),
+        ('Mother Vessel', mother_vessel, 'Final Destination', booking.get('final_destination')),
     ], stl, header='Routing & Vessel', color=BLUE), Spacer(1, 4 * mm)]
 
     profile = get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type'))
-
     if profile.volume_kind == 'CONTAINER':
         equipment_rows = _parse_equipment_summary(booking)
         cargo_rows = []
         if equipment_rows:
             for idx, (ctype, qty) in enumerate(equipment_rows):
-                if idx == 0:
-                    cargo_rows.append(('Container Type', ctype, 'Quantity', qty))
-                else:
-                    cargo_rows.append(('', ctype, '', qty))
+                cargo_rows.append(('Container Type' if idx == 0 else '', ctype, 'Quantity' if idx == 0 else '', qty))
         else:
             cargo_rows.append(('Equipment', booking.get('container_summary'), 'Quantity', booking.get('quantity') or booking.get('container_quantity')))
         story += [_grid(cargo_rows, stl, header='Cargo & Equipment', color=BLUE), Spacer(1, 4 * mm)]
@@ -216,28 +202,20 @@ def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None, appro
         ], stl, header='Cargo Details', color=BLUE), Spacer(1, 4 * mm)]
 
     if profile.show_cy:
-        terminal_rows = [
+        story += [_grid([
             ('CY Date', _fmt(booking.get('cy_date')), 'CY Place', booking.get('cy_place')),
             ('Container Return Date', _fmt(booking.get('customer_return_date')), 'Return Place', booking.get('return_place')),
-        ]
-        story += [_grid(terminal_rows, stl, header='CY / Container Schedule', color=GOLD), Spacer(1, 4 * mm)]
+        ], stl, header='CY / Container Schedule', color=GOLD), Spacer(1, 4 * mm)]
     elif profile.show_cfs:
-        terminal_rows = [
-            ('CFS Date', _fmt(booking.get('cfs_date')), 'CFS Place', booking.get('cfs_place')),
-        ]
-        story += [_grid(terminal_rows, stl, header='CFS Receiving', color=GOLD), Spacer(1, 4 * mm)]
+        story += [_grid([('CFS Date', _fmt(booking.get('cfs_date')), 'CFS Place', booking.get('cfs_place'))], stl, header='CFS Receiving', color=GOLD), Spacer(1, 4 * mm)]
 
     remark = _s(booking.get('remark'), '')
     if remark:
         story += [Paragraph('<b>Remarks</b>', stl['label']), Paragraph(remark.replace('\n', '<br/>'), stl['body']), Spacer(1, 4 * mm)]
 
-    sig = Table([
-        [Paragraph('Yours sincerely,', stl['body']), Paragraph('_' * 30, stl['body'])],
-        [Spacer(1, 14 * mm), Paragraph(f"<b>{COMPANY['signer_name']}</b><br/>{COMPANY['signer_title']}", stl['body'])],
-    ], colWidths=[90 * mm, 90 * mm])
+    sig = Table([[Paragraph('Yours sincerely,', stl['body']), Paragraph('_' * 30, stl['body'])], [Spacer(1, 14 * mm), Paragraph(f"<b>{COMPANY['signer_name']}</b><br/>{COMPANY['signer_title']}", stl['body'])]], colWidths=[90 * mm, 90 * mm])
     sig.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('ALIGN', (0, 0), (-1, -1), 'CENTER')]))
     story += [Spacer(1, 7 * mm), sig]
-
     doc.build(story, onFirstPage=lambda c, d: _watermark(c, d, approval_status), onLaterPages=lambda c, d: _watermark(c, d, approval_status))
     return output_path
 

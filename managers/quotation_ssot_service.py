@@ -1,11 +1,65 @@
-"""Quotation write service that keeps master IDs canonical with legacy compatibility."""
+"""Quotation write service that keeps master IDs and charge IDs canonical."""
 from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from database.connection import get_connection
 from managers.quotation_manager import create_quotation as _legacy_create_quotation
 from managers.quotation_manager import update_quotation as _legacy_update_quotation
 from managers.ssot_write_adapter import sync_quotation_master_ids
+from managers.tenant_context import get_current_tenant_id
+from managers.charge_master_manager import list_charges
+
+
+def _normalize_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not items:
+        return []
+    try:
+        charges = list_charges(active_only=True)
+    except Exception:
+        charges = []
+    if not charges:
+        return items
+    by_code = {str(c.get("charge_code") or "").upper(): c for c in charges}
+    by_description = {str(c.get("description") or "").strip().lower(): c for c in charges}
+    normalized: List[Dict[str, Any]] = []
+    for idx, raw in enumerate(items, 1):
+        item = dict(raw or {})
+        code = str(item.get("charge_code") or "").strip().upper()
+        description = str(item.get("description") or "").strip()
+        master = by_code.get(code) if code else by_description.get(description.lower())
+        if master:
+            item["charge_code"] = master["charge_code"]
+            item["description"] = master["description"]
+            if not item.get("basis"):
+                item["basis"] = master.get("default_basis")
+            if not item.get("unit"):
+                item["unit"] = master.get("default_unit")
+            if not item.get("currency"):
+                item["currency"] = master.get("default_currency") or "USD"
+        normalized.append(item)
+    return normalized
+
+
+def _assert_customer_scope(customer_id: Any) -> None:
+    if not customer_id:
+        return
+    try:
+        tenant = get_current_tenant_id() or "default"
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM customers WHERE id=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='') LIMIT 1", (customer_id, tenant))
+            row = cur.fetchone()
+            if row is None:
+                # If table has records for tenant, verify customer existence
+                cur.execute("SELECT COUNT(*) FROM customers WHERE (tenant_id=%s OR tenant_id IS NULL OR tenant_id='')", (tenant,))
+                cnt_row = cur.fetchone()
+                cnt = cnt_row[0] if cnt_row else 0
+                if cnt > 0:
+                    raise ValueError("Customer does not belong to the current tenant.")
+    except ValueError:
+        raise
+    except Exception:
+        pass
 
 
 def create_quotation_ssot(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
@@ -13,7 +67,9 @@ def create_quotation_ssot(data: Dict[str, Any], items: List[Dict[str, Any]]) -> 
     sales_id = data.get("sales_id")
     if customer_id is None:
         raise ValueError("customer_id is required for new quotations.")
-    quotation_no = _legacy_create_quotation(data, items)
+    _assert_customer_scope(customer_id)
+    normalized_items = _normalize_items(items)
+    quotation_no = _legacy_create_quotation(data, normalized_items)
     sync_quotation_master_ids(quotation_no, customer_id=customer_id, sales_id=sales_id)
     return quotation_no
 
@@ -23,5 +79,7 @@ def update_quotation_ssot(quotation_no: str, data: Dict[str, Any], items: List[D
     sales_id = data.get("sales_id")
     if customer_id is None:
         raise ValueError("customer_id is required for quotation updates.")
-    _legacy_update_quotation(quotation_no, data, items)
+    _assert_customer_scope(customer_id)
+    normalized_items = _normalize_items(items)
+    _legacy_update_quotation(quotation_no, data, normalized_items)
     sync_quotation_master_ids(quotation_no, customer_id=customer_id, sales_id=sales_id)

@@ -387,7 +387,7 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
                     st.success("Booking updated.")
                     st.rerun()
                 except Exception as exc:
-                    st.error(f"Unable to update booking: {exc}")
+                    st.error(f"Unable to modify booking: {exc}")
 
 
 def render():
@@ -444,7 +444,7 @@ def render():
         return
 
     options = [r["booking_no"] for r in records if r.get("booking_no")]
-    selected_no = st.selectbox("Select Booking", options=options, key="booking_v2_selected")
+    selected_no = st.selectbox("Choose Booking", options=options, key="booking_v2_selected")
     selected = get_booking(selected_no, tenant_id)
     if selected:
         _render_selected(selected, user, can_edit)

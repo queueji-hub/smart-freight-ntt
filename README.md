@@ -115,7 +115,7 @@ A module is considered production-ready only when all layers agree:
 
 `Source → Schema → Manager → UI → PDF → Tests → CI → Migration Verification → UAT`
 
-Current CI validates Python compilation, imports, freight rules, Booking/Quotation workspaces, SSOT write contracts, Charge Master, finance schema, tenant-safe document numbering, profitability tenant contracts, PDF smoke output, Approval Workflow and Document Preflight.
+Current CI validates Python compilation, imports, freight rules, Booking/Quotation workspaces, SSOT write contracts, Charge Master, finance schema, tenant-safe document numbering, profitability tenant contracts, Payables schema, B/L workspace, Finance workspace, Document Center, PDF smoke output, Approval Workflow and Document Preflight.
 
 ## Database
 
@@ -130,6 +130,7 @@ Required Phase 30 migrations include:
 - `20260815_phase30_ssot_workflow.sql`
 - `20260815_document_numbering_tenant.sql`
 - `20260815_profitability_tenant_contract.sql`
+- `20260815_payables_contract.sql`
 
 ## Development
 

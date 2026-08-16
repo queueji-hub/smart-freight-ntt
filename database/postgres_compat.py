@@ -1,6 +1,6 @@
-"""Idempotent PostgreSQL compatibility repairs for Phase 30 preview databases.
+"""Idempotent PostgreSQL compatibility repairs for Phase 30 databases.
 
-All repairs are additive: existing data is preserved.  The helpers are intended
+All repairs are additive: existing data is preserved. The helpers are intended
 for legacy/preview databases that may have received application code before the
 corresponding schema migrations.
 """
@@ -10,6 +10,187 @@ from __future__ import annotations
 def _add_columns(cur, table: str, columns: dict[str, str]) -> None:
     for column, ddl in columns.items():
         cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {ddl}")
+
+
+def _safe_commit(conn) -> None:
+    if hasattr(conn, "commit") and callable(getattr(conn, "commit")):
+        try:
+            conn.commit()
+        except Exception:
+            pass
+
+
+def ensure_phase30_charge_master_schema(conn) -> None:
+    """Create/upgrade charge_master table."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS charge_master (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT DEFAULT 'default',
+                charge_code TEXT NOT NULL,
+                description TEXT NOT NULL,
+                category TEXT,
+                default_basis TEXT,
+                default_unit TEXT,
+                default_currency TEXT DEFAULT 'USD',
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (tenant_id, charge_code)
+            )
+            """
+        )
+        _add_columns(cur, "charge_master", {
+            "tenant_id": "TEXT DEFAULT 'default'",
+            "charge_code": "TEXT",
+            "description": "TEXT",
+            "category": "TEXT",
+            "default_basis": "TEXT",
+            "default_unit": "TEXT",
+            "default_currency": "TEXT DEFAULT 'USD'",
+            "is_active": "BOOLEAN DEFAULT TRUE",
+            "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        })
+        cur.execute("UPDATE charge_master SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''")
+        cur.execute("UPDATE charge_master SET is_active=TRUE WHERE is_active IS NULL")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_charge_master_active ON charge_master(tenant_id, is_active)")
+    _safe_commit(conn)
+
+
+def ensure_phase30_master_data_schema(conn) -> None:
+    """Create/upgrade master data tables (ports, parties, rates)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ports (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                port_code VARCHAR(5) NOT NULL,
+                unlocode VARCHAR(5),
+                port_name TEXT NOT NULL,
+                city TEXT,
+                country_code VARCHAR(2),
+                country_name TEXT,
+                timezone TEXT,
+                port_type TEXT DEFAULT 'PORT',
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                remarks TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (tenant_id, port_code)
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ports_tenant_active ON ports(tenant_id, is_active)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ports_tenant_name ON ports(tenant_id, port_name)")
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS business_parties (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                party_code VARCHAR(5) NOT NULL,
+                legal_name TEXT NOT NULL,
+                display_name TEXT,
+                short_name TEXT,
+                tax_id TEXT,
+                branch_no TEXT,
+                registration_no TEXT,
+                billing_address TEXT,
+                country_code VARCHAR(2),
+                phone TEXT,
+                email TEXT,
+                website TEXT,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (tenant_id, party_code)
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_parties_tenant_active ON business_parties(tenant_id, is_active)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_parties_tenant_name ON business_parties(tenant_id, legal_name)")
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS party_roles (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                party_id INTEGER NOT NULL,
+                role_type TEXT NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                UNIQUE (tenant_id, party_id, role_type)
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_party_roles_lookup ON party_roles(tenant_id, role_type, is_active)")
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS party_finance_profiles (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                party_id INTEGER NOT NULL,
+                credit_limit NUMERIC(18,2) DEFAULT 0,
+                credit_currency VARCHAR(3) DEFAULT 'THB',
+                credit_days INTEGER DEFAULT 0,
+                payment_term_code TEXT,
+                tax_id TEXT,
+                vat_registered BOOLEAN DEFAULT FALSE,
+                withholding_tax BOOLEAN DEFAULT FALSE,
+                bank_name TEXT,
+                bank_account_name TEXT,
+                bank_account_no TEXT,
+                swift_code TEXT,
+                active BOOLEAN DEFAULT TRUE,
+                UNIQUE (tenant_id, party_id)
+            )
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS rate_cards (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                rate_no TEXT NOT NULL,
+                carrier_id INTEGER,
+                origin_port_id INTEGER,
+                destination_port_id INTEGER,
+                mode TEXT NOT NULL,
+                service_type TEXT,
+                equipment_type TEXT,
+                currency VARCHAR(3) DEFAULT 'USD',
+                valid_from DATE,
+                valid_to DATE,
+                status TEXT DEFAULT 'ACTIVE',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (tenant_id, rate_no)
+            )
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS rate_card_lines (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                rate_card_id INTEGER NOT NULL,
+                charge_id INTEGER,
+                basis TEXT,
+                minimum NUMERIC(18,2) DEFAULT 0,
+                rate NUMERIC(18,2) DEFAULT 0,
+                currency VARCHAR(3) DEFAULT 'USD'
+            )
+            """
+        )
+
+        cur.execute("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS mother_vessel TEXT")
+        cur.execute("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_date DATE")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_bookings_tenant_booking_date ON bookings(tenant_id, booking_date)")
+    _safe_commit(conn)
 
 
 def ensure_phase30_profitability_schema(conn) -> None:
@@ -71,16 +252,11 @@ def ensure_phase30_profitability_schema(conn) -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_job_costs_tenant_shipment ON job_costs(tenant_id, shipment_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_job_costs_tenant_status ON job_costs(tenant_id, cost_type, cost_status)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_profit_sheets_tenant_shipment ON profit_sheets(tenant_id, shipment_id)")
-    conn.commit()
+    _safe_commit(conn)
 
 
 def ensure_phase30_bl_schema(conn) -> None:
-    """Create/upgrade B/L header schema required by the Phase 30 B/L workspace.
-
-    This specifically covers the recurring legacy-preview failure where
-    ``bills_of_lading`` exists but lacks ``tenant_id`` (and may also lack the
-    other workflow columns used by the service/view).
-    """
+    """Create/upgrade B/L header schema required by the Phase 30 B/L workspace."""
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -91,9 +267,13 @@ def ensure_phase30_bl_schema(conn) -> None:
                 job_no TEXT,
                 shipment_id INTEGER,
                 booking_no TEXT,
+                consol_no TEXT,
+                consol_seq INTEGER DEFAULT 1,
                 shipper TEXT,
                 consignee TEXT,
                 notify_party TEXT,
+                delivery_agent TEXT,
+                pre_carriage_by TEXT,
                 place_of_receipt TEXT,
                 port_of_loading TEXT,
                 port_of_discharge TEXT,
@@ -117,7 +297,7 @@ def ensure_phase30_bl_schema(conn) -> None:
                 hs_code TEXT,
                 remarks TEXT,
                 special_instructions TEXT,
-                bl_type TEXT DEFAULT 'HBL',
+                bl_type TEXT DEFAULT 'BL',
                 status TEXT DEFAULT 'Draft',
                 approval_status TEXT DEFAULT 'Draft',
                 created_by TEXT,
@@ -126,15 +306,19 @@ def ensure_phase30_bl_schema(conn) -> None:
             )
             """
         )
-        _add_columns(cur, "bills_of_lading", {
+        columns = {
             "tenant_id": "TEXT DEFAULT 'default'",
             "bl_no": "TEXT",
             "job_no": "TEXT",
             "shipment_id": "INTEGER",
             "booking_no": "TEXT",
+            "consol_no": "TEXT",
+            "consol_seq": "INTEGER DEFAULT 1",
             "shipper": "TEXT",
             "consignee": "TEXT",
             "notify_party": "TEXT",
+            "delivery_agent": "TEXT",
+            "pre_carriage_by": "TEXT",
             "place_of_receipt": "TEXT",
             "port_of_loading": "TEXT",
             "port_of_discharge": "TEXT",
@@ -158,15 +342,18 @@ def ensure_phase30_bl_schema(conn) -> None:
             "hs_code": "TEXT",
             "remarks": "TEXT",
             "special_instructions": "TEXT",
-            "bl_type": "TEXT DEFAULT 'HBL'",
+            "bl_type": "TEXT DEFAULT 'BL'",
             "status": "TEXT DEFAULT 'Draft'",
             "approval_status": "TEXT DEFAULT 'Draft'",
             "created_by": "TEXT",
             "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-        })
+        }
+        _add_columns(cur, "bills_of_lading", columns)
         cur.execute("UPDATE bills_of_lading SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''")
+        cur.execute("UPDATE bills_of_lading SET bl_type='BL' WHERE bl_type IS NULL OR btrim(bl_type)=''")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_job ON bills_of_lading(tenant_id, job_no)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_consol ON bills_of_lading(tenant_id, consol_no)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_created ON bills_of_lading(tenant_id, created_at DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_bl_no ON bills_of_lading(tenant_id, bl_no)")
-    conn.commit()
+    _safe_commit(conn)

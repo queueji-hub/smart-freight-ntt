@@ -1,19 +1,15 @@
-"""Tenant-safe B/L workflow service for the Phase 30 workspace.
-
-The legacy B/L manager remains readable for historical code paths. This service
-owns new create/edit/status operations for the production-facing B/L workspace.
-"""
+"""Tenant-safe Bill of Lading workflow for the production-facing workspace."""
 from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from database.connection import get_connection
-from managers.document_numbering_service import generate_document_number
 from database.postgres_compat import ensure_phase30_bl_schema
+from managers.bl_consolidation_service import generate_company_bl_no, next_consol_sequence
 from managers.tenant_context import get_current_tenant_id
 
-BL_TYPES = ("HBL", "MBL")
+BL_TYPES = ("BL",)
 APPROVAL_STATES = ("Draft", "Pending Approval", "Approved")
 
 
@@ -52,10 +48,14 @@ def list_bls(job_no: Optional[str] = None) -> List[Dict[str, Any]]:
         if job_no:
             sql += " AND job_no=%s"
             params.append(job_no)
-        sql += " ORDER BY created_at DESC, id DESC"
+        sql += " ORDER BY job_no, consol_seq NULLS FIRST, created_at DESC, id DESC"
         with conn.cursor() as cur:
             cur.execute(sql, tuple(params))
             return [dict(row) for row in cur.fetchall()]
+
+
+def list_job_bls(job_no: str) -> List[Dict[str, Any]]:
+    return list_bls(job_no=job_no)
 
 
 def get_bl(bl_id: int) -> Optional[Dict[str, Any]]:
@@ -71,10 +71,7 @@ def get_bl(bl_id: int) -> Optional[Dict[str, Any]]:
             return dict(row) if row else None
 
 
-def create_bl_from_job(job_no: str, bl_type: str, user: Dict[str, Any], overrides: Optional[Dict[str, Any]] = None) -> int:
-    if bl_type not in BL_TYPES:
-        raise ValueError(f"B/L type must be one of {BL_TYPES}")
-
+def create_bl_from_job(job_no: str, user: Dict[str, Any], overrides: Optional[Dict[str, Any]] = None) -> int:
     tenant = get_current_tenant_id()
     from managers.shipment_manager import get_shipment
     job = get_shipment(job_no)
@@ -82,26 +79,35 @@ def create_bl_from_job(job_no: str, bl_type: str, user: Dict[str, Any], override
         raise ValueError(f"Job '{job_no}' not found.")
 
     etd = _safe_date(job.get("etd"))
+    consol_seq = next_consol_sequence(job_no)
+
     data: Dict[str, Any] = {
         "job_no": job_no,
         "shipment_id": job.get("id"),
         "booking_no": job.get("booking_no"),
-        "bl_type": bl_type,
+        "bl_type": "BL",
         "status": "Draft",
         "approval_status": "Draft",
+        "consol_no": job_no,
+        "consol_seq": consol_seq,
         "shipper": job.get("shipper"),
         "consignee": job.get("consignee"),
         "notify_party": job.get("notify_party"),
+        "delivery_agent": job.get("delivery_agent") or job.get("place_of_delivery"),
+        "pre_carriage_by": job.get("pre_carriage_by"),
         "place_of_receipt": job.get("place_of_receipt"),
         "port_of_loading": job.get("pol"),
         "port_of_discharge": job.get("pod"),
         "place_of_delivery": job.get("place_of_delivery"),
         "final_destination": job.get("final_destination"),
-        "vessel": job.get("vessel"),
+        "vessel": job.get("mother_vessel") or job.get("vessel"),
         "voyage": job.get("voyage"),
         "etd": job.get("etd"),
         "eta": job.get("eta"),
         "freight_term": job.get("freight_term"),
+        "freight_payable_at": job.get("freight_payable_at"),
+        "place_of_issue": job.get("place_of_issue") or "THAILAND",
+        "number_of_originals": job.get("number_of_originals") or 3,
         "description_of_goods": job.get("commodity"),
         "hs_code": job.get("hs_code"),
         "package_qty": job.get("package_quantity") or 0,
@@ -115,16 +121,19 @@ def create_bl_from_job(job_no: str, bl_type: str, user: Dict[str, Any], override
         data.update(overrides)
 
     if not data.get("bl_no"):
-        data["bl_no"] = generate_document_number(bl_type, etd)
+        data["bl_no"] = generate_company_bl_no(
+            data.get("port_of_loading") or job.get("pol"),
+            data.get("port_of_discharge") or job.get("pod"),
+            data.get("etd") or etd,
+        )
 
     allowed = {
-        "tenant_id", "bl_no", "job_no", "shipment_id", "booking_no", "shipper",
-        "consignee", "notify_party", "place_of_receipt", "port_of_loading",
-        "port_of_discharge", "place_of_delivery", "final_destination", "vessel",
-        "voyage", "etd", "eta", "bl_date", "place_of_issue", "number_of_originals",
-        "freight_term", "freight_payable_at", "marks_numbers", "package_qty", "package_type",
-        "description_of_goods", "gross_weight", "measurement_cbm", "hs_code", "remarks",
-        "special_instructions", "bl_type", "status", "approval_status", "created_by",
+        "tenant_id", "bl_no", "job_no", "shipment_id", "booking_no", "consol_no", "consol_seq",
+        "shipper", "consignee", "notify_party", "delivery_agent", "pre_carriage_by", "place_of_receipt",
+        "port_of_loading", "port_of_discharge", "place_of_delivery", "final_destination", "vessel", "voyage",
+        "etd", "eta", "bl_date", "place_of_issue", "number_of_originals", "freight_term", "freight_payable_at",
+        "marks_numbers", "package_qty", "package_type", "description_of_goods", "gross_weight", "measurement_cbm",
+        "hs_code", "remarks", "special_instructions", "bl_type", "status", "approval_status", "created_by",
     }
     data = {k: v for k, v in data.items() if k in allowed}
     cols = list(data)
@@ -150,12 +159,11 @@ def update_bl(bl_id: int, patch: Dict[str, Any]) -> bool:
         raise ValueError(f"B/L is {doc.get('status')} and cannot be edited.")
 
     allowed = {
-        "shipper", "consignee", "notify_party", "place_of_receipt", "port_of_loading",
-        "port_of_discharge", "place_of_delivery", "final_destination", "vessel", "voyage",
-        "etd", "eta", "bl_date", "place_of_issue", "number_of_originals", "freight_term",
-        "freight_payable_at", "marks_numbers", "package_qty", "package_type",
-        "description_of_goods", "gross_weight", "measurement_cbm", "hs_code", "remarks",
-        "special_instructions",
+        "shipper", "consignee", "notify_party", "delivery_agent", "pre_carriage_by", "place_of_receipt",
+        "port_of_loading", "port_of_discharge", "place_of_delivery", "final_destination", "vessel", "voyage",
+        "etd", "eta", "bl_date", "place_of_issue", "number_of_originals", "freight_term", "freight_payable_at",
+        "marks_numbers", "package_qty", "package_type", "description_of_goods", "gross_weight", "measurement_cbm",
+        "hs_code", "remarks", "special_instructions",
     }
     values = {k: v for k, v in patch.items() if k in allowed}
     if not values:

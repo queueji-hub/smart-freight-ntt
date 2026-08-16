@@ -4,17 +4,21 @@ import streamlit as st
 
 from managers.auth_manager import ROLE_LABELS, can_read
 from managers.session_manager import delete_session, get_user_by_token
-from database.connection import init_database
+from database.connection import init_database, get_connection
 from database.local_schema_compat import ensure_phase30_local_schema
+from database.party_finance_compat import ensure_party_finance_schema
 from ui.design_system import apply_theme, page_header
+
+BUILD_ID = "PHASE30-CONSOLIDATED-20260817"
 
 st.set_page_config(page_title="Smart Freight NTT", page_icon="🚢", layout="wide", initial_sidebar_state="expanded")
 apply_theme()
 
 ERP_MODULES = {
     "EXECUTIVE": [("dashboard", "Home", "dashboard"), ("reports", "Reports", "reports")],
-    "SALES": [("crm", "Customers", "crm"), ("quotation", "Quotations", "quotation"), ("booking", "Bookings", "booking")],
-    "OPERATIONS": [("job_control", "Jobs", "shipment"), ("bl", "Bills of Lading", "bl")],
+    "DATA": [("data", "Master Data", "settings"), ("rates", "Rate Master", "settings")],
+    "SALES": [("crm", "Customers", "crm"), ("quotation", "Quotations", "quotation"), ("handover", "Job Handover", "shipment")],
+    "OPERATIONS": [("booking", "Bookings", "booking"), ("job_control", "Jobs", "shipment"), ("bl", "Bills of Lading", "bl")],
     "DOCUMENTS": [("document", "Documents", "document")],
     "FINANCE": [("billing", "Finance", "billing"), ("ap", "Payables", "ap"), ("profit", "Profitability", "profit")],
     "ADMIN": [("users", "Users", "users"), ("settings", "Settings", "settings"), ("health", "System Health", "system_health")],
@@ -27,6 +31,10 @@ PAGE_ROUTES["billing"] = ("views.finance_document_workspace", "render")
 PAGE_ROUTES["ap"] = ("views.ar_ap_workspace", "render")
 PAGE_ROUTES["document"] = ("views.document_v2_view", "render")
 PAGE_ROUTES["health"] = ("views.system_health_view", "render")
+PAGE_ROUTES["data"] = ("views.master_data_view", "render")
+PAGE_ROUTES["crm"] = ("views.customer_master_view", "render")
+PAGE_ROUTES["rates"] = ("views.rate_master_view", "render")
+PAGE_ROUTES["handover"] = ("views.job_handover_view", "render")
 
 
 def _restore_user():
@@ -50,6 +58,8 @@ def _bootstrap_db():
     try:
         init_database()
         ensure_phase30_local_schema()
+        with get_connection() as conn:
+            ensure_party_finance_schema(conn, sqlite=(type(conn).__name__ == "SQLiteConnAdapter"))
         return True
     except Exception as exc:
         st.sidebar.warning("Database connection is unavailable.")
@@ -58,12 +68,7 @@ def _bootstrap_db():
 
 
 def _allowed_pages(role: str):
-    pages = []
-    for group, modules in ERP_MODULES.items():
-        allowed = [m for m in modules if can_read(role, m[2])]
-        if allowed:
-            pages.append((group, allowed))
-    return pages
+    return [(g, [m for m in modules if can_read(role, m[2])]) for g, modules in ERP_MODULES.items() if any(can_read(role, m[2]) for m in modules)]
 
 
 def _sync_navigation(allowed_ids):
@@ -96,6 +101,7 @@ def main():
     with st.sidebar:
         st.markdown("**SMART FREIGHT NTT**")
         st.caption(f"{user.get('full_name', 'Operator')} · {ROLE_LABELS.get(role, role.upper())}")
+        st.caption(BUILD_ID)
         st.divider()
         for group, modules in groups:
             st.caption(group.title())
