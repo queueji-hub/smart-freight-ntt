@@ -17,7 +17,7 @@ ERP_MODULES = {
     "OPERATIONS": [("job_control", "Jobs", "shipment"), ("bl", "Bills of Lading", "bl")],
     "DOCUMENTS": [("document", "Documents", "document")],
     "FINANCE": [("billing", "Finance", "billing"), ("ap", "Payables", "ap"), ("profit", "Profitability", "profit")],
-    "ADMIN": [("users", "Users", "users"), ("settings", "Settings", "settings")],
+    "ADMIN": [("users", "Users", "users"), ("settings", "Settings", "settings"), ("health", "System Health", "system_health")],
 }
 PAGE_ROUTES = {page_id: (f"views.{module_name}_view", "render") for modules in ERP_MODULES.values() for page_id, _label, module_name in modules}
 PAGE_ROUTES["booking"] = ("views.booking_v2_view", "render")
