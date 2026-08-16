@@ -19,41 +19,16 @@ st.set_page_config(
 apply_theme()
 
 ERP_MODULES = {
-    "EXECUTIVE": [
-        ("dashboard", "Home", "dashboard"),
-        ("reports", "Reports", "reports"),
-    ],
-    "DATA": [
-        ("data", "Master Data", "master_data"),
-    ],
-    "SALES": [
-        ("crm", "Customers", "crm"),
-        ("quotation", "Quotations", "quotation"),
-    ],
-    "OPERATIONS": [
-        ("booking", "Bookings", "booking"),
-        ("job_control", "Jobs", "shipment"),
-        ("bl", "Bills of Lading", "bl"),
-    ],
-    "DOCUMENTS": [
-        ("document", "Documents", "document"),
-    ],
-    "FINANCE": [
-        ("billing", "Finance", "billing"),
-        ("ap", "Payables", "ap"),
-        ("profit", "Profitability", "profit"),
-    ],
-    "ADMIN": [
-        ("users", "Users", "users"),
-        ("settings", "Settings", "settings"),
-    ],
+    "EXECUTIVE": [("dashboard", "Home", "dashboard"), ("reports", "Reports", "reports")],
+    "DATA": [("data", "Master Data", "settings")],
+    "SALES": [("crm", "Customers", "crm"), ("quotation", "Quotations", "quotation")],
+    "OPERATIONS": [("booking", "Bookings", "booking"), ("job_control", "Jobs", "shipment"), ("bl", "Bills of Lading", "bl")],
+    "DOCUMENTS": [("document", "Documents", "document")],
+    "FINANCE": [("billing", "Finance", "billing"), ("ap", "Payables", "ap"), ("profit", "Profitability", "profit")],
+    "ADMIN": [("users", "Users", "users"), ("settings", "Settings", "settings")],
 }
 
-PAGE_ROUTES = {
-    page_id: (f"views.{module_name}_view", "render")
-    for modules in ERP_MODULES.values()
-    for page_id, _label, module_name in modules
-}
+PAGE_ROUTES = {page_id: (f"views.{module_name}_view", "render") for modules in ERP_MODULES.values() for page_id, _label, module_name in modules}
 PAGE_ROUTES["booking"] = ("views.booking_workspace_view", "render")
 PAGE_ROUTES["quotation"] = ("views.quotation_v2_view", "render")
 PAGE_ROUTES["bl"] = ("views.bl_v2_view", "render")
@@ -136,12 +111,7 @@ def main():
         for group, modules in groups:
             st.caption(group.title())
             for page_id, label, _module in modules:
-                if st.button(
-                    label,
-                    key=f"nav_{page_id}",
-                    width="stretch",
-                    type="primary" if page_id == current_page else "secondary",
-                ):
+                if st.button(label, key=f"nav_{page_id}", width="stretch", type="primary" if page_id == current_page else "secondary"):
                     st.session_state["current_navigation"] = page_id
                     st.query_params["page"] = page_id
                     st.rerun()
@@ -157,7 +127,6 @@ def main():
                 st.rerun()
 
     page_header(current_page, status_text="Preview")
-
     module_path, fn_name = PAGE_ROUTES[current_page]
     try:
         module = importlib.import_module(module_path)
