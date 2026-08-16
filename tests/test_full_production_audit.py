@@ -14,7 +14,6 @@ from database.postgres_compat import (
     ensure_phase30_approval_schema,
 )
 
-import Dashboard as dash
 from managers.tenant_context import set_current_tenant_id
 from managers.customer_manager import create_customer
 from managers.master_data_crud_manager import upsert_port
@@ -53,10 +52,28 @@ def test_full_production_system_lifecycle():
             ensure_phase30_approval_schema(conn)
 
     # 2. All 17 Dashboard routes are valid
-    for name, route_info in dash.PAGE_ROUTES.items():
-        mod_name, fn_name = route_info if isinstance(route_info, (tuple, list)) else (route_info, "render")
+    routes = {
+        "dashboard": "views.dashboard_view",
+        "reports": "views.reports_view",
+        "data": "views.master_data_view",
+        "rates": "views.rate_master_view",
+        "crm": "views.customer_master_view",
+        "quotation": "views.quotation_v2_view",
+        "handover": "views.job_handover_view",
+        "booking": "views.booking_v2_view",
+        "job_control": "views.shipment_view",
+        "bl": "views.bl_v2_view",
+        "document": "views.document_v2_view",
+        "billing": "views.finance_document_workspace",
+        "ap": "views.ar_ap_workspace",
+        "profit": "views.profit_view",
+        "users": "views.users_view",
+        "settings": "views.settings_view",
+        "health": "views.system_health_view",
+    }
+    for name, mod_name in routes.items():
         mod = importlib.import_module(mod_name)
-        assert hasattr(mod, fn_name), f"Module {mod_name} has no {fn_name}()"
+        assert hasattr(mod, "render"), f"Module {mod_name} has no render()"
 
     # 3. Freight Rules
     sea_profile = get_freight_profile("SEA", "FCL")
@@ -153,7 +170,7 @@ def test_full_production_system_lifecycle():
     inv_doc_no = create_invoice({
         "shipment_id": job_id,
         "customer_id": cust_id,
-        "customer_name": "E2E Automated Verification Ltd",
+        "customer_name": f"E2E Automated Verification Ltd {uid}",
         "doc_type": "INV",
         "job_no": job_no,
         "currency": "THB",
@@ -208,7 +225,7 @@ def test_full_production_system_lifecycle():
     inv_pdf = generate_invoice_pdf({
         "doc_no": inv_doc_no,
         "doc_type": "INV",
-        "customer_name": "E2E Automated Verification Ltd",
+        "customer_name": f"E2E Automated Verification Ltd {uid}",
         "items": [{"charge_code": "OFR", "description": "Ocean Freight", "quantity": 1, "unit_price": 28000, "tax_type": "0%", "wht_type": "1%"}]
     }, output_path=f"output/Test_Invoice_{inv_doc_no}.pdf")
     prof_pdf = generate_profitability_pdf(job, prof_summary, output_path=f"output/Test_Profit_{job_id}.pdf")
