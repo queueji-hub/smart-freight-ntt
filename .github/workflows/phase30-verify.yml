@@ -85,6 +85,8 @@ jobs:
         run: pytest -q tests/test_bl_v2_view.py
       - name: Test B/L consolidation contract
         run: pytest -q tests/test_bl_consolidation_contract.py
+      - name: Test B/L workbook form contract
+        run: pytest -q tests/test_bl_workbook_form_contract.py
       - name: Test B/L document renderer
         run: pytest -q tests/test_bl_document_renderer.py
       - name: Test architecture boundaries
