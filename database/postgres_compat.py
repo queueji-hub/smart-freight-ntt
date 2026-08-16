@@ -2,6 +2,46 @@
 from __future__ import annotations
 
 
+def ensure_phase30_charge_master_schema(conn) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS charge_master (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT DEFAULT 'default',
+                charge_code TEXT NOT NULL,
+                description TEXT NOT NULL,
+                category TEXT,
+                default_basis TEXT,
+                default_unit TEXT,
+                default_currency TEXT DEFAULT 'USD',
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (tenant_id, charge_code)
+            )
+            """
+        )
+        columns = {
+            "tenant_id": "TEXT DEFAULT 'default'",
+            "charge_code": "TEXT",
+            "description": "TEXT",
+            "category": "TEXT",
+            "default_basis": "TEXT",
+            "default_unit": "TEXT",
+            "default_currency": "TEXT DEFAULT 'USD'",
+            "is_active": "BOOLEAN DEFAULT TRUE",
+            "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        }
+        for column, ddl in columns.items():
+            cur.execute(f"ALTER TABLE charge_master ADD COLUMN IF NOT EXISTS {column} {ddl}")
+        cur.execute("UPDATE charge_master SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''")
+        cur.execute("UPDATE charge_master SET is_active=TRUE WHERE is_active IS NULL")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_charge_master_active ON charge_master(tenant_id, is_active)")
+    conn.commit()
+
+
 def ensure_phase30_profitability_schema(conn) -> None:
     with conn.cursor() as cur:
         cur.execute("CREATE TABLE IF NOT EXISTS job_costs (id SERIAL PRIMARY KEY, shipment_id INTEGER NOT NULL, tenant_id TEXT DEFAULT 'default', cost_type TEXT NOT NULL, category TEXT, description TEXT, supplier TEXT, quantity NUMERIC(15,2) DEFAULT 1, unit_price NUMERIC(15,2) DEFAULT 0, amount NUMERIC(15,2) DEFAULT 0, currency TEXT DEFAULT 'THB', exchange_rate NUMERIC(10,5) DEFAULT 1, amount_thb NUMERIC(15,2) DEFAULT 0, cost_status TEXT DEFAULT 'ESTIMATED', remark TEXT, created_by TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
