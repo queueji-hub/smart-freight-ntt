@@ -357,3 +357,24 @@ def ensure_phase30_bl_schema(conn) -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_created ON bills_of_lading(tenant_id, created_at DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_bills_of_lading_tenant_bl_no ON bills_of_lading(tenant_id, bl_no)")
     _safe_commit(conn)
+
+
+def ensure_phase30_approval_schema(conn) -> None:
+    """Ensure approval_status and tenant column constraints are updated across all core document tables."""
+    with conn.cursor() as cur:
+        for table in ["quotations", "bookings", "invoices", "bills_of_lading"]:
+            try:
+                _add_columns(cur, table, {"approval_status": "TEXT DEFAULT 'Draft'"})
+                cur.execute(f"UPDATE {table} SET approval_status='Draft' WHERE approval_status IS NULL OR btrim(approval_status)=''")
+            except Exception:
+                pass
+        try:
+            cur.execute("ALTER TABLE audit_logs ALTER COLUMN tenant_id TYPE TEXT USING tenant_id::TEXT")
+        except Exception:
+            pass
+        try:
+            cur.execute("ALTER TABLE audit_logs ALTER COLUMN entity_id TYPE TEXT USING entity_id::TEXT")
+        except Exception:
+            pass
+    _safe_commit(conn)
+

@@ -28,6 +28,17 @@ def create_booking(data: Dict[str, Any], user: Dict[str, Any] = None) -> str:
     else:
         booking_no = generate_document_number("BK", data.get("created_at"))
 
+    raw_type = str(data.get("job_type") or data.get("mode") or data.get("transport") or "SE").strip().upper()
+    type_map = {
+        "SEA": "SE", "OCEAN": "SE", "SEA_EXP": "SE", "SE": "SE",
+        "SEA_IMP": "SI", "SI": "SI",
+        "AIR": "AE", "AIR_EXP": "AE", "AE": "AE",
+        "AIR_IMP": "AI", "AI": "AI",
+        "TRUCK": "TE", "ROAD": "TE", "TRK_EXP": "TE", "TE": "TE",
+        "TRK_IMP": "TI", "TI": "TI",
+    }
+    job_type = type_map.get(raw_type, "SE")
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -83,7 +94,7 @@ def create_booking(data: Dict[str, Any], user: Dict[str, Any] = None) -> str:
             """, (
                 tenant_id,
                 booking_no,
-                data.get("job_type"),
+                job_type,
                 data.get("customer_id"),
                 data.get("customer_name"),
                 data.get("shipper"),

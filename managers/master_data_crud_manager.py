@@ -27,20 +27,28 @@ def upsert_port(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> 
     if len(code) != 5 or not name:
         raise ValueError("Port code must be exactly 5 characters and port name is required.")
     with get_connection() as conn, conn.cursor() as cur:
-        if data.get("id"):
+        port_id = data.get("id")
+        if not port_id:
+            cur.execute("SELECT id FROM ports WHERE tenant_id=%s AND port_code=%s LIMIT 1", (tenant, code))
+            existing = cur.fetchone()
+            if existing:
+                port_id = existing["id"] if isinstance(existing, dict) or hasattr(existing, "keys") else existing[0]
+
+        if port_id:
             cur.execute("""UPDATE ports SET port_code=%s, unlocode=%s, port_name=%s, city=%s,
                 country_code=%s, country_name=%s, timezone=%s, port_type=%s, is_active=%s, remarks=%s,
                 updated_at=CURRENT_TIMESTAMP WHERE id=%s AND tenant_id=%s""",
                 (code, data.get("unlocode"), name, data.get("city"), data.get("country_code"), data.get("country_name"),
-                 data.get("timezone"), data.get("port_type") or "PORT", bool(data.get("is_active", True)), data.get("remarks"), data["id"], tenant))
-            port_id = int(data["id"])
+                 data.get("timezone"), data.get("port_type") or "PORT", bool(data.get("is_active", True)), data.get("remarks"), port_id, tenant))
+            port_id = int(port_id)
         else:
             cur.execute("""INSERT INTO ports
                 (tenant_id, port_code, unlocode, port_name, city, country_code, country_name, timezone, port_type, is_active, remarks)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                 (tenant, code, data.get("unlocode") or code, name, data.get("city"), data.get("country_code"), data.get("country_name"),
                  data.get("timezone"), data.get("port_type") or "PORT", bool(data.get("is_active", True)), data.get("remarks")))
-            port_id = int(cur.fetchone()[0])
+            row = cur.fetchone()
+            port_id = int(row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0])
         conn.commit()
         return port_id
 
@@ -68,8 +76,15 @@ def upsert_party(data: Dict[str, Any], roles: List[str], finance: Optional[Dict[
     if len(code) != 5 or not legal_name:
         raise ValueError("Party code must be exactly 5 characters and legal name is required.")
     with get_connection() as conn, conn.cursor() as cur:
-        if data.get("id"):
-            party_id = int(data["id"])
+        party_id = data.get("id")
+        if not party_id:
+            cur.execute("SELECT id FROM business_parties WHERE tenant_id=%s AND party_code=%s LIMIT 1", (tenant, code))
+            existing = cur.fetchone()
+            if existing:
+                party_id = existing["id"] if isinstance(existing, dict) or hasattr(existing, "keys") else existing[0]
+
+        if party_id:
+            party_id = int(party_id)
             cur.execute("""UPDATE business_parties SET party_code=%s, legal_name=%s, display_name=%s, short_name=%s,
                 tax_id=%s, branch_no=%s, registration_no=%s, billing_address=%s, country_code=%s, phone=%s, email=%s, website=%s,
                 is_active=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s AND tenant_id=%s""",
@@ -84,7 +99,8 @@ def upsert_party(data: Dict[str, Any], roles: List[str], finance: Optional[Dict[
                 (tenant, code, legal_name, data.get("display_name") or legal_name, data.get("short_name"), data.get("tax_id"), data.get("branch_no"),
                  data.get("registration_no"), data.get("billing_address"), data.get("country_code"), data.get("phone"), data.get("email"), data.get("website"),
                  bool(data.get("is_active", True))))
-            party_id = int(cur.fetchone()[0])
+            row = cur.fetchone()
+            party_id = int(row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0])
         for role in sorted({str(r).strip().upper() for r in roles if r}):
             cur.execute("INSERT INTO party_roles (tenant_id, party_id, role_type, is_active) VALUES (%s,%s,%s,TRUE) ON CONFLICT DO NOTHING", (tenant, party_id, role))
         if finance is not None:

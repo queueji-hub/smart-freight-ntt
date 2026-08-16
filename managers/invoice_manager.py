@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 from database.connection import get_connection
 from managers.document_numbering_service import generate_document_number, normalize_doc_no
 from contracts.invoice_contract import validate_invoice_summary
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 # =========================================================
@@ -58,23 +59,23 @@ def calculate_summary(items: List[Dict[str, Any]]) -> Dict[str, Decimal]:
 
     for item in items:
         qty = Decimal(str(item.get("quantity", 1)))
-        unit_price = Decimal(str(item.get("unit_price", 0)))
-        amount = Decimal(str(item["amount"])) if item.get("amount") is not None else qty * unit_price
-        tax_type = item.get("tax_type", "VAT 7%")
-        wht_type = item.get("wht_type", "None")
+        price = Decimal(str(item.get("unit_price", 0.0)))
+        amount = qty * price
 
-        subtotal += amount
-        vat_rate = Decimal(str(TAX_RATES.get(tax_type, 0.0)))
-        vat_total += amount * vat_rate
-        if tax_type == "Advance":
+        tax = item.get("tax_type", "VAT 7%")
+        wht = item.get("wht_type", "None")
+
+        if tax == "Advance":
             advance += amount
+        else:
+            subtotal += amount
+            if tax == "VAT 7%":
+                vat_total += amount * Decimal('0.07')
 
-        wht_rate = Decimal(str(WHT_RATES.get(wht_type, 0.0)))
-        wht_amount = amount * wht_rate
-        if wht_type == "WHT 1%":
-            wht_1 += wht_amount
-        elif wht_type == "WHT 3%":
-            wht_3 += wht_amount
+        if wht == "WHT 1%":
+            wht_1 += amount * Decimal('0.01')
+        elif wht == "WHT 3%":
+            wht_3 += amount * Decimal('0.03')
 
     wht_total = wht_1 + wht_3
     grand_total = subtotal + vat_total - wht_total
@@ -99,7 +100,9 @@ def calculate_summary(items: List[Dict[str, Any]]) -> Dict[str, Decimal]:
 def create_invoice(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
     """Creates invoice header and lines atomically using PostgreSQL."""
     tenant_id = get_current_tenant_id()
-    doc_no = generate_document_number(data.get("doc_type", "INV"), data.get("issue_date"))
+    issue_date = data.get("issue_date") or data.get("doc_date") or data.get("invoice_date") or datetime.now().strftime("%Y-%m-%d")
+    due_date = data.get("due_date") or (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+    doc_no = generate_document_number(data.get("doc_type", "INV"), issue_date)
     summary = calculate_summary(items)
 
     with get_connection() as conn:
@@ -127,8 +130,8 @@ def create_invoice(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     data.get("customer_id"),
                     canonical_customer_name,
                     data.get("job_no"),
-                    data.get("issue_date"),
-                    data.get("due_date"),
+                    issue_date,
+                    due_date,
                     data.get("currency", "THB"),
                     data.get("ref_doc_no"),
                     data.get("remark"),

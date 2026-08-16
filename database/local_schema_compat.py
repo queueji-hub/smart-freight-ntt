@@ -6,7 +6,13 @@ and test SQLite databases compatible with the Phase 30 contract.
 from __future__ import annotations
 
 from database.connection import get_connection
-from database.postgres_compat import ensure_phase30_profitability_schema, ensure_phase30_master_data_schema
+from database.postgres_compat import (
+    ensure_phase30_profitability_schema,
+    ensure_phase30_master_data_schema,
+    ensure_phase30_charge_master_schema,
+    ensure_phase30_bl_schema,
+    ensure_phase30_approval_schema,
+)
 
 
 def _is_sqlite(conn) -> bool:
@@ -21,8 +27,11 @@ def _columns(cur, table: str) -> set[str]:
 def ensure_phase30_local_schema() -> None:
     with get_connection() as conn:
         if not _is_sqlite(conn):
-            ensure_phase30_profitability_schema(conn)
+            ensure_phase30_charge_master_schema(conn)
             ensure_phase30_master_data_schema(conn)
+            ensure_phase30_profitability_schema(conn)
+            ensure_phase30_bl_schema(conn)
+            ensure_phase30_approval_schema(conn)
             return
 
         with conn.cursor() as cur:

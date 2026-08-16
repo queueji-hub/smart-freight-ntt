@@ -55,10 +55,11 @@ def search_customers(query: str) -> List[Dict[str, Any]]:
             return [dict(r) for r in cur.fetchall()]
 
 
-def create_customer(data: Dict[str, Any]) -> bool:
+def create_customer(data: Dict[str, Any]) -> Any:
     if not data or not data.get("company_name"):
         return False
     tenant_id = get_current_tenant_id()
+    active_val = 1 if data.get("is_active", True) else 0
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -70,9 +71,10 @@ def create_customer(data: Dict[str, Any]) -> bool:
             """, (
                 data.get("company_name"), data.get("contact_person"), data.get("tel"), data.get("email"),
                 data.get("address"), data.get("tax_id"), data.get("credit_terms_days", 30), data.get("notes"),
-                bool(data.get("is_active", True)), tenant_id,
+                active_val, tenant_id,
             ))
-            customer_id = cur.fetchone()["id"]
+            row = cur.fetchone()
+            customer_id = int(row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0])
             conn.commit()
             return customer_id
 

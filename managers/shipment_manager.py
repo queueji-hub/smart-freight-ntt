@@ -72,11 +72,24 @@ def get_reporting_period(job: Dict[str, Any]) -> tuple[str, str]:
 
 def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
     tenant_id = get_current_tenant_id()
-    job_no = generate_document_number(
-        "JOB",
-        data.get("etd")
-    )
+    job_no = (data.get("job_no") or "").strip()
+    if not job_no:
+        job_no = generate_document_number(
+            "JOB",
+            data.get("etd")
+        )
     
+    raw_type = str(data.get("job_type") or data.get("mode") or data.get("transport") or "SE").strip().upper()
+    type_map = {
+        "SEA": "SE", "OCEAN": "SE", "SEA_EXP": "SE", "SE": "SE",
+        "SEA_IMP": "SI", "SI": "SI",
+        "AIR": "AE", "AIR_EXP": "AE", "AE": "AE",
+        "AIR_IMP": "AI", "AI": "AI",
+        "TRUCK": "TE", "ROAD": "TE", "TRK_EXP": "TE", "TE": "TE",
+        "TRK_IMP": "TI", "TI": "TI",
+    }
+    data["job_type"] = type_map.get(raw_type, "SE")
+
     # ETD / ETA Business Logic
     m, y = get_reporting_period(data)
     data["reporting_month"] = m
@@ -146,6 +159,7 @@ def list_shipments(
     if search_query and search_query.strip():
         normalized_search = normalize_doc_no(search_query)
         q = f"%{search_query.strip().lower()}%"
+        nq = f"%{normalized_search.lower()}%"
         sql += """ AND (
             REPLACE(REPLACE(UPPER(job_no), '-', ''), ' ', '') LIKE %s OR
             LOWER(job_no) LIKE %s OR 
@@ -158,7 +172,7 @@ def list_shipments(
             LOWER(hbl_no) LIKE %s OR 
             LOWER(mbl_no) LIKE %s
         )"""
-        params.extend([f"%{normalized_search}%", q, q, q, q, q, q, q, q, q])
+        params.extend([nq, q, q, q, q, q, q, q, q, q])
 
     sql += " ORDER BY created_at DESC LIMIT %s"
     params.append(limit)
@@ -174,14 +188,22 @@ def list_shipments(
 # GET SINGLE JOB
 # =========================
 
-def get_shipment(job_no: str) -> Optional[Dict]:
+def get_shipment(job_no_or_id: Any) -> Optional[Dict]:
+    if not job_no_or_id:
+        return None
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM shipments WHERE job_no = %s AND tenant_id = %s",
-                (job_no, tenant_id)
-            )
+            if isinstance(job_no_or_id, int) or (isinstance(job_no_or_id, str) and job_no_or_id.isdigit()):
+                cur.execute(
+                    "SELECT * FROM shipments WHERE (id = %s OR job_no = %s) AND tenant_id = %s LIMIT 1",
+                    (int(job_no_or_id), str(job_no_or_id), tenant_id)
+                )
+            else:
+                cur.execute(
+                    "SELECT * FROM shipments WHERE job_no = %s AND tenant_id = %s LIMIT 1",
+                    (str(job_no_or_id), tenant_id)
+                )
             row = cur.fetchone()
             return dict(row) if row else None
 
