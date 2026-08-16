@@ -43,10 +43,12 @@ ROLE_LABELS = {
 # =========================================================
 def normalize_user(user: Dict[str, Any]) -> Dict[str, Any]:
     """Ensures consistent user payload schema boundaries across view states."""
+    clean_username = str(user.get("username", "")).strip().lower()
+    full_name = str(user.get("full_name") or "").strip() or clean_username or "System User"
     return {
         "id": user.get("id"),
-        "username": str(user.get("username", "")).strip().lower(),
-        "full_name": user.get("full_name") or user.get("username", "System User"),
+        "username": clean_username,
+        "full_name": full_name,
         "email": str(user.get("email", "")).strip(),
         "role": str(user.get("role", "sales")).strip().lower(),
         "is_active": int(user.get("is_active", 1)),

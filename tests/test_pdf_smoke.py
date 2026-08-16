@@ -103,3 +103,131 @@ def test_profitability_pdf_generates(tmp_path):
     assert result == str(output)
     assert output.exists()
     assert output.stat().st_size > 1000
+
+
+def test_credit_and_debit_note_pdf_generates(tmp_path):
+    from pdf.invoice_pdf import generate_invoice_pdf
+
+    for doc_type in ["CN", "DN"]:
+        output = tmp_path / f"{doc_type.lower()}.pdf"
+        doc = {
+            "doc_type": doc_type,
+            "doc_no": f"{doc_type}-TEST-0001",
+            "customer_name": "Erawan",
+            "issue_date": "2026-08-15",
+            "currency": "THB",
+            "subtotal": 500,
+            "vat_amount": 35,
+            "total_amount": 535,
+            "reason": "Price correction per agreement",
+            "items": [
+                {
+                    "description": "Freight Adjustment",
+                    "quantity": 1,
+                    "unit_price": 500,
+                    "amount": 500,
+                    "tax_type": "VAT 7%",
+                    "wht_type": "None",
+                }
+            ],
+        }
+        res = generate_invoice_pdf(doc, output_path=str(output))
+        assert res == str(output)
+        assert output.exists()
+        assert output.stat().st_size > 1000
+
+
+def test_quotation_pdf_generates(tmp_path):
+    from pdf.quotation_pdf import generate_quotation_pdf
+
+    output = tmp_path / "quote.pdf"
+    quote_data = {
+        "quote_no": "QT-TEST-0001",
+        "customer_name": "Erawan Trading Co., Ltd.",
+        "quote_date": "2026-08-15",
+        "valid_until": "2026-09-15",
+        "pol": "Bangkok Port",
+        "pod": "Singapore",
+        "job_type": "SE",
+        "mode": "SEA",
+        "cargo_type": "FCL",
+        "items": [
+            {
+                "description": "Ocean Freight",
+                "quantity": 1,
+                "unit_price": 800,
+                "amount": 800,
+                "currency": "USD",
+            }
+        ],
+    }
+    res = generate_quotation_pdf(quote_data, quote_data["items"], output_path=str(output))
+    assert res == str(output)
+    assert output.exists()
+    assert output.stat().st_size > 1000
+
+
+def test_receipt_pdf_generates(tmp_path):
+    from pdf.receipt_pdf import generate_receipt_pdf
+
+    output = tmp_path / "receipt.pdf"
+    inv_data = {
+        "doc_no": "REC-TEST-0001",
+        "doc_type": "REC",
+        "customer_name": "Erawan Trading Co., Ltd.",
+        "issue_date": "2026-08-15",
+        "total_amount": 10700.0,
+        "items": [
+            {
+                "description": "Ocean Freight",
+                "quantity": 1,
+                "unit_price": 10000.0,
+                "amount": 10000.0,
+                "tax_type": "VAT 7%",
+            }
+        ],
+    }
+    res = generate_receipt_pdf(inv_data, output_path=str(output))
+    assert res == str(output)
+    assert output.exists()
+    assert output.stat().st_size > 1000
+
+
+def test_company_bl_pdf_generates(tmp_path):
+    from pdf.bl_document_renderer import generate_company_bl_pdf
+
+    output = tmp_path / "bl.pdf"
+    payload = {
+        "bl": {
+            "bl_no": "NATTA-BKKSI2608001",
+            "bl_type": "BL",
+            "shipper": "Thai Exporter Co.",
+            "consignee": "SG Importer Pte.",
+            "port_of_loading": "Bangkok",
+            "port_of_discharge": "Singapore",
+            "vessel_name": "WAN HAI 301",
+            "voyage_no": "N120",
+        },
+        "containers": [
+            {
+                "container_no": "WHLU1234567",
+                "container_size": "20'GP",
+                "seal_no": "SL9988",
+                "gross_weight": 12000,
+                "packages": "500 Cartons",
+                "goods_description": "Consumer Goods",
+            }
+        ],
+        "charges": [
+            {
+                "charge_name": "Ocean Freight",
+                "prepaid": "800.00 USD",
+                "collect": "",
+            }
+        ],
+    }
+    res = generate_company_bl_pdf(payload, output_path=str(output))
+    assert res == str(output)
+    assert output.exists()
+    assert output.stat().st_size > 1000
+

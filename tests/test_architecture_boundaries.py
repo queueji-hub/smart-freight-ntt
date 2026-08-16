@@ -31,3 +31,9 @@ def test_billing_and_managers_do_not_import_streamlit_backend_side_effects():
         text = _text(path).lower()
         assert "import streamlit" not in text
         assert "from streamlit" not in text
+
+
+def test_all_views_have_no_direct_database_connection():
+    for view_file in (REPO / "views").glob("*.py"):
+        text = view_file.read_text(encoding="utf-8").lower()
+        assert "from database.connection import get_connection" not in text, f"{view_file.name} directly accesses get_connection"

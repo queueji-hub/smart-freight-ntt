@@ -10,9 +10,10 @@ from managers.auth_manager import (
     list_users,
     create_user,
     update_user_password,
+    update_user_role,
+    set_user_active,
     PERMISSIONS,
 )
-from database.connection import get_connection
 
 # =========================================================
 # SYSTEM VIEW ROUTER ENTRYPOINT
@@ -152,25 +153,7 @@ def render():
                         if submit_role:
                             with st.spinner("Applying access matrix mutation..."):
                                 try:
-                                    with get_connection() as conn:
-                                        # Standardized placeholder structure safely prepared
-                                        cursor = conn.cursor()
-                                        
-                                        # Adaptable query statement format agnostic handler
-                                        try:
-                                            cursor.execute(
-                                                "UPDATE users SET role = %s WHERE id = %s",
-                                                (new_role, target["id"])
-                                            )
-                                        except:
-                                            # Failover support for alternative embedded systems architecture configurations
-                                            cursor.execute(
-                                                "UPDATE users SET role = ? WHERE id = ?",
-                                                (new_role, target["id"])
-                                            )
-                                            
-                                        conn.commit()
-                                        
+                                    update_user_role(target["username"], new_role)
                                     st.toast(f"✅ Access authorization upgraded to standard: [{new_role.upper()}]", icon="🎭")
                                     st.rerun()
                                 except Exception as role_ex:
@@ -211,7 +194,13 @@ def render():
             else:
                 with st.spinner("Executing secure pipeline data injection..."):
                     try:
-                        create_user(u, p, rl, fn.strip() if fn else None, em.strip() if em else None)
+                        create_user(
+                            username=u,
+                            password=p,
+                            full_name=fn.strip() if fn else "",
+                            email=em.strip() if em else "",
+                            role=rl
+                        )
                         st.success(f"🎉 Enterprise Profile [{u}] successfully provisioned and committed to master nodes!")
                         st.balloons()
                         st.rerun()
