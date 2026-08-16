@@ -12,11 +12,8 @@ from config import DEFAULT_TERMS, JOB_TYPES
 from managers.auth_manager import can_write
 from managers.customer_manager import list_customers
 from managers.master_data_manager import list_sales_users
-from managers.quotation_manager import (
-    duplicate_quotation,
-    get_quotation_by_no,
-    list_quotations,
-)
+from managers.charge_master_manager import list_charges
+from managers.quotation_manager import duplicate_quotation, get_quotation_by_no, list_quotations
 from managers.quotation_ssot_service import create_quotation_ssot
 from ui.design_system import page_header, section
 
@@ -58,52 +55,74 @@ def _render_pdf(record: Dict[str, Any], items: list[dict]) -> None:
         _prepare_pdf(record, items)
     payload = st.session_state.get(f"quotation_pdf_{qno}")
     if payload:
-        st.download_button(
-            "Download",
-            data=payload,
-            file_name=st.session_state.get(f"quotation_pdf_name_{qno}", f"{qno}.pdf"),
-            mime="application/pdf",
-            key=f"qv2_download_pdf_{qno}",
-            width="stretch",
-        )
+        st.download_button("Download", data=payload, file_name=st.session_state.get(f"quotation_pdf_name_{qno}", f"{qno}.pdf"), mime="application/pdf", key=f"qv2_download_pdf_{qno}", width="stretch")
 
 
 def _master_data():
     customers = list_customers() or []
     sales = list_sales_users() or []
+    charges = list_charges(active_only=True) or []
     customer_map = {int(r["id"]): r.get("company_name", str(r["id"])) for r in customers if r.get("id")}
     sales_map = {int(r["id"]): (r.get("full_name") or r.get("username") or str(r["id"])) for r in sales if r.get("id")}
-    return customer_map, sales_map
+    charge_map = {str(r.get("charge_code")).upper(): r for r in charges if r.get("charge_code")}
+    return customer_map, sales_map, charge_map
 
 
-def _item_editor(existing: list[dict] | None = None) -> list[dict]:
-    rows = existing or [{"description": "", "basis": "", "quantity": 1.0, "unit": "SHPMT", "currency": "USD", "unit_rate": 0.0, "price": 0.0, "remark": ""}]
+def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | None = None) -> list[dict]:
+    rows = []
+    for raw in existing or []:
+        item = dict(raw or {})
+        code = _s(item.get("charge_code")).upper()
+        if not code:
+            desc = _s(item.get("description")).lower()
+            match = next((c for c in charge_map.values() if _s(c.get("description")).lower() == desc), None)
+            code = _s(match.get("charge_code")).upper() if match else ""
+        rows.append({"charge_code": code, "quantity": float(item.get("quantity") or 1), "unit_rate": float(item.get("unit_rate") or 0), "price": float(item.get("price") or 0), "remark": _s(item.get("remark"))})
+    if not rows:
+        default_code = next(iter(charge_map), "")
+        rows = [{"charge_code": default_code, "quantity": 1.0, "unit_rate": 0.0, "price": 0.0, "remark": ""}]
+
+    codes = list(charge_map.keys())
     df = pd.DataFrame(rows)
-    if "price" not in df.columns:
-        df["price"] = 0.0
     edited = st.data_editor(
         df,
         num_rows="dynamic",
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         column_config={
-            "description": st.column_config.TextColumn("Charge *", required=True, width="large"),
-            "basis": st.column_config.TextColumn("Basis", width="small"),
+            "charge_code": st.column_config.SelectboxColumn("Charge *", options=codes, required=True, width="large"),
             "quantity": st.column_config.NumberColumn("Qty", min_value=0.0, step=1.0),
-            "unit": st.column_config.TextColumn("Unit"),
-            "currency": st.column_config.SelectboxColumn("Currency", options=CURRENCY_OPTIONS),
             "unit_rate": st.column_config.NumberColumn("Rate", min_value=0.0, step=0.01),
             "price": st.column_config.NumberColumn("Amount", disabled=True),
             "remark": st.column_config.TextColumn("Remarks"),
         },
         key="qv2_items",
     )
+    edited["charge_code"] = edited["charge_code"].fillna("").astype(str).str.upper().str.strip()
     edited["price"] = pd.to_numeric(edited["quantity"], errors="coerce").fillna(1) * pd.to_numeric(edited["unit_rate"], errors="coerce").fillna(0)
-    return edited.to_dict("records")
+    output = []
+    for row in edited.to_dict("records"):
+        code = _s(row.get("charge_code")).upper()
+        master = charge_map.get(code)
+        if not master:
+            output.append(row)
+            continue
+        output.append({
+            "charge_code": code,
+            "description": master.get("description"),
+            "basis": master.get("default_basis"),
+            "quantity": float(row.get("quantity") or 0),
+            "unit": master.get("default_unit"),
+            "currency": master.get("default_currency") or "USD",
+            "unit_rate": float(row.get("unit_rate") or 0),
+            "price": float(row.get("price") or 0),
+            "remark": _s(row.get("remark")),
+        })
+    return output
 
 
 def _create_form(user: Dict[str, Any]):
-    customer_map, sales_map = _master_data()
+    customer_map, sales_map, charge_map = _master_data()
     today = date.today()
     with st.form("quotation_v2_create"):
         section("Quotation Details")
@@ -130,8 +149,8 @@ def _create_form(user: Dict[str, Any]):
         subject = st.text_input("Subject")
 
         section("Pricing")
-        st.caption("Select standardized charges. Charge Master will be the canonical pricing source.")
-        items_df = _item_editor()
+        st.caption("Charges are selected from Charge Master. Description, basis, unit and currency are canonical master data.")
+        items_df = _item_editor(charge_map)
 
         section("Terms")
         terms = st.text_area("Terms & Conditions", value=DEFAULT_TERMS, height=120)
@@ -141,11 +160,13 @@ def _create_form(user: Dict[str, Any]):
         errors = []
         if customer_id is None:
             errors.append("Customer is required.")
+        if not charge_map:
+            errors.append("Charge Master has no active charges.")
         if valid_until < issue_date:
             errors.append("Valid Until cannot be earlier than Issue Date.")
         clean_items = []
         for idx, row in enumerate(items_df, 1):
-            if not _s(row.get("description")):
+            if not _s(row.get("charge_code")):
                 errors.append(f"Line {idx}: Charge is required.")
                 continue
             if float(row.get("unit_rate") or 0) < 0:
@@ -210,16 +231,10 @@ def render():
 
     section("Quotation Ledger")
     table = pd.DataFrame([
-        {
-            "Quotation No.": _s(r.get("quotation_no")),
-            "Customer": _s(r.get("customer_name"), "—"),
-            "Issue Date": _s(r.get("quotation_date"), "—"),
-            "Valid Until": _s(r.get("validity_date"), "—"),
-            "Status": _s(r.get("status"), "—"),
-        }
+        {"Quotation No.": _s(r.get("quotation_no")), "Customer": _s(r.get("customer_name"), "—"), "Issue Date": _s(r.get("quotation_date"), "—"), "Valid Until": _s(r.get("validity_date"), "—"), "Status": _s(r.get("status"), "—")}
         for r in records
     ])
-    st.dataframe(table, hide_index=True, use_container_width=True)
+    st.dataframe(table, hide_index=True, width="stretch")
     if not records:
         st.info("No quotations found.")
         return
