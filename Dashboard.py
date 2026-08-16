@@ -100,19 +100,25 @@ def main():
         for group, modules in groups:
             st.caption(group.title())
             for page_id, label, _module in modules:
-                if st.button(label, key=f"nav_{page_id}", width="stretch"):
+                if st.button(label, key=f"nav_{page_id}", width="stretch", type="primary" if page_id == current_page else "secondary"):
                     st.session_state["current_navigation"] = page_id
                     st.query_params["page"] = page_id
                     st.rerun()
         st.divider()
-        if st.button("Logout", key="nav_logout", width="stretch"):
-            delete_session(st.session_state.get("session_token"))
-            st.session_state.clear()
-            st.rerun()
-    module_name, function_name = PAGE_ROUTES.get(current_page, PAGE_ROUTES["dashboard"])
+        if st.button("Log out", width="stretch", key="nav_logout"):
+            try:
+                token = st.session_state.get("session_token")
+                if token:
+                    delete_session(token)
+            finally:
+                st.session_state.clear()
+                st.query_params.clear()
+                st.rerun()
+    page_header(current_page, status_text="Online")
+    module_path, fn_name = PAGE_ROUTES.get(current_page, PAGE_ROUTES["dashboard"])
     try:
-        module = importlib.import_module(module_name)
-        getattr(module, function_name)()
+        module = importlib.import_module(module_path)
+        getattr(module, fn_name)()
     except Exception as exc:
         st.error("Unable to load this workspace.")
         st.code(traceback.format_exc(), language="text")
