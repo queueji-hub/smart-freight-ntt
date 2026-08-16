@@ -50,9 +50,13 @@ def find_applicable_rates(
     sql = f"""
         SELECT r.id, r.rate_no, r.mode, r.service_type, r.equipment_type, r.currency,
                r.valid_from, r.valid_to, r.carrier_id, r.origin_port_id, r.destination_port_id,
-               l.id AS line_id, l.charge_id, l.basis, l.minimum, l.rate, l.currency AS line_currency
+               l.id AS line_id, l.charge_id, cm.charge_code, cm.description AS charge_description,
+               l.basis, l.minimum, l.rate, l.currency AS line_currency
         FROM rate_cards r
-        LEFT JOIN rate_card_lines l ON l.rate_card_id=r.id AND l.tenant_id=r.tenant_id
+        LEFT JOIN rate_card_lines l
+          ON l.rate_card_id=r.id AND l.tenant_id=r.tenant_id
+        LEFT JOIN charge_master cm
+          ON cm.id=l.charge_id AND cm.tenant_id=r.tenant_id
         WHERE {' AND '.join(clauses)}
         ORDER BY r.rate_no, l.id
     """
