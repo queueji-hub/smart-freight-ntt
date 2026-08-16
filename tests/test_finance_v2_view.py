@@ -14,3 +14,11 @@ def test_finance_v2_uses_charge_master_for_new_lines():
     source = Path("views/finance_v2_view.py").read_text(encoding="utf-8")
     assert "list_charges" in source
     assert "Charge" in source
+
+
+def test_ar_ap_workspace_contract():
+    import views.ar_ap_workspace  # noqa: F401
+    source = Path("views/ar_ap_workspace.py").read_text(encoding="utf-8")
+    assert "Accounts Receivable" in source
+    assert "Statement of Account (SOA)" in source
+    assert "Payment Register" in source
