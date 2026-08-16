@@ -52,4 +52,41 @@ def ensure_phase30_local_schema() -> None:
                 for column, ddl in cols.items():
                     if column not in existing:
                         cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS charge_master (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT DEFAULT 'default',
+                    charge_code TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    category TEXT,
+                    default_basis TEXT,
+                    default_unit TEXT,
+                    default_currency TEXT DEFAULT 'USD',
+                    is_active INTEGER DEFAULT 1,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (tenant_id, charge_code)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_charge_master_active ON charge_master(tenant_id, is_active)")
+            cur.executemany(
+                """
+                INSERT OR IGNORE INTO charge_master
+                (tenant_id, charge_code, description, category, default_basis, default_unit, default_currency)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    ("default", "OF", "Ocean Freight", "Freight", "Shipment", "SHPMT", "USD"),
+                    ("default", "THC", "Terminal Handling Charge", "Origin", "Container", "CTR", "USD"),
+                    ("default", "DOC", "Documentation", "Origin", "Shipment", "SHPMT", "USD"),
+                    ("default", "CUS", "Customs Clearance", "Customs", "Shipment", "SHPMT", "THB"),
+                    ("default", "TRK", "Trucking", "Transport", "Trip", "TRIP", "THB"),
+                    ("default", "CFS", "CFS Handling", "Handling", "CBM", "CBM", "USD"),
+                    ("default", "AIR", "Air Freight", "Freight", "KG", "KG", "USD"),
+                    ("default", "INS", "Insurance", "Other", "Shipment", "SHPMT", "THB"),
+                ],
+            )
             conn.commit()
