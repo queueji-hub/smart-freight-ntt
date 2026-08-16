@@ -8,7 +8,7 @@ from database.connection import init_database
 from database.local_schema_compat import ensure_phase30_local_schema
 from ui.design_system import apply_theme, page_header
 
-BUILD_ID = "PHASE30-PREVIEW-20260815"
+BUILD_ID = "PHASE30-PREVIEW-20260816"
 
 st.set_page_config(
     page_title="Smart Freight NTT • Phase 30 Preview",
@@ -23,12 +23,15 @@ ERP_MODULES = {
         ("dashboard", "Home", "dashboard"),
         ("reports", "Reports", "reports"),
     ],
+    "DATA": [
+        ("data", "Master Data", "master_data"),
+    ],
     "SALES": [
         ("crm", "Customers", "crm"),
         ("quotation", "Quotations", "quotation"),
-        ("booking", "Bookings", "booking"),
     ],
     "OPERATIONS": [
+        ("booking", "Bookings", "booking"),
         ("job_control", "Jobs", "shipment"),
         ("bl", "Bills of Lading", "bl"),
     ],
@@ -51,11 +54,12 @@ PAGE_ROUTES = {
     for modules in ERP_MODULES.values()
     for page_id, _label, module_name in modules
 }
-PAGE_ROUTES["booking"] = ("views.booking_v2_view", "render")
+PAGE_ROUTES["booking"] = ("views.booking_workspace_view", "render")
 PAGE_ROUTES["quotation"] = ("views.quotation_v2_view", "render")
 PAGE_ROUTES["bl"] = ("views.bl_v2_view", "render")
 PAGE_ROUTES["billing"] = ("views.finance_v2_view", "render")
 PAGE_ROUTES["document"] = ("views.document_v2_view", "render")
+PAGE_ROUTES["data"] = ("views.master_data_view", "render")
 
 
 def _restore_user():
