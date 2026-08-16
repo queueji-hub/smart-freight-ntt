@@ -12,3 +12,4 @@ def test_bl_workspace_generates_pdf_from_persisted_ssot():
     assert "path = generate_bl_pdf(bid)" in source
     assert '"job": {}' not in source
     assert '"containers": []' not in source
+    assert source.index("from pdf.bl_pdf import generate_bl_pdf") > source.index("def _pdf")
