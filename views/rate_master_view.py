@@ -16,11 +16,10 @@ MODE_OPTIONS = ["SEA", "AIR", "TRUCK", "MULTIMODAL"]
 
 def _render_form(user, record=None):
     record = record or {}
-    parties = list_parties(None, active_only=True)
-    carriers = parties
+    parties = list_parties("CARRIER", active_only=True)
     ports = list_ports(active_only=True)
     charges = list_charges(active_only=True)
-    carrier_map = {int(p["id"]): f"{p.get('party_code')} — {p.get('display_name') or p.get('legal_name')}" for p in carriers if p.get("id")}
+    carrier_map = {int(p["id"]): f"{p.get('party_code')} — {p.get('display_name') or p.get('legal_name')}" for p in parties if p.get("id")}
     port_map = {int(p["id"]): f"{p.get('port_code')} — {p.get('port_name')}, {p.get('country_name') or ''}" for p in ports if p.get("id")}
     charge_map = {int(c["id"]): f"{c.get('charge_code')} — {c.get('description')}" for c in charges if c.get("id")}
 
