@@ -55,7 +55,7 @@ def _bootstrap_db():
         init_database()
         ensure_phase30_local_schema()
         with get_connection() as conn:
-            ensure_party_finance_schema(conn, sqlite=False)
+            ensure_party_finance_schema(conn, sqlite=(type(conn).__name__ == "SQLiteConnAdapter"))
         return True
     except Exception as exc:
         st.sidebar.warning("Database connection is unavailable.")
