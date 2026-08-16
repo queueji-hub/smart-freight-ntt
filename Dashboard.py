@@ -30,6 +30,7 @@ PAGE_ROUTES["bl"] = ("views.bl_v2_view", "render")
 PAGE_ROUTES["billing"] = ("views.finance_v2_view", "render")
 PAGE_ROUTES["document"] = ("views.document_v2_view", "render")
 PAGE_ROUTES["data"] = ("views.master_data_view", "render")
+PAGE_ROUTES["crm"] = ("views.customer_master_view", "render")
 
 
 def _restore_user():
