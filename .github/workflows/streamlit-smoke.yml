@@ -36,4 +36,4 @@ jobs:
           app-path: Dashboard.py
           ruff: false
           skip-smoke: false
-          pytest-args: "-q tests"
+          pytest-args: "-v tests"

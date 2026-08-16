@@ -68,13 +68,15 @@ def test_full_production_system_lifecycle():
 
     # 4. E2E Business Trace
     set_current_tenant_id("default")
+    import time
+    uid = int(time.time() * 1000) % 1000000
     
     # Customer
     cust_id = create_customer({
-        "company_name": "E2E Automated Verification Ltd",
+        "company_name": f"E2E Automated Verification Ltd {uid}",
         "contact_person": "Auto QA",
         "tel": "02-999-8888",
-        "tax_id": "0105551122334",
+        "tax_id": f"010555{uid:07d}",
         "credit_terms_days": 30,
     })
     assert cust_id, "Customer creation failed"
@@ -87,7 +89,7 @@ def test_full_production_system_lifecycle():
     # Quotation
     quote_no = create_quotation_ssot({
         "customer_id": cust_id,
-        "customer_name": "E2E Automated Verification Ltd",
+        "customer_name": f"E2E Automated Verification Ltd {uid}",
         "job_type": "SE",
         "pol": "Bangkok Port",
         "pod": "Singapore",
@@ -125,10 +127,10 @@ def test_full_production_system_lifecycle():
 
     # Job Control
     created_job_no = create_shipment({
-        "job_no": f"JOB-{booking_no}",
+        "job_no": f"JOB-{booking_no}-{uid}",
         "booking_no": booking_no,
         "customer_id": cust_id,
-        "customer_name": "E2E Automated Verification Ltd",
+        "customer_name": f"E2E Automated Verification Ltd {uid}",
         "pol": "Bangkok Port",
         "pod": "Singapore",
         "vessel": "WAN HAI 301",

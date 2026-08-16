@@ -70,4 +70,4 @@ jobs:
           print("Phase 30 imports: PASS")
           PY
       - name: Run Full Pytest Suite
-        run: pytest -q tests
+        run: pytest -v tests
