@@ -13,11 +13,14 @@ from managers.auth_manager import can_write
 from managers.customer_manager import list_customers
 from managers.master_data_manager import list_sales_users
 from managers.charge_master_manager import list_charges
+from managers.master_data_crud_manager import list_parties, list_ports
 from managers.quotation_manager import duplicate_quotation, get_quotation_by_no, list_quotations
 from managers.quotation_ssot_service import create_quotation_ssot
+from managers.rate_lookup_service import find_applicable_rates
 from ui.design_system import page_header, section
 
 CURRENCY_OPTIONS = ["USD", "THB", "CNY", "EUR", "JPY"]
+MODE_OPTIONS = ["SEA", "AIR", "TRUCK", "MULTIMODAL"]
 
 
 def _s(value: Any, default: str = "") -> str:
@@ -61,11 +64,15 @@ def _render_pdf(record: Dict[str, Any], items: list[dict]) -> None:
 def _master_data():
     customers = list_customers() or []
     sales = list_sales_users() or []
+    carriers = list_parties("CARRIER", active_only=True) or []
+    ports = list_ports(active_only=True) or []
     charges = list_charges(active_only=True) or []
     customer_map = {int(r["id"]): r.get("company_name", str(r["id"])) for r in customers if r.get("id")}
     sales_map = {int(r["id"]): (r.get("full_name") or r.get("username") or str(r["id"])) for r in sales if r.get("id")}
+    carrier_map = {int(r["id"]): f"{r.get('party_code')} — {r.get('display_name') or r.get('legal_name')}" for r in carriers if r.get("id")}
+    port_map = {int(r["id"]): f"{r.get('port_code')} — {r.get('port_name')}, {r.get('country_name') or ''}" for r in ports if r.get("id")}
     charge_map = {str(r.get("charge_code")).upper(): r for r in charges if r.get("charge_code")}
-    return customer_map, sales_map, charge_map
+    return customer_map, sales_map, carrier_map, port_map, charge_map
 
 
 def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | None = None) -> list[dict]:
@@ -122,7 +129,7 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
 
 
 def _create_form(user: Dict[str, Any]):
-    customer_map, sales_map, charge_map = _master_data()
+    customer_map, sales_map, carrier_map, port_map, charge_map = _master_data()
     today = date.today()
     with st.form("quotation_v2_create"):
         section("Quotation Details")
@@ -139,18 +146,40 @@ def _create_form(user: Dict[str, Any]):
         section("Shipment")
         r1, r2, r3 = st.columns(3)
         with r1:
-            pol = st.text_input("POL")
+            carrier_id = st.selectbox("Carrier", list(carrier_map), format_func=lambda x: carrier_map[x]) if carrier_map else None
         with r2:
-            pod = st.text_input("POD")
+            pol_id = st.selectbox("POL", list(port_map), format_func=lambda x: port_map[x]) if port_map else None
         with r3:
+            pod_id = st.selectbox("POD", list(port_map), format_func=lambda x: port_map[x]) if port_map else None
+        r4, r5, r6 = st.columns(3)
+        with r4:
+            mode = st.selectbox("Transport Mode", MODE_OPTIONS)
+        with r5:
             service_type = st.selectbox("Service", ["", "FCL", "LCL", "AIR", "FTL", "LTL"])
+        with r6:
+            equipment_type = st.text_input("Equipment")
         commodity = st.text_input("Commodity")
         incoterm = st.selectbox("Incoterm", ["", "EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DDP", "DDU"])
         subject = st.text_input("Subject")
 
+        section("Rate Lookup")
+        applicable = find_applicable_rates(carrier_id=carrier_id, origin_port_id=pol_id, destination_port_id=pod_id, mode=mode, equipment_type=equipment_type.strip() or None) if carrier_id and pol_id and pod_id else []
+        st.caption(f"Rate Master matches: {len(applicable)}")
+        rate_options = [r for r in applicable if r.get("line_id")]
+        if rate_options:
+            rate_index = st.selectbox("Rate Card", list(range(len(rate_options))), format_func=lambda i: f"{rate_options[i].get('rate_no')} — {rate_options[i].get('currency')} {rate_options[i].get('rate')}")
+            selected_rate = rate_options[rate_index]
+        else:
+            selected_rate = None
+
         section("Pricing")
-        st.caption("Charges are selected from Charge Master. Description, basis, unit and currency are canonical master data.")
         items_df = _item_editor(charge_map)
+        if selected_rate and items_df:
+            for row in items_df:
+                if _s(row.get("charge_code")).upper() == _s(selected_rate.get("charge_code")).upper():
+                    row["unit_rate"] = float(selected_rate.get("rate") or 0)
+                    row["currency"] = selected_rate.get("line_currency") or selected_rate.get("currency") or "USD"
+                    row["price"] = float(row.get("quantity") or 1) * row["unit_rate"]
 
         section("Terms")
         terms = st.text_area("Terms & Conditions", value=DEFAULT_TERMS, height=120)
@@ -160,10 +189,12 @@ def _create_form(user: Dict[str, Any]):
         errors = []
         if customer_id is None:
             errors.append("Customer is required.")
-        if not charge_map:
-            errors.append("Charge Master has no active charges.")
         if valid_until < issue_date:
             errors.append("Valid Until cannot be earlier than Issue Date.")
+        if pol_id is None or pod_id is None:
+            errors.append("POL and POD are required.")
+        if not charge_map:
+            errors.append("Charge Master has no active charges.")
         clean_items = []
         for idx, row in enumerate(items_df, 1):
             if not _s(row.get("charge_code")):
@@ -186,9 +217,14 @@ def _create_form(user: Dict[str, Any]):
             "quotation_date": issue_date.isoformat(),
             "validity_date": valid_until.isoformat(),
             "payment_term": payment_term.strip(),
-            "pol": pol.strip() or None,
-            "pod": pod.strip() or None,
+            "carrier_id": carrier_id,
+            "pol_id": pol_id,
+            "pod_id": pod_id,
+            "pol": port_map[pol_id] if pol_id else None,
+            "pod": port_map[pod_id] if pod_id else None,
+            "mode": mode,
             "service_type": service_type,
+            "equipment_type": equipment_type.strip() or None,
             "commodity": commodity.strip() or None,
             "incoterm": incoterm,
             "subject": subject.strip() or None,
