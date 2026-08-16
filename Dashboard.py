@@ -26,6 +26,7 @@ PAGE_ROUTES["bl"] = ("views.bl_v2_view", "render")
 PAGE_ROUTES["billing"] = ("views.finance_document_workspace", "render")
 PAGE_ROUTES["ap"] = ("views.ar_ap_workspace", "render")
 PAGE_ROUTES["document"] = ("views.document_v2_view", "render")
+PAGE_ROUTES["health"] = ("views.system_health_view", "render")
 
 
 def _restore_user():
