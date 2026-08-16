@@ -1,4 +1,4 @@
-"""Master Data Center: canonical CRUD for ports and reusable business parties."""
+"""Master Data Center: canonical CRUD for ports, parties and charges."""
 from __future__ import annotations
 
 from typing import Any, Dict
@@ -7,6 +7,7 @@ import pandas as pd
 
 from managers.auth_manager import can_write
 from managers.master_data_crud_manager import list_parties, upsert_party, list_ports, upsert_port
+from managers.charge_master_crud_manager import list_charges, upsert_charge
 from ui.design_system import page_header, section
 
 ROLE_OPTIONS = ["CUSTOMER", "CARRIER", "VENDOR", "AGENT", "CO_LOADER", "SHIPPER", "CONSIGNEE"]
@@ -15,7 +16,7 @@ ROLE_OPTIONS = ["CUSTOMER", "CARRIER", "VENDOR", "AGENT", "CO_LOADER", "SHIPPER"
 def _party_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
     record = record or {}
     section("Business Party")
-    roles = st.multiselect("Roles", ROLE_OPTIONS, default=["CUSTOMER"])
+    roles = st.multiselect("Roles", ROLE_OPTIONS, default=["CUSTOMER"], key=f"party_roles_{record.get('id','new')}")
     c1, c2, c3 = st.columns(3)
     with c1:
         code = st.text_input("Code *", value=str(record.get("party_code") or ""), max_chars=5).upper()
@@ -28,15 +29,15 @@ def _party_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> N
     with c3:
         email = st.text_input("Email", value=str(record.get("email") or ""))
         country = st.text_input("Country Code", value=str(record.get("country_code") or ""), max_chars=2).upper()
-        active = st.checkbox("Active", value=bool(record.get("is_active", True)))
+        active = st.checkbox("Active", value=bool(record.get("is_active", True)), key=f"party_active_{record.get('id','new')}")
 
     f1, f2, f3, f4 = st.columns(4)
     with f1:
-        credit_limit = st.number_input("Credit Limit", min_value=0.0, step=1000.0, value=float(record.get("credit_limit") or 0))
+        credit_limit = st.number_input("Credit Limit", min_value=0.0, step=1000.0, value=float(record.get("credit_limit") or 0), key=f"party_credit_{record.get('id','new')}")
     with f2:
         credit_currency = st.text_input("Credit Currency", value=str(record.get("credit_currency") or "THB"), max_chars=3).upper()
     with f3:
-        credit_days = st.number_input("Credit Days", min_value=0, step=1, value=int(record.get("credit_days") or 0))
+        credit_days = st.number_input("Credit Days", min_value=0, step=1, value=int(record.get("credit_days") or 0), key=f"party_days_{record.get('id','new')}")
     with f4:
         payment_term = st.text_input("Payment Term Code", value=str(record.get("payment_term_code") or ""))
 
@@ -123,6 +124,41 @@ def _port_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> No
         st.rerun()
 
 
+def _charge_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
+    record = record or {}
+    section("Charge Master")
+    c1, c2, c3 = st.columns(3)
+    code = c1.text_input("Charge Code *", value=str(record.get("charge_code") or "")).strip().upper()
+    description = c2.text_input("Description *", value=str(record.get("description") or ""))
+    category = c3.text_input("Category", value=str(record.get("category") or ""))
+    d1, d2, d3, d4 = st.columns(4)
+    basis = d1.text_input("Default Basis", value=str(record.get("default_basis") or ""))
+    unit = d2.text_input("Default Unit", value=str(record.get("default_unit") or ""))
+    currency = d3.text_input("Default Currency", value=str(record.get("default_currency") or "USD"), max_chars=3).upper()
+    active = d4.checkbox("Active", value=bool(record.get("is_active", True)), key=f"charge_active_{record.get('id','new')}")
+    save_label = "Update Charge" if record.get("id") else "Save Charge"
+    if st.button(save_label, type="primary", width="stretch", key=f"charge_save_{record.get('id','new')}"):
+        if not code or not description.strip():
+            st.error("Charge Code and Description are required.")
+            return
+        upsert_charge(
+            {
+                "id": record.get("id"),
+                "charge_code": code,
+                "description": description.strip(),
+                "category": category.strip() or None,
+                "default_basis": basis.strip() or None,
+                "default_unit": unit.strip() or None,
+                "default_currency": currency,
+                "is_active": active,
+            },
+            user,
+        )
+        st.success("Charge updated." if record.get("id") else "Charge saved.")
+        st.session_state.pop("master_data_edit_charge", None)
+        st.rerun()
+
+
 def render() -> None:
     page_header("data", status_text="Online")
     user = st.session_state.get("user", {})
@@ -131,7 +167,7 @@ def render() -> None:
         st.warning("Master Data access is restricted to authorized users.")
         return
 
-    mode = st.radio("Master Data", ["Ports", "Business Parties"], horizontal=True, key="master_data_mode")
+    mode = st.radio("Master Data", ["Ports", "Business Parties", "Charges"], horizontal=True, key="master_data_mode")
     if mode == "Ports":
         rows = list_ports(active_only=False)
         action = st.radio("Action", ["Browse", "New"], horizontal=True, key="port_action")
@@ -156,7 +192,7 @@ def render() -> None:
                     if st.button("Cancel Edit", key="port_cancel_edit"):
                         st.session_state.pop("master_data_edit_port", None)
                         st.rerun()
-    else:
+    elif mode == "Business Parties":
         role_type = st.selectbox("Party Role", ["ALL"] + ROLE_OPTIONS)
         rows = list_parties(None if role_type == "ALL" else role_type, active_only=False)
         action = st.radio("Action", ["Browse", "New"], horizontal=True, key="party_action")
@@ -180,4 +216,28 @@ def render() -> None:
                     _party_form(user, record)
                     if st.button("Cancel Edit", key="party_cancel_edit"):
                         st.session_state.pop("master_data_edit_party", None)
+                        st.rerun()
+    else:
+        rows = list_charges(active_only=False, user=user)
+        action = st.radio("Action", ["Browse", "New"], horizontal=True, key="charge_action")
+        if action == "New":
+            _charge_form(user)
+        else:
+            frame = pd.DataFrame([
+                {"ID": r.get("id"), "Code": r.get("charge_code"), "Description": r.get("description"), "Category": r.get("category"), "Basis": r.get("default_basis"), "Unit": r.get("default_unit"), "Currency": r.get("default_currency"), "Active": r.get("is_active")}
+                for r in rows
+            ])
+            st.dataframe(frame, hide_index=True, width="stretch")
+            options = [r for r in rows if r.get("id")]
+            if options:
+                selected = st.selectbox("Edit Charge", options, format_func=lambda r: f"{r.get('charge_code')} — {r.get('description')}", key="charge_edit_selector")
+                if st.button("Edit Selected Charge", key="charge_edit_button"):
+                    st.session_state["master_data_edit_charge"] = int(selected["id"])
+            edit_id = st.session_state.get("master_data_edit_charge")
+            if edit_id:
+                record = next((r for r in rows if int(r.get("id")) == int(edit_id)), None)
+                if record:
+                    _charge_form(user, record)
+                    if st.button("Cancel Edit", key="charge_cancel_edit"):
+                        st.session_state.pop("master_data_edit_charge", None)
                         st.rerun()
