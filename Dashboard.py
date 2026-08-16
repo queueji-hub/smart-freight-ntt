@@ -16,7 +16,7 @@ apply_theme()
 
 ERP_MODULES = {
     "EXECUTIVE": [("dashboard", "Home", "dashboard"), ("reports", "Reports", "reports")],
-    "DATA": [("data", "Master Data", "settings")],
+    "DATA": [("data", "Master Data", "settings"), ("rates", "Rate Master", "settings")],
     "SALES": [("crm", "Customers", "crm"), ("quotation", "Quotations", "quotation")],
     "OPERATIONS": [("booking", "Bookings", "booking"), ("job_control", "Jobs", "shipment"), ("bl", "Bills of Lading", "bl")],
     "DOCUMENTS": [("document", "Documents", "document")],
@@ -31,6 +31,7 @@ PAGE_ROUTES["billing"] = ("views.finance_v2_view", "render")
 PAGE_ROUTES["document"] = ("views.document_v2_view", "render")
 PAGE_ROUTES["data"] = ("views.master_data_view", "render")
 PAGE_ROUTES["crm"] = ("views.customer_master_view", "render")
+PAGE_ROUTES["rates"] = ("views.rate_master_view", "render")
 
 
 def _restore_user():
