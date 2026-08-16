@@ -8,51 +8,22 @@ from database.connection import init_database
 from database.local_schema_compat import ensure_phase30_local_schema
 from ui.design_system import apply_theme, page_header
 
-st.set_page_config(
-    page_title="Smart Freight NTT",
-    page_icon="🚢",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="Smart Freight NTT", page_icon="🚢", layout="wide", initial_sidebar_state="expanded")
 apply_theme()
 
 ERP_MODULES = {
-    "EXECUTIVE": [
-        ("dashboard", "Home", "dashboard"),
-        ("reports", "Reports", "reports"),
-    ],
-    "SALES": [
-        ("crm", "Customers", "crm"),
-        ("quotation", "Quotations", "quotation"),
-        ("booking", "Bookings", "booking"),
-    ],
-    "OPERATIONS": [
-        ("job_control", "Jobs", "shipment"),
-        ("bl", "Bills of Lading", "bl"),
-    ],
-    "DOCUMENTS": [
-        ("document", "Documents", "document"),
-    ],
-    "FINANCE": [
-        ("billing", "Finance", "billing"),
-        ("ap", "Payables", "ap"),
-        ("profit", "Profitability", "profit"),
-    ],
-    "ADMIN": [
-        ("users", "Users", "users"),
-        ("settings", "Settings", "settings"),
-    ],
+    "EXECUTIVE": [("dashboard", "Home", "dashboard"), ("reports", "Reports", "reports")],
+    "SALES": [("crm", "Customers", "crm"), ("quotation", "Quotations", "quotation"), ("booking", "Bookings", "booking")],
+    "OPERATIONS": [("job_control", "Jobs", "shipment"), ("bl", "Bills of Lading", "bl")],
+    "DOCUMENTS": [("document", "Documents", "document")],
+    "FINANCE": [("billing", "Finance", "billing"), ("ap", "Payables", "ap"), ("profit", "Profitability", "profit")],
+    "ADMIN": [("users", "Users", "users"), ("settings", "Settings", "settings")],
 }
-
-PAGE_ROUTES = {
-    page_id: (f"views.{module_name}_view", "render")
-    for modules in ERP_MODULES.values()
-    for page_id, _label, module_name in modules
-}
+PAGE_ROUTES = {page_id: (f"views.{module_name}_view", "render") for modules in ERP_MODULES.values() for page_id, _label, module_name in modules}
 PAGE_ROUTES["booking"] = ("views.booking_v2_view", "render")
 PAGE_ROUTES["quotation"] = ("views.quotation_v2_view", "render")
 PAGE_ROUTES["bl"] = ("views.bl_v2_view", "render")
-PAGE_ROUTES["billing"] = ("views.finance_v2_view", "render")
+PAGE_ROUTES["billing"] = ("views.finance_document_workspace", "render")
 PAGE_ROUTES["document"] = ("views.document_v2_view", "render")
 
 
@@ -116,12 +87,10 @@ def main():
             st.error("Authentication service is unavailable.")
             st.code(str(exc), language="text")
         st.stop()
-
     role = str(user.get("role", "guest")).lower()
     groups = _allowed_pages(role)
     allowed_ids = [page_id for _group, modules in groups for page_id, _label, _module in modules]
     current_page = _sync_navigation(allowed_ids)
-
     with st.sidebar:
         st.markdown("**SMART FREIGHT NTT**")
         st.caption(f"{user.get('full_name', 'Operator')} · {ROLE_LABELS.get(role, role.upper())}")
@@ -129,12 +98,7 @@ def main():
         for group, modules in groups:
             st.caption(group.title())
             for page_id, label, _module in modules:
-                if st.button(
-                    label,
-                    key=f"nav_{page_id}",
-                    width="stretch",
-                    type="primary" if page_id == current_page else "secondary",
-                ):
+                if st.button(label, key=f"nav_{page_id}", width="stretch", type="primary" if page_id == current_page else "secondary"):
                     st.session_state["current_navigation"] = page_id
                     st.query_params["page"] = page_id
                     st.rerun()
@@ -148,9 +112,7 @@ def main():
                 st.session_state.clear()
                 st.query_params.clear()
                 st.rerun()
-
     page_header(current_page, status_text="Online")
-
     module_path, fn_name = PAGE_ROUTES[current_page]
     try:
         module = importlib.import_module(module_path)
