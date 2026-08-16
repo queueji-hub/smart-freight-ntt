@@ -4,8 +4,9 @@ import streamlit as st
 
 from managers.auth_manager import ROLE_LABELS, can_read
 from managers.session_manager import delete_session, get_user_by_token
-from database.connection import init_database
+from database.connection import init_database, get_connection
 from database.local_schema_compat import ensure_phase30_local_schema
+from database.party_finance_compat import ensure_party_finance_schema
 from ui.design_system import apply_theme, page_header
 
 BUILD_ID = "PHASE30-PREVIEW-20260816"
@@ -50,9 +51,15 @@ def _restore_user():
 
 def _bootstrap_db():
     try:
-        init_database(); ensure_phase30_local_schema(); return True
+        init_database()
+        ensure_phase30_local_schema()
+        with get_connection() as conn:
+            ensure_party_finance_schema(conn, sqlite=False)
+        return True
     except Exception as exc:
-        st.sidebar.warning("Database connection is unavailable."); print(f"[DB BOOT ERROR] {exc}"); return False
+        st.sidebar.warning("Database connection is unavailable.")
+        print(f"[DB BOOT ERROR] {exc}")
+        return False
 
 
 def _allowed_pages(role: str):
@@ -62,9 +69,12 @@ def _allowed_pages(role: str):
 def _sync_navigation(allowed_ids):
     query_page = st.query_params.get("page")
     current = st.session_state.get("current_navigation")
-    if query_page in allowed_ids: current = query_page
-    if current not in allowed_ids: current = "dashboard" if "dashboard" in allowed_ids else allowed_ids[0]
-    st.session_state["current_navigation"] = current; st.query_params["page"] = current
+    if query_page in allowed_ids:
+        current = query_page
+    if current not in allowed_ids:
+        current = "dashboard" if "dashboard" in allowed_ids else allowed_ids[0]
+    st.session_state["current_navigation"] = current
+    st.query_params["page"] = current
     return current
 
 
@@ -73,9 +83,11 @@ def main():
     user = _restore_user()
     if not user:
         try:
-            from views.login_view import render as render_login; render_login()
+            from views.login_view import render as render_login
+            render_login()
         except Exception as exc:
-            st.error("Authentication service is unavailable."); st.code(str(exc), language="text")
+            st.error("Authentication service is unavailable.")
+            st.code(str(exc), language="text")
         st.stop()
     role = str(user.get("role", "guest")).lower()
     groups = _allowed_pages(role)
@@ -90,24 +102,34 @@ def main():
             st.caption(group.title())
             for page_id, label, _module in modules:
                 if st.button(label, key=f"nav_{page_id}", width="stretch", type="primary" if page_id == current_page else "secondary"):
-                    st.session_state["current_navigation"] = page_id; st.query_params["page"] = page_id; st.rerun()
+                    st.session_state["current_navigation"] = page_id
+                    st.query_params["page"] = page_id
+                    st.rerun()
         st.divider()
         if st.button("Log out", width="stretch"):
             try:
                 token = st.session_state.get("session_token")
-                if token: delete_session(token)
+                if token:
+                    delete_session(token)
             finally:
-                st.session_state.clear(); st.query_params.clear(); st.rerun()
+                st.session_state.clear()
+                st.query_params.clear()
+                st.rerun()
     page_header(current_page, status_text="Preview")
     module_path, fn_name = PAGE_ROUTES[current_page]
     try:
-        module = importlib.import_module(module_path); renderer = getattr(module, fn_name, None)
-        if not renderer: st.error(f"View entrypoint '{fn_name}' is missing."); st.stop()
+        module = importlib.import_module(module_path)
+        renderer = getattr(module, fn_name, None)
+        if not renderer:
+            st.error(f"View entrypoint '{fn_name}' is missing.")
+            st.stop()
         renderer()
     except Exception as exc:
         st.error("Unable to load this module.")
-        with st.expander("Technical details", expanded=False): st.code(traceback.format_exc(), language="python")
+        with st.expander("Technical details", expanded=False):
+            st.code(traceback.format_exc(), language="python")
         st.exception(exc)
 
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()
