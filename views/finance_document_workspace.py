@@ -1,7 +1,7 @@
 """Structured Finance Document Workspace.
 
 Keeps invoice_manager and finance_v2_view as SSOT while providing a document-first
-UI for Billing Note, Receipt / Tax Invoice, Credit Note, Debit Note and SOA.
+UI for Billing Note, Receipt / Tax Invoice, Credit Note, Debit Note and Statement of Account (SOA).
 """
 from __future__ import annotations
 
