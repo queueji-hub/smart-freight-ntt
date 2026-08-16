@@ -9,6 +9,7 @@ venv/
 env/
 *.egg-info/
 .pytest_cache/
+scratch/
 
 # Database (don't commit local data)
 data/*.db
