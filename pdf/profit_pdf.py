@@ -22,6 +22,13 @@ LOSS_RED = colors.HexColor("#E5484D")
 HEADER_GREY = colors.HexColor("#9CA3AF")
 
 
+def _s(value: Any, default: str = "—") -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    return default if not text or text.lower() in {"none", "nan", "nat"} else text
+
+
 def _money(n) -> str:
     try:
         return f"{float(n or 0):,.2f}"
@@ -62,22 +69,32 @@ def _styles():
 def _header(styles):
     logo_path = COMPANY.get("logo_path")
     if logo_path and Path(logo_path).exists():
-        from reportlab.lib.utils import ImageReader
-        ir = ImageReader(logo_path)
-        iw, ih = ir.getSize()
-        scale = min(35*mm / iw, 22*mm / ih)
-        logo = Image(logo_path, width=iw*scale, height=ih*scale)
+        try:
+            from reportlab.lib.utils import ImageReader
+            ir = ImageReader(logo_path)
+            iw, ih = ir.getSize()
+            scale = min(35*mm / iw, 22*mm / ih)
+            logo = Image(logo_path, width=iw*scale, height=ih*scale)
+        except Exception:
+            logo = Paragraph("[LOGO]", styles["body"])
     else:
         logo = Paragraph("[LOGO]", styles["body"])
     
+    addr1 = _s(COMPANY.get("address_line1"), "")
+    addr2 = _s(COMPANY.get("address_line2"), "")
+    addr3 = _s(COMPANY.get("address_line3"), "")
+    tax_id = _s(COMPANY.get("tax_id"), "")
+    tel = _s(COMPANY.get("tel"), "")
+    cname = _s(COMPANY.get("name"), "NATTAYARAAT CO., LTD.")
+
     addr = (f'<font color="#1F4E9E" size="8">'
-            f'{COMPANY["address_line1"]}<br/>'
-            f'{COMPANY["address_line2"]} {COMPANY["address_line3"]}<br/>'
-            f'Tax ID: {COMPANY["tax_id"]} · Tel: {COMPANY["tel"]}'
+            f'{addr1}<br/>'
+            f'{addr2} {addr3}<br/>'
+            f'Tax ID: {tax_id} · Tel: {tel}'
             f'</font>')
     
     company_block = [
-        Paragraph(COMPANY["name"], styles["company"]),
+        Paragraph(cname, styles["company"]),
         Spacer(1, 2.5*mm),
         Paragraph(addr, styles["addr"]),
     ]
@@ -96,29 +113,29 @@ def _header(styles):
 def _job_info_table(shipment, sheet, styles):
     rows = [
         [Paragraph("<b>Sheet No.</b>", styles["label"]),
-         Paragraph(sheet.get("sheet_no", ""), styles["value"]),
+         Paragraph(_s(sheet.get("sheet_no")), styles["value"]),
          Paragraph("<b>Job No.</b>", styles["label"]),
-         Paragraph(shipment.get("job_no", ""), styles["value"])],
+         Paragraph(_s(shipment.get("job_no")), styles["value"])],
         [Paragraph("<b>Customer</b>", styles["label"]),
-         Paragraph(shipment.get("customer_name", "—"), styles["value"]),
+         Paragraph(_s(shipment.get("customer_name")), styles["value"]),
          Paragraph("<b>Job Type</b>", styles["label"]),
-         Paragraph(shipment.get("job_type", "—"), styles["value"])],
+         Paragraph(_s(shipment.get("job_type") or shipment.get("mode")), styles["value"])],
         [Paragraph("<b>Carrier</b>", styles["label"]),
-         Paragraph(shipment.get("carrier", "—"), styles["value"]),
+         Paragraph(_s(shipment.get("carrier")), styles["value"]),
          Paragraph("<b>Vessel</b>", styles["label"]),
-         Paragraph(shipment.get("m_vessel", "—"), styles["value"])],
+         Paragraph(_s(shipment.get("m_vessel")), styles["value"])],
         [Paragraph("<b>POL</b>", styles["label"]),
-         Paragraph(shipment.get("pol", "—"), styles["value"]),
+         Paragraph(_s(shipment.get("pol")), styles["value"]),
          Paragraph("<b>POD</b>", styles["label"]),
-         Paragraph(shipment.get("pod", "—"), styles["value"])],
+         Paragraph(_s(shipment.get("pod")), styles["value"])],
         [Paragraph("<b>Container</b>", styles["label"]),
-         Paragraph(shipment.get("container_no", "—"), styles["value"]),
+         Paragraph(_s(shipment.get("container_no")), styles["value"]),
          Paragraph("<b>Size</b>", styles["label"]),
-         Paragraph(shipment.get("container_size", "—"), styles["value"])],
+         Paragraph(_s(shipment.get("container_size")), styles["value"])],
         [Paragraph("<b>ETD</b>", styles["label"]),
-         Paragraph(shipment.get("etd", "—") or "—", styles["value"]),
+         Paragraph(_s(shipment.get("etd")), styles["value"]),
          Paragraph("<b>ETA</b>", styles["label"]),
-         Paragraph(shipment.get("eta", "—") or "—", styles["value"])],
+         Paragraph(_s(shipment.get("eta")), styles["value"])],
     ]
     tbl = Table(rows, colWidths=[28*mm, 62*mm, 28*mm, 62*mm])
     tbl.setStyle(TableStyle([
@@ -150,21 +167,21 @@ def _cost_table(title: str, lines: List[Dict[str, Any]],
     ]
     
     data = [header, sub_header]
-    total = 0
+    total = 0.0
     
     if not lines:
         data.append([Paragraph("—", styles["small"])] * 6)
     else:
         for i, line in enumerate(lines, 1):
-            amount_thb = line.get("amount_thb") or line.get("amount", 0) or 0
+            amount_thb = float(line.get("amount_thb") or line.get("amount", 0) or 0)
             total += amount_thb
-            cur_amt = (f"{line.get('currency','THB')} "
+            cur_amt = (f"{_s(line.get('currency'), 'THB')} "
                        f"{_money(line.get('amount', 0))}")
             data.append([
                 Paragraph(str(i), styles["small"]),
-                Paragraph(line.get("category") or "—", styles["small"]),
-                Paragraph(line.get("description") or "—", styles["small"]),
-                Paragraph(line.get("supplier") or "—", styles["small"]),
+                Paragraph(_s(line.get("category")), styles["small"]),
+                Paragraph(_s(line.get("description")), styles["small"]),
+                Paragraph(_s(line.get("supplier")), styles["small"]),
                 Paragraph(cur_amt, styles["small"]),
                 Paragraph(_money(amount_thb), styles["right"]),
             ])
@@ -202,20 +219,21 @@ def _cost_table(title: str, lines: List[Dict[str, Any]],
 
 def _summary_box(summary: Dict[str, Any], styles):
     """Profit summary highlighted box."""
-    margin = summary.get("profit_margin", 0)
-    is_profit = (summary.get("net_profit", 0) >= 0)
+    margin = float(summary.get("profit_margin", 0) or 0)
+    net_profit = float(summary.get("net_profit", 0) or 0)
+    is_profit = (net_profit >= 0)
     color = PROFIT_GREEN if is_profit else LOSS_RED
     
     rows = [
         [Paragraph("<b>FINANCIAL SUMMARY</b>", styles["label"]), ""],
         [Paragraph("Total Revenue (AR)", styles["body"]),
-         Paragraph(f"THB {_money(summary['total_ar'])}", styles["right"])],
+         Paragraph(f"THB {_money(summary.get('total_ar', 0))}", styles["right"])],
         [Paragraph("Total Cost (AP)", styles["body"]),
-         Paragraph(f"THB {_money(summary['total_ap'])}", styles["right"])],
+         Paragraph(f"THB {_money(summary.get('total_ap', 0))}", styles["right"])],
         [Paragraph(f'<b><font color="{color.hexval()}">Net Profit</font></b>',
                     styles["label"]),
          Paragraph(f'<b><font color="{color.hexval()}">'
-                    f'THB {_money(summary["net_profit"])}</font></b>',
+                    f'THB {_money(net_profit)}</font></b>',
                     styles["right_b"])],
         [Paragraph(f'<b><font color="{color.hexval()}">Profit Margin</font></b>',
                     styles["label"]),
@@ -251,10 +269,12 @@ def _signature_block(sheet, styles):
         ("Approved By (Management)",
          "approved_by", "approved_at", "Date approved"),
     ]:
-        name = sheet.get(name_field) or ""
-        date_val = sheet.get(date_field) or ""
-        if date_val:
-            date_val = date_val[:10]
+        name = _s(sheet.get(name_field), "")
+        date_val = _s(sheet.get(date_field), "")
+        if date_val and date_val != "—":
+            date_val = str(date_val)[:10]
+        else:
+            date_val = ""
         
         cell = [
             Paragraph(f"<b>{role}</b>", styles["label"]),
@@ -287,8 +307,14 @@ def generate_profit_pdf(shipment: Dict[str, Any],
                           sheet: Dict[str, Any],
                           output_path: str = None) -> str:
     """Generate Profit Sheet PDF with sign-off lines."""
+    shipment = shipment or {}
+    sheet = sheet or {}
+    summary = summary or {}
+    ar_lines = ar_lines or []
+    ap_lines = ap_lines or []
+
     if output_path is None:
-        sheet_no = sheet.get("sheet_no", "PS")
+        sheet_no = _s(sheet.get("sheet_no"), "PS")
         output_path = str(Path(OUTPUT_DIR) / f"{sheet_no}.pdf")
     
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -297,8 +323,8 @@ def generate_profit_pdf(shipment: Dict[str, Any],
         output_path, pagesize=A4,
         leftMargin=12*mm, rightMargin=12*mm,
         topMargin=12*mm, bottomMargin=15*mm,
-        title=f"Profit Sheet {sheet.get('sheet_no','')}",
-        author=COMPANY["name"],
+        title=f"Profit Sheet {_s(sheet.get('sheet_no'), '')}",
+        author=_s(COMPANY.get("name"), "NATTAYARAAT CO., LTD."),
     )
     styles = _styles()
     story = []

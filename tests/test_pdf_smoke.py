@@ -231,3 +231,74 @@ def test_company_bl_pdf_generates(tmp_path):
     assert output.exists()
     assert output.stat().st_size > 1000
 
+
+def test_profit_pdf_generates_with_null_and_empty_fields(tmp_path):
+    from pdf.profit_pdf import generate_profit_pdf
+
+    output = tmp_path / "profit_sheet_null_test.pdf"
+    shipment = {
+        "id": 1,
+        "job_no": "JB-202608-001",
+        "customer_name": None,
+        "job_type": None,
+        "mode": None,
+        "carrier": None,
+        "m_vessel": None,
+        "pol": None,
+        "pod": None,
+        "container_no": None,
+        "container_size": None,
+        "etd": None,
+        "eta": None,
+    }
+    sheet = {
+        "sheet_no": None,
+        "prepared_by": None,
+        "prepared_at": None,
+        "reviewed_by": None,
+        "reviewed_at": None,
+        "approved_by": None,
+        "approved_at": None,
+    }
+    summary = {
+        "total_ar": None,
+        "total_ap": None,
+        "net_profit": None,
+        "profit_margin": None,
+    }
+    ar_lines = [
+        {"category": None, "description": None, "supplier": None, "currency": None, "amount": None, "amount_thb": None}
+    ]
+    ap_lines = []
+
+    res = generate_profit_pdf(shipment, ar_lines, ap_lines, summary, sheet, output_path=str(output))
+    assert res == str(output)
+    assert output.exists()
+    assert output.stat().st_size > 1000
+
+
+def test_profitability_pdf_generates_with_null_fields(tmp_path):
+    from pdf.profitability_pdf import generate_profitability_pdf
+
+    output = tmp_path / "profitability_null_test.pdf"
+    job = {
+        "job_no": "JB-202608-002",
+        "customer_name": None,
+        "job_type": None,
+        "pol": None,
+        "pod": None,
+        "etd": None,
+        "eta": None,
+        "status": None,
+    }
+    profit = {
+        "ar_actual": None,
+        "ap_actual": None,
+        "actual_net_profit": None,
+    }
+
+    res = generate_profitability_pdf(job, profit, output_path=str(output))
+    assert res == str(output)
+    assert output.exists()
+    assert output.stat().st_size > 1000
+
