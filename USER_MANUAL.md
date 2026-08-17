@@ -1,672 +1,509 @@
-# 📘 คู่มือการใช้งาน FreightFlow NTT
+# 🚢 SMART FREIGHT NTT — COMPREHENSIVE USER MANUAL
+# คู่มือการใช้งานระบบจัดการขนส่งสินค้าและโลจิสติกส์ครบวงจร
 
-ระบบบริหารจัดการ Freight Forwarding แบบครบวงจร — เวอร์ชัน 1.0
-
----
-
-## 📑 สารบัญ
-
-1. [การเริ่มต้นใช้งาน](#1-การเริ่มต้นใช้งาน)
-2. [ผู้ใช้และสิทธิ์ (RBAC)](#2-ผู้ใช้และสิทธิ์-rbac)
-3. [Dashboard](#3-dashboard)
-4. [CRM — จัดการลูกค้า](#4-crm--จัดการลูกค้า)
-5. [Quotation — ใบเสนอราคา](#5-quotation--ใบเสนอราคา)
-6. [Booking — ใบจองเรือ](#6-booking--ใบจองเรือ)
-7. [Shipment — ใบคุมงาน + B/L](#7-shipment--ใบคุมงาน--bl)
-8. [Tracking — ติดตามตู้](#8-tracking--ติดตามตู้)
-9. [Profit Sheet — สรุปกำไร/ขาดทุน](#9-profit-sheet--สรุปกำไรขาดทุน)
-10. [Billing — ออกใบแจ้งหนี้](#10-billing--ออกใบแจ้งหนี้)
-11. [FX Rates — อัตราแลกเปลี่ยน](#11-fx-rates--อัตราแลกเปลี่ยน)
-12. [Reports — รายงาน](#12-reports--รายงาน)
-13. [Users — จัดการผู้ใช้](#13-users--จัดการผู้ใช้)
-14. [Settings — ตั้งค่าระบบ](#14-settings--ตั้งค่าระบบ)
-15. [Workflow ทำงานจริง End-to-End](#15-workflow-ทำงานจริง-end-to-end)
-16. [คำถามที่พบบ่อย (FAQ)](#16-คำถามที่พบบ่อย-faq)
+**System Version:** Phase 30 Enterprise Consolidated Edition  
+**Company:** NATTAYARAAT CO., LTD.  
+**Contact:** Management@nattayaraat.com · Tel: 063-428-9691  
 
 ---
 
-## 1. การเริ่มต้นใช้งาน
+## 📑 TABLE OF CONTENTS / สารบัญ
 
-### 🌐 URL หลัก
+- [🇹🇭 ส่วนที่ 1: คู่มือการใช้งานภาษาไทย (Thai Manual)](#-ส่วนที่-1-คู่มือการใช้งานภาษาไทย)
+  - [1. ภาพรวมระบบ (System Overview)](#1-ภาพรวมระบบ-system-overview)
+  - [2. การเข้าสู่ระบบและสิทธิ์การใช้งาน (Authentication & RBAC)](#2-การเข้าสู่ระบบและสิทธิ์การใช้งาน-authentication--rbac)
+  - [3. กลุ่มเมนู Master Data (ข้อมูลหลัก)](#3-กลุ่มเมนู-master-data-ข้อมูลหลัก)
+  - [4. กลุ่มเมนู Sales & CRM (งานขายและลูกค้าสัมพันธ์)](#4-กลุ่มเมนู-sales--crm-งานขายและลูกค้าสัมพันธ์)
+  - [5. กลุ่มเมนู Operations (การปฏิบัติการขนส่ง)](#5-กลุ่มเมนู-operations-การปฏิบัติการขนส่ง)
+  - [6. Document Center (ศูนย์รวมเอกสารและระบบอนุมัติ)](#6-document-center-ศูนย์รวมเอกสารและระบบอนุมัติ)
+  - [7. Finance & Accounting (การเงิน บัญชี และกำไร-ขาดทุน)](#7-finance--accounting-การเงิน-บัญชี-และกำไร-ขาดทุน)
+  - [8. System Admin & Health (การจัดการระบบและตรวจสุขภาพ)](#8-system-admin--health-การจัดการระบบและตรวจสุขภาพ)
+  - [9. แผนผังการทำงานจริง End-to-End (Complete Workflow)](#9-แผนผังการทำงานจริง-end-to-end-complete-workflow)
+  - [10. คำถามที่พบบ่อยและการแก้ปัญหา (FAQ & Troubleshooting)](#10-คำถามที่พบบ่อยและการแก้ปัญหา-faq--troubleshooting)
+- [🇬🇧 Part 2: English User Manual](#-part-2-english-user-manual)
+  - [1. System Overview & Architecture](#1-system-overview--architecture)
+  - [2. Authentication & Role-Based Access Control (RBAC)](#2-authentication--role-based-access-control-rbac)
+  - [3. Master Data Management](#3-master-data-management)
+  - [4. Sales & CRM Operations](#4-sales--crm-operations)
+  - [5. Freight Operations & Logistics](#5-freight-operations--logistics)
+  - [6. Document Control & Multi-Stage Approval](#6-document-control--multi-stage-approval)
+  - [7. Finance, Accounting & Job Profitability](#7-finance-accounting--job-profitability)
+  - [8. System Administration & Diagnostics](#8-system-administration--diagnostics)
+  - [9. End-to-End Operational Lifecycle](#9-end-to-end-operational-lifecycle)
+  - [10. FAQ & Troubleshooting Guide](#10-faq--troubleshooting-guide)
+
+---
+
+# 🇹🇭 ส่วนที่ 1: คู่มือการใช้งานภาษาไทย
+
+---
+
+## 1. ภาพรวมระบบ (System Overview)
+
+**Smart Freight NTT** คือระบบ ERP บริหารจัดการงานขนส่งสินค้าระหว่างประเทศและโลจิสติกส์ (Freight Forwarding Management System) ครอบคลุมวงจรการทำงานตั้งแต่การเสนอราคา ออกใบจองเรือ ติดตามตู้สินค้า ออกใบตราส่งทางทะเล (B/L) บันทึกรายรับ-รายจ่าย (AR/AP) ไปจนถึงการจัดทำใบกำกับภาษี ใบเสร็จรับเงิน และสรุปกำไร-ขาดทุนราย Job แบบ Real-time
+
+### คุณสมบัติเด่นของระบบ:
+- **Single Source of Truth (SSOT):** ข้อมูลเชื่อมต่อกันอย่างสมบูรณ์ เช่น เมื่อ Quotation ได้รับการอนุมัติ สามารถแปลงเป็น Job ได้ในคลิกเดียวโดยไม่ต้องกรอกข้อมูลซ้ำ
+- **3-Stage Approval Engine:** ระบบควบคุมความถูกต้องของเอกสาร (Draft ➔ Pending Approval ➔ Approved ➔ Locked)
+- **Multi-Currency & FX Engine:** รองรับสกุลเงินสากล (THB, USD, EUR, CNY, SGD, JPY) พร้อมคำนวณอัตราแลกเปลี่ยนอัตโนมัติ
+- **Container & Milestone Tracking:** ติดตามสถานะตู้สินค้าทุกใบ วันคืนตู้ เคลียร์ตู้ และตารางเดินเรือ
+
+---
+
+## 2. การเข้าสู่ระบบและสิทธิ์การใช้งาน (Authentication & RBAC)
+
+### 2.1 การเข้าสู่ระบบ (Login)
+1. เปิดเว็บบราวเซอร์ (แนะนำ Google Chrome, Microsoft Edge หรือ Safari)
+2. เข้าสู่ระบบด้วย **Username** และ **Password** ที่ได้รับมอบหมาย
+3. กดปุ่ม **Sign In**
 
 ```
-https://nattayaraat-freight.streamlit.app/
++-------------------------------------------------------------+
+|                     SMART FREIGHT NTT                       |
+|               Enterprise Logistics Suite                    |
+|                                                             |
+|   Username: [ admin               ]                         |
+|   Password: [ ******************  ]                         |
+|                                                             |
+|                  [ 🔐 SIGN IN ]                             |
++-------------------------------------------------------------+
 ```
 
-### 🔐 Login
+### 2.2 โครงสร้างสิทธิ์ผู้ใช้งาน (Role-Based Access Control)
 
-เปิดเว็บแล้วจะเจอหน้า Sign In กรอก Username + Password
-
-**บัญชี Demo (เริ่มต้น):**
-
-| Role | Username | Password |
-|------|----------|----------|
-| 👑 Admin | `admin` | `Admin@2026!` |
-| 💼 Sales | `sales` | `Sales@2026!` |
-| 📞 Customer Service | `cs` | `Cs@2026!` |
-| 🚢 Operation | `operation` | `Ops@2026!` |
-| 💰 Accounting | `accounting` | `Acc@2026!` |
-
-> ⚠️ แนะนำให้ Admin สร้างบัญชีจริงและลบ/ปิด demo accounts ก่อนใช้งานจริง
-
-### 📱 อุปกรณ์ที่รองรับ
-
-- 💻 PC / Mac (Chrome, Edge, Safari, Firefox)
-- 📱 Mobile (Chrome, Safari) — sidebar จะยุบเป็นไอคอนซ้ายบน
-- 📟 Tablet — แสดงผลเต็มรูปแบบ
-
-### 🎯 Sidebar Navigation
-
-หลังจาก Login จะเห็น sidebar ซ้ายมือแสดงเฉพาะเมนูที่บัญชีของคุณมีสิทธิ์เข้าถึง คลิกเมนูเพื่อสลับหน้า
+| บทบาท (Role) | สิทธิ์และหน้าที่รับผิดชอบ | เมนูที่เข้าถึงได้ |
+| :--- | :--- | :--- |
+| **👑 Admin (ผู้ดูแลระบบ)** | สิทธิ์สูงสุดในระบบ จัดการผู้ใช้ ตรวจสอบ Audit Log และตั้งค่าระบบทั้งหมด | เข้าถึงได้ทุกเมนู |
+| **👔 Management (ผู้บริหาร)** | ดูภาพรวม สรุปผลการดำเนินงาน อนุมัติเอกสาร และรายงานผลกำไร | Dashboard, Reports, Quotation, Booking, Job, Profit, Health |
+| **💼 Sales (ฝ่ายขาย)** | จัดการฐานข้อมูลลูกค้า (CRM), สร้างใบเสนอราคา (Quotation), ส่งต่องานให้ฝ่ายปฏิบัติการ (Handover) | CRM, Quotations, Job Handover, Master Data, Rates |
+| **🚢 Operations / CS (ฝ่ายปฏิบัติการ)** | รับงานจากฝ่ายขาย, จองเรือ (Booking), จัดการใบคุมงาน (Jobs), ติดตามตู้ (Milestones), ออก B/L | Bookings, Jobs, Bills of Lading, Documents, Master Data |
+| **💰 Accounting / Billing (ฝ่ายการเงิน)** | ออกใบวางบิล, ใบเสร็จ/ใบกำกับภาษี, บันทึกการรับชำระเงิน, ควบคุมค่าใช้จ่าย (AP) และ Profit Sheet | Finance (Billing), Payables (AP), Profitability, Reports |
 
 ---
 
-## 2. ผู้ใช้และสิทธิ์ (RBAC)
+## 3. กลุ่มเมนู Master Data (ข้อมูลหลัก)
 
-### 👥 4 บทบาทหลัก
+ข้อมูลหลักคือหัวใจของระบบที่ช่วยให้การออกเอกสารต่างๆ ถูกต้องและรวดเร็ว
 
-#### 💼 Sales (พนักงานขาย)
-- ✅ ดู Dashboard
-- ✅ จัดการ CRM (สร้าง/แก้ไขลูกค้า)
-- ✅ สร้าง/แก้ไข Quotation
-- 📖 ดู Booking, Shipment (อ่านอย่างเดียว)
-- 👁 Review Profit Sheet (ตรวจสอบ)
+### 3.1 ท่าเรือและจุดขนถ่าย (Ports & Places)
+- **เมนู:** `DATA ➔ Master Data ➔ Ports`
+- **การใช้งาน:**
+  1. เลือกโหมด **"Ports"**
+  2. กดแท็บ **"New"** เพื่อเพิ่มท่าเรือใหม่
+  3. ระบุ **Port Code** (5 ตัวอักษร เช่น `THBKK`, `SGSIN`), **UN/LOCODE**, **Port Name**, **City**, **Country Code** และ **Timezone**
+  4. กด **Save Port**
 
-#### 📞 CS / Customer Service & 🚢 Operation
-> **CS และ Operation มีสิทธิ์เหมือนกันทุกประการ** — ทำงานทดแทนกันได้ใน "Operations Team"
+### 3.2 คู่ค้าและพันธมิตรทางธุรกิจ (Business Parties)
+- **เมนู:** `DATA ➔ Master Data ➔ Business Parties`
+- **ประเภทคู่ค้า:** `CUSTOMER`, `CARRIER`, `VENDOR`, `AGENT`, `CO_LOADER`, `SHIPPER`, `CONSIGNEE`
+- **การใช้งาน:**
+  1. ระบุรหัสคู่ค้า (Party Code 5 ตัวอักษร), ชื่อจดทะเบียน (Legal Name), เลขประจำตัวผู้เสียภาษี (Tax ID), สาขา และที่อยู่
+  2. กำหนด **Credit Limit (วงเงินเครดิต)** และ **Credit Days (ระยะเวลาเครดิตเทอม)**
+  3. บันทึกข้อมูลบัญชีธนาคารสำหรับการชำระเงิน
 
-- ✅ จัดการลูกค้า CRM (สร้าง/แก้ไข)
-- ✅ สร้าง/แก้ไข Quotation
-- ✅ สร้าง/แก้ไข Booking Confirmation
-- ✅ จัดการ Shipment (สร้าง/แก้ไข)
-- ✅ Container Tracking + Milestones
-- ✅ Generate B/L PDF
-- ✅ เปลี่ยนสถานะ Proceed → Finished
-- ✅ จัดการ FCL/LCL details
+### 3.3 รายการค่าบริการมาตรฐาน (Charge Master)
+- **เมนู:** `DATA ➔ Master Data ➔ Charges`
+- **การใช้งาน:** กำหนดรหัสค่าบริการ เช่น `O/F` (Ocean Freight), `THC` (Terminal Handling Charge), `CUSTOMS` (Customs Clearance) พร้อมกำหนด Basis (ต่อตู้/ต่อ shipment) และประเภทภาษี VAT/WHT เริ่มต้น
 
-#### 💰 Accounting (บัญชี)
-- ✅ Profit Sheet (สร้าง + Approve)
-- ✅ Billing (Invoice / BN / CN / DN / SOA)
-- ✅ Clear Payment
-- ✅ เปลี่ยนสถานะเป็น `Closed` (เฉพาะ role นี้)
-
-#### 👑 Admin (ผู้ดูแลระบบ)
-- ✅ ทุกสิทธิ์ของทุก role
-- ✅ User Management (เพิ่ม/ลบ/Reset password)
-- ✅ Settings (Email templates, SMTP, Activity log)
+### 3.4 ตารางราคาและค่าระวาง (Rate Master)
+- **เมนู:** `DATA ➔ Rate Master`
+- **การใช้งาน:**
+  1. กดปุ่ม **"＋ New Rate Card"**
+  2. ระบุสายเรือ (Carrier), ท่าเรือต้นทาง (POL), ท่าเรือปลายทาง (POD), ขนาดตู้ (Equipment Type)
+  3. กำหนดวันที่มีผล (Valid From - Valid To)
+  4. ใส่ตารางค่าระวางและค่าใช้จ่าย Local Charges แล้วกด **Save Rate Card**
 
 ---
 
-## 3. Dashboard
-
-หน้าหลักแสดง KPI แบบ real-time
-
-### 📊 ตัวเลขสำคัญ (KPI Cards)
-
-- **Total Jobs** — จำนวนงานทั้งหมด
-- **Proceed** — งานที่กำลังดำเนินการ
-- **Finished** — งานที่เสร็จแล้ว (รอเก็บเงิน)
-- **Customers** — จำนวนลูกค้าใน CRM
-- **Outstanding** — ยอดค้างชำระ (THB)
-
-### 📋 Recent Active Shipments
-
-ตารางแสดงงาน 15 อันล่าสุดที่ยังเป็น `Proceed`
-
-### 📈 Status Breakdown
-
-แสดงจำนวนงานตามสถานะ:
-- 🔵 Proceed (สีน้ำเงิน) — กำลังทำงาน
-- 🟢 Finished (สีเขียว) — เสร็จแล้ว
-- ⚫ Closed (สีเทา) — ปิดงาน
-- 🔴 Canceled (สีแดง) — ยกเลิก
-
-### 📅 Monthly Volume Chart
-
-กราฟแท่งจำนวนงานต่อเดือน (อิง ETD)
-
----
-
-## 4. CRM — จัดการลูกค้า
-
-### 📋 Tab: All Customers
-
-- พิมพ์ชื่อบริษัทเพื่อค้นหา (auto-filter)
-- ตารางแสดง: Company, Contact, Tel, Email, Tax ID, Credit Terms, Address
-
-### ➕ Tab: New Customer (Sales/Admin เท่านั้น)
-
-**ฟิลด์ที่ต้องกรอก:**
-
-| ฟิลด์ | จำเป็น | คำอธิบาย |
-|-------|--------|----------|
-| Company Name | ✅ | ชื่อบริษัทลูกค้า |
-| Contact Person | | ชื่อผู้ติดต่อ |
-| Phone Number | | เบอร์ติดต่อ |
-| | | อีเมล |
-| Tax ID | | เลขผู้เสียภาษี 13 หลัก |
-| Credit Terms (days) | | จำนวนวันเครดิต (default 30) |
-| Address | | ที่อยู่บริษัท |
-| Notes | | หมายเหตุภายใน |
-
-### ✏️ การแก้ไข/ปิดลูกค้า
-
-1. เลือกลูกค้าจาก dropdown "Edit / Delete Customer"
-2. แก้ไขข้อมูลในฟอร์ม
-3. กด **Save Changes** หรือ **Delete (Deactivate)**
-
-> 🔁 **ข้อมูลลูกค้าจะ auto-fill** ในหน้า Quotation, Booking, Shipment, Invoice อัตโนมัติเมื่อพิมพ์ชื่อ
-
----
-
-## 5. Quotation — ใบเสนอราคา
-
-### ➕ Create New (Tab 1)
-
-**ขั้นตอนสร้าง:**
-
-1. เลือก **Job Type**: SE/SI/AE/AI/TE/TI
-2. **Customer** — พิมพ์อย่างน้อย 2 ตัวอักษร ระบบจะแสดง dropdown ลูกค้าจาก CRM
-3. กรอกข้อมูล Carrier, POL, POD, Commodity, Weight, Quantity
-4. ตั้ง **Quotation Date** + **Validity Date**
-5. **Quotation Items** — กรอกรายการค่าใช้จ่าย:
-   - ⬆⬇ เลื่อนลำดับ
-   - ⤴⤵ แทรกข้างบน/ล่าง
-   - 🗑 ลบ
-6. แก้ **Terms & Conditions** ตามต้องการ
-7. กด **🚀 Generate Quotation**
-8. ระบบจะสร้างเลข Quotation No อัตโนมัติ (เช่น `SI26050001`)
-9. กด **📥 Download PDF**
-
-### 📋 All Quotations (Tab 2)
-
-ค้นหา → เลือก quotation → กดปุ่ม:
-
-- 📥 **PDF** — ดาวน์โหลดใบเสนอราคา
-- ✏️ **Edit** — แก้ไขข้อมูล (รวมถึงเลข Quotation No)
-- 📑 **Copy** — สร้างใบใหม่จากใบเก่า (ของลูกค้าเจ้าเดียวกัน)
-- ➡️ **→ Booking** — แปลงเป็น Booking Confirmation (data ถูกส่งต่ออัตโนมัติ)
-
----
-
-## 6. Booking — ใบจองเรือ
-
-### ➕ New Booking (Tab 1, CS/Admin)
-
-**Pull from Quotation:** เลือก Quotation ที่มีอยู่ → ระบบจะ pre-fill ข้อมูลให้
-
-**ฟิลด์สำคัญ:**
-
-#### Routing
-- POL (Port of Loading)
-- POR (Port of Receipt)
-- POD (Port of Discharge)
-- Final Destination
-- Transhipment Port
-
-#### Vessel & Schedule
-- Carrier, M.Vessel, Feeder, Liner
-- ETD (Estimated Time of Departure)
-- ETA (Estimated Time of Arrival)
-- Closing Time
-
-#### Container Yard / CFS
-- CY Date + CY Place (Container Yard)
-- CFS Date + CFS Place (Container Freight Station)
-- Customer Return Date + Return Place
-
-### 📋 All Bookings (Tab 2)
-
-- กรอง Status: All / Proceed / Finished / Closed / Canceled
-- เลือก Booking → กด **📥 Generate PDF** → ได้ Booking Confirmation PDF
-
-### ✏️ Edit Booking (Tab 3)
-
-แก้ไข Status, Carrier, ETD, ETA, Remark
-
----
-
-## 7. Shipment — ใบคุมงาน + B/L
-
-### ➕ New Shipment (Tab 1, Operation/Admin)
-
-**Pull Data feature:**
-- 📥 **From Quotation** — ดึงข้อมูลจากใบเสนอราคา
-- 📥 **From Booking** — ดึงข้อมูลจาก Booking Confirmation
-
-**ฟิลด์ที่ต้องกรอกเพิ่ม:**
-
-#### Cargo Details
-- Cargo Type: FCL / LCL / AIR / TRUCK
-- Container Size: 1x20'GP / 1x40'GP / 1x40'HC etc.
-- Container No., Seal No.
-- Weight Origin, Weight Port
-
-#### Schedule
-- Pick Up Date
-- Stuffing Date
-- Return Date
-
-ระบบจะสร้าง **Job No** อัตโนมัติ เช่น `SE26050001`
-
-### 📋 All Shipments (Tab 2)
-
-- Filter by Job Type / Status / Carrier
-- Export CSV
-- 📄 **Generate Bill of Lading (B/L)** — สร้าง B/L PDF สำหรับงานนั้น
-
-### ✏️ Edit / Update (Tab 3, Operation)
-
-- เปลี่ยน **Status**: Proceed → Finished → Closed → Canceled
-- กรอก B/L No., Container No., Seal No.
-- 📑 **Clone this Job** — ทำสำเนางานใหม่
-- 🗑️ **Delete** — ลบงาน
-
-> ⚠️ **กฎสำคัญ:**
-> - การเปลี่ยนเป็น `Closed` ต้องมี Profit Sheet ก่อน
-> - เฉพาะ Accounting / Admin เท่านั้นที่เปลี่ยนเป็น `Closed` ได้
-
----
-
-## 8. Tracking — ติดตามตู้
-
-ติดตามการเคลื่อนไหวของตู้คอนเทนเนอร์แบบ timeline
-
-### 📍 11 Milestones มาตรฐาน
-
-| Code | Name | Icon |
-|------|------|------|
-| BKD | Booked | 📋 |
-| CY_RCV | Empty Container Received at CY | 📦 |
-| STUFF | Stuffing / Loading at Shipper | 🚚 |
-| CY_RTN | Loaded Container Returned to CY | 🏭 |
-| LOAD | Loaded on Vessel | 🚢 |
-| DEP | Vessel Departed POL | ⚓ |
-| ARR | Vessel Arrived POD | 🛳️ |
-| DISC | Discharged at POD | 📤 |
-| CUST | Customs Cleared | ✅ |
-| DEL | Delivered to Consignee | 🎯 |
-| EMPTY | Empty Returned | ♻️ |
-
-### ➕ เพิ่ม Milestone
-
-1. เลือก Shipment
-2. กด **➕ Add Milestone**
-3. เลือก Milestone จาก dropdown
-4. ตั้ง Date + Time + Location
-5. ใส่ Note (optional)
-6. กด **✅ Record Milestone**
-
-Timeline จะเรียงตามเวลาที่เกิดเหตุการณ์
-
----
-
-## 9. Profit Sheet — สรุปกำไร/ขาดทุน
-
-หัวใจของระบบ — ใช้ตรวจสอบกำไรของแต่ละ job ก่อน Closed
-
-### 🎯 ขั้นตอนใช้งาน
-
-#### 1. เลือก Shipment
-ระบบจะแสดง Job No, Customer, Status
-
-#### 2. KPI Summary บนสุด
-
-- **Revenue (AR)** — รายรับรวม (THB)
-- **Cost (AP)** — ต้นทุนรวม (THB)
-- **Net Profit** — กำไรสุทธิ (สีเขียว/แดง)
-- **Status** — 🟢 Profit / 🔴 Loss
-
-#### 3. Tab: 💰 Account Receivables (AR)
-
-เพิ่มรายการที่จะเก็บเงินลูกค้า:
-
-**AR Categories:**
-- Ocean Freight (Sell)
-- Local Charges (Sell)
-- Trucking (Sell)
-- Customs (Sell)
-- DOC Fee
-- Handling Fee
-- Other Revenue
-
-**ฟิลด์:**
-- Category, Description, Customer
-- Quantity × Unit Price = Amount
-- Currency (รองรับ multi-currency, แปลงเป็น THB อัตโนมัติ)
-- Remark
-
-#### 4. Tab: 💸 Account Payables (AP)
-
-เพิ่มต้นทุนที่ต้องจ่ายให้ supplier:
-
-**AP Categories:**
-- Ocean Freight (Liner)
-- Co-loader Cost
-- Overseas Agent
-- Trucking Supplier
-- Customs Broker
-- Warehouse / CFS
-- Documentation
-- Other Cost
-
-#### 5. Tab: 📋 Profit Sheets
-
-**Generate Profit Sheet PDF:**
-1. เพิ่ม AR + AP ให้ครบก่อน
-2. กด **🚀 Generate Profit Sheet PDF**
-3. ระบบสร้าง Sheet No (เช่น `PS-SE26050001-01`)
-4. ดาวน์โหลด PDF ที่มีรายการครบทั้ง AR/AP + Summary + ช่องเซ็นชื่อ 3 จุด:
-   - 📝 Prepared By (CS/Operation)
-   - 👁 Reviewed By (Sales)
-   - ✅ Approved By (Management)
-
-#### 6. Workflow Sign-off
-
-| Action | สิทธิ์ |
-|--------|--------|
-| Generate Sheet | CS, Operation, Admin |
-| 👁 Review | ทุก role ที่มีสิทธิ์ Profit |
-| ✅ Approve | Accounting, Admin เท่านั้น |
-
-#### 7. หลัง Approve
-
-กลับไปหน้า **Shipment → Edit** → เปลี่ยนสถานะเป็น `Closed` ได้
-
-> ⚠️ **ถ้าไม่มี Profit Sheet → ระบบจะ block การ Closed**
-
----
-
-## 10. Billing — ออกใบแจ้งหนี้
-
-### 📊 KPI บนสุด
-
-- Total Billed (รวมยอดออกบิลทั้งหมด)
-- Total Paid (รวมยอดที่ได้รับ)
-- Outstanding (ค้างชำระ)
-
-### ➕ Create Document (Tab 1, Accounting)
-
-**5 ประเภทเอกสาร:**
-
-| Code | Type | ใช้เมื่อ |
-|------|------|---------|
-| INV | 📄 Invoice / Tax Invoice | ออกใบกำกับภาษี |
-| BN | 📑 Billing Note (ใบวางบิล) | วางบิลลูกค้า |
-| CN | 📉 Credit Note | ลดหนี้ลูกค้า |
-| DN | 📈 Debit Note | เพิ่มหนี้ลูกค้า |
-| SOA | 📊 Statement of Account | สรุปยอดบัญชี |
-
-**ขั้นตอน:**
-
-1. เลือก Document Type
-2. เลือก Customer (จาก CRM)
-3. Link to Shipment (optional) — เพื่อ trace กลับ
-4. ตั้ง Issue Date + Due Date (auto-fill จาก credit terms)
-5. เลือก Currency: THB / USD / EUR / CNY
-6. เพิ่ม Line Items:
-   - Description, Qty, Unit Price → Amount
-7. ตั้ง **VAT Rate** (default 7%) + **WHT Rate** (0/1/3/5%)
-8. ดู Live Preview:
-   ```
-   Subtotal:       ฿10,000.00
-   VAT (7%):           ฿700.00
-   WHT (3%):          -฿300.00
-   Net Total:      ฿10,400.00
-   ```
-9. กด **🚀 Issue Document**
-
-### 📋 All Documents (Tab 2)
-
-- Filter by Type / Status (Unpaid / Partial / Paid / Cancelled)
-- 📥 **Generate PDF** — ดาวน์โหลดใบกำกับภาษีในรูปแบบ A4
-
-### 💳 Record Payment (Tab 3)
-
-1. เลือก Invoice ที่ค้างชำระ
-2. กรอก Payment Amount + Payment Date
-3. กด **💳 Record Payment**
-
-ระบบจะอัปเดต:
-- ถ้าจ่ายเต็ม → `Paid`
-- ถ้าจ่ายบางส่วน → `Partial`
-- คำนวณ Outstanding ใหม่อัตโนมัติ
-
----
-
-## 11. EX Rates — อัตราแลกเปลี่ยน
-
-### 💱 Currencies ที่รองรับ
-
-THB (base), USD, EUR, CNY, JPY, SGD, HKD
-
-### ➕ Set Exchange Rate (Admin/Accounting)
-
-1. เลือก Currency
-2. กรอก Rate (1 หน่วย = X THB)
-3. ตั้ง Effective Date
-4. กด **💾 Save Rate**
-
-ระบบเก็บ rate ตามวันที่ — การแปลงเงินใน Profit Sheet จะใช้ rate ของวันนั้นๆ
-
-### 🔄 Quick Converter
-
-- กรอก Amount
-- เลือก From + To Currency
-- ระบบแสดงผลแปลงทันที
-
-### 📜 Rate History
-
-ดูประวัติ rate ทั้งหมดที่เคยตั้ง
-
----
-
-## 12. Reports — รายงาน
-
-### 📅 Date Range Filter
-
-เลือก From/To เพื่อดูสถิติช่วงเวลานั้น
-
-### 📊 Sections
-
-1. **🚢 Shipment Activity**
-   - Total Jobs, Proceed, Finished, Closed
-   - Bar chart แยกตาม Job Type
-
-2. **💰 Financial Overview**
-   - Total Billed, Total Collected, Outstanding
-   - **Top Customers by Revenue** — 10 อันดับ + ยอดบิล + ยอดชำระ + ค้างชำระ
-
-3. **👥 Customer Database**
-   - Active Customers count
-   - Avg Credit Terms
-
----
-
-## 13. Users — จัดการผู้ใช้
-
-**Admin only**
-
-### 📋 All Users (Tab 1)
-
-ตารางผู้ใช้ทั้งหมด พร้อม:
-
-#### 🔐 Reset Password
-1. เลือก user
-2. กรอกรหัสผ่านใหม่
-3. กด Reset
-
-#### 🎭 Change Role / Status
-1. เลือก user
-2. เปลี่ยน Role / ติ๊ก Active
-3. กด Update
-
-### ➕ Create User (Tab 2)
-
-กรอก Username, Password, Full Name, Email, Role → กด Create
-
-ระบบจะแสดง permissions ที่ role นั้นมีให้เห็นก่อนสร้าง
-
----
-
-## 14. Settings — ตั้งค่าระบบ
-
-**Admin only**
-
-### 📝 Tab 1: Email Templates
-
-5 templates default:
-- `quotation_send` — ส่งใบเสนอราคา
-- `booking_confirmation` — ยืนยัน booking
-- `shipment_update` — แจ้งสถานะ shipment
-- `invoice_send` — ส่ง Invoice
-- `payment_reminder` — ทวงเงิน
-
-**แก้ไข:**
-- เลือก template
-- แก้ Subject + Body (HTML allowed)
-- ใช้ตัวแปร `{{customer_name}}`, `{{job_no}}`, `{{doc_no}}`, `{{total_amount}}` ฯลฯ
-- กด Save
-
-### 📨 Tab 2: SMTP & Email Log
-
-ตั้งค่า SMTP ใน Streamlit Cloud Secrets:
-
-```toml
-[smtp]
-host = "smtp.gmail.com"
-port = 587
-username = "you@example.com"
-password = "your-app-password"
-from_email = "you@example.com"
-from_name = "FreightFlow NTT"
-```
-
-**Gmail:** สร้าง [App Password](https://myaccount.google.com/apppasswords) (ไม่ใช้ password ปกติ)
-
-**Streamlit Cloud:** ไปที่ app settings → Secrets → paste
-
-ดูประวัติ email ที่ส่งทั้งหมด (sent / draft / failed)
-
-### 🔍 Tab 3: Activity Log
-
-ประวัติการกระทำของผู้ใช้ในระบบ (audit trail)
-
----
-
-## 15. Workflow ทำงานจริง End-to-End
-
-### 🎯 Scenario: ลูกค้าจองเรือ → ส่งของ → เก็บเงิน
-
-#### Day 1 — Sales รับงาน
+## 4. กลุ่มเมนู Sales & CRM (งานขายและลูกค้าสัมพันธ์)
 
 ```
-1. CRM → สร้างลูกค้า "ABC Trading Co., Ltd."
-2. Quotation → สร้างใบเสนอราคา SI26050001
-3. กด "📥 PDF" ส่งให้ลูกค้า
-4. ลูกค้าตอบรับ → กด "➡️ → Booking"
+[ CRM: บันทึกประวัติลูกค้า ] ➔ [ QUOTATION: ออกใบเสนอราคา ] ➔ [ HANDOVER: ส่งงานเข้าปฏิบัติการ ]
 ```
 
-#### Day 2 — CS ออก Booking
+### 4.1 ข้อมูลลูกค้าและวงเงินเครดิต (CRM)
+- **เมนู:** `SALES ➔ Customers`
+- **การใช้งาน:**
+  1. ค้นหาและดูสถานะวงเงินคงเหลือของลูกค้า (Credit Limit vs Outstanding Balance)
+  2. บันทึกผู้ติดต่อ (Contact Persons), เบอร์โทร, อีเมล, เงื่อนไขการชำระเงิน และวงเงินเครดิต
+
+### 4.2 การสร้างใบเสนอราคา (Quotations V2)
+- **เมนู:** `SALES ➔ Quotations`
+- **ขั้นตอนการสร้าง:**
+  1. กดปุ่ม **"＋ New Quotation"**
+  2. เลือกลูกค้า (Customer) และระบุโหมดการขนส่ง (SEA-FCL, SEA-LCL, AIR, TRUCK)
+  3. เลือกท่าเรือต้นทาง-ปลายทาง (POL/POD) และกำหนดวันหมดอายุของใบเสนอราคา
+  4. เพิ่มรายการค่าบริการ (Charge Items): Ocean Freight, THC, Bill of Lading Fee, Customs Clearance ฯลฯ
+  5. ระบบคำนวณยอดรวมภาษี VAT 7% และหัก ณ ที่จ่าย (WHT) ให้อัตโนมัติ
+  6. กด **Create Quotation (สร้างแบบร่าง Draft)**
+  7. เมื่อตรวจทานเรียบร้อย กด **Submit for Approval** เพื่อส่งให้หัวหน้างาน/ผู้จัดการอนุมัติ
+  8. กดปุ่ม **"PDF"** เพื่อสร้างและดาวน์โหลดเอกสารใบเสนอราคาพร้อมส่งให้ลูกค้า
+
+### 4.3 การส่งต่องาน (Job Handover)
+- **เมนู:** `SALES ➔ Job Handover`
+- **ขั้นตอนการทำงาน:**
+  1. เมื่อลูกค้าตกลงรับใบเสนอราคา (Quotation สถานะ Won/Approved)
+  2. ฝ่ายขายเลือกใบเสนอราคาที่ต้องการส่งงาน
+  3. ระบุข้อความสั่งงานพิเศษ (Operational Instructions) เช่น วันที่ตู้ต้องถึงโรงงาน หรือเอกสารพิเศษที่ต้องขอ
+  4. กด **"Create Operations Job"** ➔ ระบบจะสร้าง Job ใหม่ในระบบ Operations ทันทีโดยนำเข้าข้อมูลต้นทาง-ปลายทาง อัตราค่าบริการ และคู่ค้าอัตโนมัติ
+
+---
+
+## 5. กลุ่มเมนู Operations (การปฏิบัติการขนส่ง)
+
+### 5.1 การเปิดใบจองเรือ (Bookings V2)
+- **เมนู:** `OPERATIONS ➔ Bookings`
+- **ขั้นตอนการทำงาน:**
+  1. กด **"＋ New Booking"**
+  2. เลือกลูกค้าและสายเรือ (Carrier/Liner)
+  3. ระบุเลขจองของสายเรือ (Carrier Booking No.), ชื่อเรือ/เที่ยวเรือ (Vessel/Voyage)
+  4. กำหนดวันตัดคืนตู้ (Closing Date), วันรับตู้เปล่า (Pick-up Empty Date), วันที่เรือออก (ETD) และวันเรือถึง (ETA)
+  5. บันทึกขนาดและจำนวนตู้ (เช่น 20'GP x 2, 40'HC x 1)
+  6. กด **Create Booking** และสามารถกดพิมพ์ **Booking Confirmation PDF** ส่งให้ Shipper/โรงงานได้ทันที
+
+### 5.2 ใบคุมงานขนส่ง 360 องศา (Job Control Tower)
+- **เมนู:** `OPERATIONS ➔ Jobs`
+- **ศูนย์กลางบริหารงานแบบครบวงจร 7 แท็บ:**
+  1. **Overview:** ข้อมูลสรุปของ Job, เส้นทาง, ลูกค้า, วันที่สำคัญ
+  2. **Operations:** บันทึกสายการเดินเรือ, ตัวแทนปลายทาง (Overseas Agent), ข้อมูลศุลกากร
+  3. **Cargo & Containers:** บันทึกเบอร์เลขตู้ (Container No.), เบอร์ซีลล็อค (Seal No.), น้ำหนักรวม (Gross Weight), ปริมาตร (CBM)
+  4. **Milestones:** บันทึก Time Log ลำดับเหตุการณ์ขนส่ง (Booking Placed ➔ Container Released ➔ Gate In ➔ Vessel Departed ➔ Arrived at POD ➔ Delivered ➔ Empty Returned)
+  5. **Documents:** เข้าถึงเอกสารที่เกี่ยวข้องของ Job ทั้งหมด
+  6. **Financial:** บันทึกและตรวจสอบค่าใช้จ่ายจริงที่เกิดขึ้น (AR/AP Real Cost)
+  7. **History / Audit Trail:** บันทึกประวัติการแก้ไขข้อมูลของ Job ทุกครั้ง
+
+### 5.3 ใบตราส่งสินค้าทางทะเล (Bills of Lading - B/L V2)
+- **เมนู:** `OPERATIONS ➔ Bills of Lading`
+- **ขั้นตอนการทำงาน:**
+  1. กด **"＋ New B/L"** หรือเลือก Job ที่ต้องการออก B/L
+  2. เลือกว่าต้องการออก **Master B/L (MBL)** หรือ **House B/L (HBL)**
+  3. ระบุ Shipper, Consignee, Notify Party, Port of Loading, Port of Discharge
+  4. กรอกรายละเอียด Marks and Numbers, Description of Goods, Weight & Measurement
+  5. ระบุเงื่อนไขค่าระวาง (Freight Prepaid หรือ Freight Collect)
+  6. กด **Save B/L** ➔ ตรวจทาน Draft ➔ กด **Submit for Approval**
+  7. กดปุ่ม **"PDF"** เพื่อพิมพ์ใบ B/L ตามมาตรฐานสากล
+
+---
+
+## 6. Document Center (ศูนย์รวมเอกสารและระบบอนุมัติ)
+
+- **เมนู:** `DOCUMENTS ➔ Documents`
+- **หน้าที่การทำงาน:**
+  - รวบรวมเอกสารทางการค้าทั้งหมดของแต่ละ Job ไว้ในที่เดียว (Quotation, Booking Confirmation, HBL, Delivery Order, Billing Note, Tax Invoice, Profit Sheet)
+  - ผู้มีอำนาจสามารถเข้ามาตรวจสอบสถานะเอกสาร และกด **Approve** หรือส่งแก้ไขได้จากหน้านี้
+  - เอกสารที่ได้รับสถานะ **Approved** จะถูกล็อคป้องกันการแก้ไขย้อนหลัง เพื่อความถูกต้องทางบัญชีและกฎหมาย
+
+---
+
+## 7. Finance & Accounting (การเงิน บัญชี และกำไร-ขาดทุน)
 
 ```
-5. Booking → ใบ booking ที่แปลงมา → กรอก:
-   - CY Date/Place
-   - Carrier, M.Vessel, Closing Time
-   - ETD, ETA
-6. กด "📥 Generate PDF" → ส่งให้ลูกค้า
+[ JOB COSTS (AP) ] + [ BILLING (AR) ] ➔ [ PROFIT SHEET ] ➔ [ PAYMENT SETTLEMENT ] ➔ [ JOB CLOSED ]
 ```
 
-#### Day 3-7 — Operation รับงาน
+### 7.1 ศูนย์จัดการเอกสารการเงิน (Finance Workspace)
+- **เมนู:** `FINANCE ➔ Finance`
+- **ประเภทเอกสารการเงินที่รองรับ:**
+  - `INV` — ใบเสร็จรับเงิน / ใบกำกับภาษี (Receipt / Tax Invoice)
+  - `BN` — ใบวางบิล (Billing Note)
+  - `CN` — ใบลดหนี้ (Credit Note)
+  - `DN` — ใบเพิ่มหนี้ (Debit Note)
+  - `SOA` — ใบแจ้งยอดลูกหนี้ (Statement of Account)
+- **ขั้นตอนการออกเอกสาร:**
+  1. ไปที่แท็บ **"Create Document"**
+  2. เลือกประเภทเอกสาร, ลูกค้า และเลือกลิ้งก์กับ Job No.
+  3. กำหนดวันออกเอกสาร (Issue Date), วันครบกำหนดชำระ (Due Date) และสกุลเงิน
+  4. เลือกรหัสค่าบริการ (Charge Items), ระบุจำนวน และราคาต่อหน่วย
+  5. ตรวจสอบยอดสรุปก่อนสร้าง (VAT 7%, WHT 1%/3%)
+  6. กด **Create Draft**
+  7. ในแท็บ **Document Register**: สามารถกดดูเอกสาร, สั่งพิมพ์ **PDF**, สั่งแก้ไข หรือกด **Duplicate** เพื่อโคลนเอกสารได้
 
-```
-7. Shipment → "📥 Pull from Booking" → สร้าง Job SE26050001
-8. กรอก Container No., Seal No., Container Size
-9. Tracking → เพิ่ม milestones:
-   - BKD (วันจอง)
-   - CY_RCV (รับตู้เปล่า)
-   - STUFF (โหลดสินค้า)
-   - LOAD (โหลดขึ้นเรือ)
-   - DEP (เรือออก)
-```
+### 7.2 การบันทึกรับชำระเงิน (Payments)
+1. ในหน้า Finance Workspace ไปที่แท็บ **"Payments"**
+2. เลือกเอกสารค้างชำระ (Outstanding Invoice)
+3. ระบบจะแสดงยอดคงค้างและชื่อลูกค้าอัตโนมัติ
+4. ใส่จำนวนเงินที่รับชำระ (Payment Amount), เลือกวิธีการชำระ (โอนเงิน, เช็ค, บัตรเครดิต, เงินสด)
+5. ระบุเลขอ้างอิงสลิปโอนเงิน (Transaction Ref) และวันที่ชำระ
+6. กด **Record Payment** ➔ ระบบจะตัดยอดหนี้และปรับสถานะเป็น `PAID` หรือ `PARTIAL` ทันที
 
-#### Day 14 — เรือถึงปลายทาง
+### 7.3 การจัดการเจ้าหนี้และต้นทุน (Payables / AP Workspace)
+- **เมนู:** `FINANCE ➔ Payables`
+- **การใช้งาน:**
+  - บันทึกและตรวจสอบบิลค่าใช้จ่ายจากสายเรือ (Liner Charges), ค่ารถหัวลาก (Trucking), ค่าชิปปิ้ง (Customs Clearance Fee)
+  - ติดตามยอดตั้งหนี้ (Accrued AP) และยอดตัดจ่ายจริง (Paid AP)
 
-```
-10. Tracking → เพิ่ม:
-    - ARR (เรือถึง)
-    - DISC (ขนตู้ลง)
-    - CUST (ผ่านศุลกากร)
-    - DEL (ส่งลูกค้า)
-    - EMPTY (คืนตู้)
-11. Operation → Shipment → Edit → เปลี่ยนสถานะเป็น "Finished"
-12. Generate B/L PDF
-```
+### 7.4 ใบสรุปกำไร-ขาดทุนราย Job (Job Profitability Sheet)
+- **เมนู:** `FINANCE ➔ Profitability`
+- **ขั้นตอนการปิดงบกำไรราย Job:**
+  1. เลือก Job No. ที่ต้องการตรวจสอบ
+  2. ตรวจสอบตารางรายได้ (AR Revenue) และตารางต้นทุน (AP Cost)
+  3. ดูผลกำไรสุทธิ (Net Profit) และอัตรากำไรขั้นต้น (Profit Margin %)
+  4. กดปุ่ม **"🚀 Generate Official Job Profitability Sheet PDF"** เพื่อรวบรวมข้อมูลงวดกำไร
+  5. ทำการลงนามอนุมัติ 3 ขั้นตอน:
+     - **Prepared By:** CS / Operation ผู้จัดทำ
+     - **Reviewed By:** Sales พนักงานขาย
+     - **Approved By:** Management ผู้บริหาร
+  6. ดาวน์โหลดเอกสาร Profit Sheet PDF เก็บเข้าแฟ้มคดีงาน
 
-#### Day 15 — Accounting
+---
 
-```
-13. Profit Sheet → เลือก Job SE26050001
-14. AR → เพิ่มทุกค่าใช้จ่ายที่จะเก็บลูกค้า
-15. AP → เพิ่มทุกต้นทุน (Liner, Trucking, Broker)
-16. กด "🚀 Generate Profit Sheet PDF"
-17. กด "✅ Approve"
-18. Billing → Create Document (INV) → link to Job SE26050001
-19. Generate Invoice PDF → ส่งให้ลูกค้า
-```
+## 8. System Admin & Health (การจัดการระบบและตรวจสุขภาพ)
 
-#### Day 30 — ลูกค้าจ่ายเงิน
+### 8.1 การจัดการผู้ใช้งาน (Users & IAM)
+- **เมนู:** `ADMIN ➔ Users`
+- **หน้าที่:**
+  - เพิ่มผู้ใช้งานใหม่ (Username, Password, Full Name, Email, Role)
+  - ระงับการใช้งาน (Deactivate User) หรือรีเซ็ตรหัสผ่าน (Reset Password)
+  - แก้ไขสิทธิ์การเข้าถึงเมนู
 
-```
-20. Billing → Record Payment → ใส่ amount + date
-21. Status เปลี่ยนเป็น "Paid"
-22. Shipment → Edit → เปลี่ยนสถานะเป็น "Closed" ✅
-    (ตอนนี้ผ่านได้เพราะมี Profit Sheet แล้ว)
+### 8.2 การตั้งค่าระบบ (Settings)
+- **เมนู:** `ADMIN ➔ Settings`
+- **หน้าที่:**
+  - กำหนดข้อมูลบริษัท (Company Name, Address, Tax ID, เบอร์โทร, โลโก้)
+  - ตั้งค่า Email SMTP สำหรับส่ง Quotation / Invoice ถึงลูกค้าทางอีเมล
+  - ตั้งค่า Document Numbering Sequence (รูปแบบเลขรันเอกสาร)
+
+### 8.3 ตรวจสุขภาพและวินิจฉัยระบบ (System Health)
+- **เมนู:** `ADMIN ➔ System Health`
+- **หน้าที่:**
+  - ตรวจสอบสถานะการเชื่อมต่อ Database (SQLite / PostgreSQL)
+  - ตรวจสอบ Connection Pool และความเร็ว Latency ของ Server
+  - ดูสถานะ Schema Tables และข้อมูลระบบ
+
+---
+
+## 9. แผนผังการทำงานจริง End-to-End (Complete Workflow)
+
+```mermaid
+flowchart TD
+    A[1. ฝ่ายขาย: บันทึกลูกค้าใน CRM] --> B[2. ฝ่ายขาย: ออก Quotation V2 และเสนอราคา]
+    B --> C[3. ลูกค้าตกลง: ส่งงานผ่าน Job Handover]
+    C --> D[4. ฝ่ายปฏิบัติการ: เปิด Booking V2 ยืนยันสายเรือ]
+    D --> E[5. ฝ่ายปฏิบัติการ: อัปเดตตู้ใน Job Control & Milestones]
+    E --> F[6. ฝ่ายปฏิบัติการ: ออกใบตราส่ง Bill of Lading V2]
+    F --> G[7. ฝ่ายบัญชี/การเงิน: บันทึก AP Cost & ออก Invoice ใน Finance Workspace]
+    G --> H[8. ฝ่ายบัญชี/การเงิน: สรุปผลกำไรใน Profitability Sheet]
+    H --> I[9. รับชำระเงินใน Payment Register & ปิดงาน Job Complete]
 ```
 
 ---
 
-## 16. คำถามที่พบบ่อย (FAQ)
+## 10. คำถามที่พบบ่อยและการแก้ปัญหา (FAQ & Troubleshooting)
 
-### Q1: ลืมรหัสผ่าน?
-A: ติดต่อ Admin ของบริษัท → ไป Users → Reset Password
+### Q1: ลืมรหัสผ่านเข้าสู่ระบบ ทำอย่างไร?
+> **ตอบ:** แจ้งผู้ดูแลระบบ (Admin) ของบริษัท เพื่อเข้าสู่เมนู `ADMIN ➔ Users` แล้วกดเลือกผู้ใช้และกดปุ่ม **Reset Password**
 
-### Q2: ทำไมเปลี่ยนสถานะเป็น "Closed" ไม่ได้?
-A: ต้องสร้าง **Profit Sheet** ก่อน (ไปที่ 📊 Profit Sheet → Generate)
+### Q2: ต้องการแก้ไขใบกำกับภาษี หรือ B/L ที่ส่งไปแล้ว ทำไมแก้ไม่ได้?
+> **ตอบ:** เอกสารที่ผ่านการอนุมัติ (Approved) จะถูกล็อคเพื่อป้องกันความผิดพลาดทางบัญชี หากต้องการแก้ไข ให้ผู้มีอำนาจปฏิเสธหรือยกเลิกเอกสารเดิม หรือใช้ฟังก์ชัน **Duplicate** เพื่อสร้าง Draft ฉบับแก้ไขใหม่
 
-### Q3: ทำไมเห็นเมนูบางอันไม่ได้?
-A: บัญชีของคุณไม่มีสิทธิ์ในเมนูนั้น (เป็นไปตาม role) ติดต่อ Admin หากต้องการสิทธิ์เพิ่ม
-
-### Q4: PDF ไม่มีโลโก้บริษัท?
-A: ตรวจสอบไฟล์ `assets/logo.png` ใน repository ต้องมีและขนาดไม่เกิน ~500KB
-
-### Q5: ทำไม email ไม่ส่ง?
-A: SMTP ยังไม่ตั้งค่า → ไป Settings → Tab 2 → ดู instruction หรือเช็ค Streamlit Cloud Secrets
-
-### Q6: Login แล้วกลับมาหน้า Login ตลอด?
-A: น่าจะเป็น browser block cookies/localStorage → ลอง Incognito Window หรือเช็ค URL ต้องมี `?token=...`
-
-### Q7: ทำไม Shipment list โหลดช้า?
-A: ระบบใช้ pagination 100 records/page อยู่แล้ว ถ้ายังช้าให้ใช้ filter (Job Type / Status / Carrier) เพื่อลดข้อมูล
-
-### Q8: เพิ่มลูกค้าใหม่จะปรากฏใน Quotation auto-complete ทันทีไหม?
-A: ใช่ — ระบบ refresh ทุกครั้งที่โหลดหน้า
-
-### Q9: เลข Job No ซ้ำได้ไหม?
-A: ไม่ได้ — ระบบใช้ counter อะตอมิกใน DB (atomic increment) ทุกเดือนเริ่มที่ 0001 ใหม่
-
-### Q10: Backup database ยังไง?
-A: ดาวน์โหลดไฟล์ `data/smart_freight.db` (SQLite) จาก Streamlit Cloud หรือ git repo
+### Q3: ข้อมูลในหน้ารายการไม่แสดงข้อมูลล่าสุด ทำอย่างไร?
+> **ตอบ:** กดปุ่ม **Refresh** ของเบราว์เซอร์ หรือคลิกสลับเมนูเพื่อโหลดข้อมูลจากฐานข้อมูลชุดล่าสุด
 
 ---
 
-## 📞 Support
-
-**บริษัท:** NATTAYARAAT CO., LTD.
-**Email:** Management@nattayaraat.com
-**Tel:** 063-428-9691
+# 🇬🇧 Part 2: English User Manual
 
 ---
 
-> 📅 **เวอร์ชัน 1.0** — May 2026
-> 💡 คู่มือนี้จะอัปเดตตามฟีเจอร์ใหม่ที่เพิ่มเข้าระบบ
+## 1. System Overview & Architecture
+
+**Smart Freight NTT** is an enterprise-grade Freight Forwarding ERP suite developed specifically for international logistics operations. It provides an end-to-end operational engine connecting Sales, Freight Operations, Documentation, and Financial Clearance into a unified **Single Source of Truth (SSOT)**.
+
+### Core Architectural Highlights:
+- **SSOT Integrity:** Data transitions seamlessly from Quote ➔ Booking ➔ Job ➔ B/L ➔ Invoice ➔ Profit Sheet without duplicate data entry.
+- **Role-Based Access Control (RBAC):** Strict operational boundaries separating Sales, Customer Service, Operations, Accounting, and Executive management.
+- **3-Stage Governance Workflow:** Guarantees that documents progress through `Draft` ➔ `Pending Approval` ➔ `Approved` states with full audit trails.
+- **Multi-Currency Calculation Engine:** Live currency exchange calculations across THB, USD, EUR, CNY, JPY, and SGD.
+
+---
+
+## 2. Authentication & Role-Based Access Control (RBAC)
+
+### 2.1 Logging In
+1. Launch any modern web browser (Google Chrome, MS Edge, Safari, Firefox).
+2. Enter your assigned **Username** and **Password**.
+3. Click **Sign In**.
+
+### 2.2 Permissions Matrix
+
+| Operational Role | Core Responsibilities | Accessible Workspaces |
+| :--- | :--- | :--- |
+| **👑 Admin** | Full access to user management, system settings, database diagnostics, and audit logs. | All workspaces |
+| **👔 Management** | Executive oversight, performance reports, financial sign-off, and document approval. | Dashboard, Reports, Quotes, Bookings, Jobs, Profit, Health |
+| **💼 Sales** | Customer CRM onboarding, rate lookup, quotation generation, and job handover. | CRM, Quotations, Job Handover, Master Data, Rates |
+| **🚢 Operations / CS** | Carrier bookings, container logistics, milestone tracking, job execution, and B/L issuance. | Bookings, Jobs, Bills of Lading, Documents, Master Data |
+| **💰 Finance / Billing** | Invoicing, receipt generation, vendor AP management, payment recording, and P&L auditing. | Finance Workspace, Payables (AP), Profitability, Reports |
+
+---
+
+## 3. Master Data Management
+
+### 3.1 Ports & Terminals
+- **Location:** `DATA ➔ Master Data ➔ Ports`
+- **Actions:** Add and manage international ports with 5-character UN/LOCODE, port names, country codes, and local timezone definitions.
+
+### 3.2 Business Parties Master
+- **Location:** `DATA ➔ Master Data ➔ Business Parties`
+- **Supported Roles:** `CUSTOMER`, `CARRIER`, `VENDOR`, `AGENT`, `CO_LOADER`, `SHIPPER`, `CONSIGNEE`
+- **Actions:** Maintain legal entity names, corporate tax IDs, billing addresses, credit limits, credit payment terms, and banking beneficiary profiles.
+
+### 3.3 Charge Master
+- **Location:** `DATA ➔ Master Data ➔ Charges`
+- **Actions:** Standardize operational and local charges (e.g., Ocean Freight, Terminal Handling, Customs Clearance, D/O Fee) with predefined default VAT and WHT tax policies.
+
+### 3.4 Rate Master
+- **Location:** `DATA ➔ Rate Master`
+- **Actions:** Create and maintain carrier contract rates across lanes (POL/POD), container types, and validity periods.
+
+---
+
+## 4. Sales & CRM Operations
+
+### 4.1 Customer Management (CRM)
+- **Location:** `SALES ➔ Customers`
+- **Actions:** Track customer credit exposure (Credit Limit vs Outstanding Balance), manage billing contacts, and configure credit periods.
+
+### 4.2 Quotation Engine (Quotations V2)
+- **Location:** `SALES ➔ Quotations`
+- **Workflow:**
+  1. Click **"＋ New Quotation"**.
+  2. Select Customer, Mode (`SEA-FCL`, `SEA-LCL`, `AIR`, `TRUCK`), and POL/POD routes.
+  3. Add charge lines with specified currencies, unit prices, and quantities.
+  4. System automatically computes subtotal, VAT 7%, and WHT withholding amounts.
+  5. Click **Create Quotation (Draft)**.
+  6. Click **Submit for Approval** to route to management.
+  7. Generate and download client-facing **Quotation PDF**.
+
+### 4.3 Operational Job Handover
+- **Location:** `SALES ➔ Job Handover`
+- **Actions:** Seamlessly convert an approved quotation into an active operations job, transmitting routing, agreed pricing, and special client handling instructions directly to the Operations team.
+
+---
+
+## 5. Freight Operations & Logistics
+
+### 5.1 Carrier Booking Confirmation (Bookings V2)
+- **Location:** `OPERATIONS ➔ Bookings`
+- **Workflow:**
+  1. Click **"＋ New Booking"**.
+  2. Select Customer and Liner/Carrier.
+  3. Enter Carrier Booking No., Vessel name, Voyage number, and key cut-off dates (Closing, CY, ETD, ETA).
+  4. Allocate container sizes and quantities (e.g., 20'GP, 40'HC).
+  5. Save and issue official **Booking Confirmation PDF**.
+
+### 5.2 Job Control Tower 360
+- **Location:** `OPERATIONS ➔ Jobs`
+- **7-Tab Workspace:**
+  - **Overview:** High-level summary of cargo, shipper/consignee, and key dates.
+  - **Operations:** Overseas handling agents, customs brokers, and transport routes.
+  - **Cargo & Containers:** Container numbers, seal numbers, tare/gross weights, packages, and CBM volumes.
+  - **Milestones:** Complete timestamp tracking from empty release to customer delivery and empty return.
+  - **Documents:** Instant access to all generated operational and commercial PDFs.
+  - **Financial:** Real-time accrued AR & AP tracking against live vendor invoices.
+  - **History:** Complete tamper-proof audit trail of changes made to the shipment.
+
+### 5.3 Ocean Bills of Lading (B/L V2)
+- **Location:** `OPERATIONS ➔ Bills of Lading`
+- **Workflow:**
+  1. Click **"＋ New B/L"** (Select Master B/L or House B/L).
+  2. Fill in Shipper, Consignee, Notify Party, and Port details.
+  3. Enter Cargo Marks, Description of Goods, and Measurement units.
+  4. Define Freight Terms (`Prepaid` or `Collect`).
+  5. Submit for approval and compile official **Bill of Lading PDF**.
+
+---
+
+## 6. Document Control & Multi-Stage Approval
+
+- **Location:** `DOCUMENTS ➔ Documents`
+- **Capabilities:**
+  - Serves as the central repository for all shipment documentation.
+  - Allows managers to review and approve Quotations, B/Ls, Invoices, and Profit Sheets.
+  - Implements document versioning and lock states upon approval.
+
+---
+
+## 7. Finance, Accounting & Job Profitability
+
+### 7.1 Finance Document Workspace
+- **Location:** `FINANCE ➔ Finance`
+- **Supported Commercial Documents:**
+  - `INV` — Receipt / Tax Invoice (ใบเสร็จรับเงิน / ใบกำกับภาษี)
+  - `BN` — Billing Note (ใบวางบิล)
+  - `CN` — Credit Note (ใบลดหนี้)
+  - `DN` — Debit Note (ใบเพิ่มหนี้)
+  - `SOA` — Statement of Account (ใบแจ้งยอดบัญชี)
+- **Features:** Line-item tax management, PDF generation, draft editing, and duplicate cloning.
+
+### 7.2 Accounts Receivable Payment Clearance
+1. In Finance Workspace, navigate to the **"Payments"** tab.
+2. Select an outstanding invoice from the dropdown.
+3. Review current outstanding balance and customer profile.
+4. Input payment amount, payment method, bank reference / slip number, and payment date.
+5. Click **Record Payment** to settle the document.
+
+### 7.3 Accounts Payable (AP) & Cost Accrual
+- **Location:** `FINANCE ➔ Payables`
+- **Capabilities:** Record liner ocean freight charges, local trucking invoices, customs charges, and reconcile vendor statements.
+
+### 7.4 Job Profitability & Sign-Off Engine
+- **Location:** `FINANCE ➔ Profitability`
+- **Workflow:**
+  1. Select the target Job number.
+  2. Review real-time Total Revenue (AR), Total Cost (AP), Net Profit, and Profit Margin %.
+  3. Click **"🚀 Generate Official Job Profitability Sheet PDF"**.
+  4. Perform formal 3-tier digital sign-off:
+     - **Prepared By:** Operations / Customer Service
+     - **Reviewed By:** Sales Representative
+     - **Approved By:** Executive Management
+  5. Download the final signed audit sheet PDF.
+
+---
+
+## 8. System Administration & Diagnostics
+
+### 8.1 User Management & IAM
+- **Location:** `ADMIN ➔ Users`
+- **Capabilities:** Create users, assign functional roles, reset passwords, and toggle active status.
+
+### 8.2 Company Settings & Templates
+- **Location:** `ADMIN ➔ Settings`
+- **Capabilities:** Update corporate legal details, configure SMTP email servers, and customize document numbering sequences.
+
+### 8.3 System Health Monitor
+- **Location:** `ADMIN ➔ System Health`
+- **Capabilities:** Monitor database connection pool, latency benchmarks, active sessions, and verify data schema integrity.
+
+---
+
+## 9. End-to-End Operational Lifecycle
+
+```
+[1. CRM: Register Client] 
+   └── [2. SALES: Generate Quotation V2 & Send PDF]
+          └── [3. SALES: Handover Job to Ops]
+                 └── [4. OPS: Book Vessel & Issue Booking Confirmation]
+                        └── [5. OPS: Track Containers & Milestones in Job 360]
+                               └── [6. OPS: Issue House/Master Bill of Lading]
+                                      └── [7. FINANCE: Issue Tax Invoice / Billing Note]
+                                             └── [8. FINANCE: Compile Job Profitability Sheet]
+                                                    └── [9. FINANCE: Settle Payment & Close Job]
+```
+
+---
+
+## 10. FAQ & Troubleshooting Guide
+
+### Q1: What should I do if I forgot my password?
+> **Answer:** Contact your system Administrator. An administrator can reset your credentials via `ADMIN ➔ Users ➔ Reset Password`.
+
+### Q2: Why can't I edit an approved Invoice or B/L?
+> **Answer:** Approved documents are locked to maintain accounting and legal compliance. To issue a revision, use the **Duplicate** button to create a new draft or request an administrator to reject the existing document.
+
+### Q3: Why is my PDF missing the company logo?
+> **Answer:** Ensure that `assets/logo.png` is uploaded in the repository and is within standard image dimensions (under 1MB).
+
+---
+
+**© 2026 NATTAYARAAT CO., LTD. All Rights Reserved.**  
+*Smart Freight NTT — Enterprise Freight Forwarding & Logistics Suite*
