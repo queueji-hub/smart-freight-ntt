@@ -241,7 +241,9 @@ def _milestones(j):
 
 def _documents(j):
     st.markdown('<div class="s-section">Documents & Workflow</div>', unsafe_allow_html=True)
-    st.caption("Documents are generated from database data. No binary document upload is required.")
+    st.caption("Documents are generated from authoritative database data without requiring file uploads.")
+    
+    # 1. Job Sheet
     a, b = st.columns([5, 1])
     a.write(f'**Job Sheet** · `{j["job_no"]}`')
     if b.button("PDF", key=f"prepare_job_pdf_{j['id']}", use_container_width=True, type="primary"):
@@ -254,6 +256,48 @@ def _documents(j):
                     st.download_button("Download PDF", handle.read(), file_name=os.path.basename(path), mime="application/pdf", key=f"job_pdf_download_{j['id']}", use_container_width=True)
         except Exception as exc:
             st.error(f"PDF unavailable: {exc}")
+
+    # 2. Shipping Instruction (S/I)
+    st.markdown("---")
+    st.markdown("##### 📄 Shipping Instruction (S/I) / ใบแจ้งรายละเอียดออก Master B/L")
+    si_c1, si_c2 = st.columns([3, 2])
+    with si_c1:
+        si_mode_choice = st.radio(
+            "B/L Issuance Type on S/I",
+            ["Direct B/L (Direct Master B/L to Customer)", "Agent B/L (HBL Mode — Agent Shipper & Nattayaarat Consignee)"],
+            index=1 if j.get("mode") in {"SEA", "OCEAN"} else 0,
+            key=f"shipment_si_mode_{j['id']}",
+            horizontal=True
+        )
+    si_mode = "hbl" if "Agent B/L" in si_mode_choice else "direct"
+
+    from managers.si_service import assemble_si_payload
+    try:
+        si_data = assemble_si_payload(j["job_no"], si_mode=si_mode)
+        with si_c2:
+            st.caption(f"**Shipper:** {_s(si_data.get('shipper')).splitlines()[0]}<br/>**Consignee:** {_s(si_data.get('consignee')).splitlines()[0]}<br/>**Notify:** {_s(si_data.get('notify_party'))}", unsafe_allow_html=True)
+        
+        sa, sb = st.columns([5, 1])
+        sa.write(f"**Shipping Instruction (S/I)** · `{j['job_no']}` · `{si_data['si_mode_label']}` · Carrier: `{_s(si_data.get('carrier'))}`")
+        if sb.button("PDF", key=f"si_btn_{j['id']}_{si_mode}", type="primary", use_container_width=True):
+            try:
+                from pdf.si_pdf import generate_si_pdf
+                si_pdf_path = generate_si_pdf(si_data)
+                if si_pdf_path and os.path.exists(si_pdf_path):
+                    with open(si_pdf_path, "rb") as h:
+                        st.download_button(
+                            "Download S/I",
+                            h.read(),
+                            file_name=os.path.basename(si_pdf_path),
+                            mime="application/pdf",
+                            key=f"si_dl_{j['id']}_{si_mode}",
+                            use_container_width=True
+                        )
+            except Exception as e:
+                st.error(f"S/I PDF generation failed: {e}")
+    except Exception as exc:
+        st.error(f"Unable to assemble S/I: {exc}")
+
     st.divider()
     st.write("**Related Documents**")
     st.dataframe(pd.DataFrame([{"Document": n, "Document No.": _s(v)} for n, v in [("Quotation", j.get("quotation_no")), ("Booking", j.get("booking_no")), ("Bill of Lading", j.get("bl_no")), ("Invoice", j.get("invoice_no"))]]), use_container_width=True, hide_index=True)

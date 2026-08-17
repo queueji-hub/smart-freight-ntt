@@ -320,7 +320,7 @@ def render() -> None:
     with d:
         st.caption("PDF follows the approved Ocean B/L layout.")
 
-    tabs = st.tabs(["B/L Data", "Document Preview"])
+    tabs = st.tabs(["B/L Data", "Document Preview", "Shipping Instruction (S/I)"])
     with tabs[0]:
         if can_edit and status in {"Draft", "Pending Approval"}:
             _edit(bl)
@@ -328,3 +328,45 @@ def render() -> None:
             _preview(bl)
     with tabs[1]:
         _preview(bl)
+    with tabs[2]:
+        section("Shipping Instruction (S/I) for Shipping Line")
+        si_mode_choice = st.radio(
+            "S/I Issuance Mode",
+            ["Direct B/L (Direct Master B/L to Customer)", "Agent B/L (HBL Mode — Agent Shipper & Nattayaarat Consignee)"],
+            index=1,
+            key=f"bl_si_mode_choice_{selected}",
+            horizontal=True
+        )
+        si_mode = "hbl" if "Agent B/L" in si_mode_choice else "direct"
+        
+        from managers.si_service import assemble_si_payload
+        try:
+            job_no = bl.get("job_no")
+            si_data = assemble_si_payload(job_no, si_mode=si_mode)
+            
+            p_col1, p_col2 = st.columns(2)
+            with p_col1:
+                st.markdown(f"**Shipper (on MBL)**\n\n{_s(si_data.get('shipper'))}\n\n**Consignee (on MBL)**\n\n{_s(si_data.get('consignee'))}")
+            with p_col2:
+                st.markdown(f"**Notify Party**\n\n{_s(si_data.get('notify_party'))}\n\n**Carrier Booking No.** `{_s(si_data.get('carrier_booking_no'))}`\n\n**Mode:** `{si_data['si_mode_label']}`")
+            
+            si_key = f"bl_si_{selected}_{si_mode}"
+            if st.button("Generate Shipping Instruction PDF", key=f"{si_key}_btn", type="primary"):
+                from pdf.si_pdf import generate_si_pdf
+                si_path = generate_si_pdf(si_data)
+                if si_path and os.path.exists(si_path):
+                    with open(si_path, "rb") as fh:
+                        st.session_state[f"{si_key}_bytes"] = fh.read()
+                    st.session_state[f"{si_key}_name"] = os.path.basename(si_path)
+            
+            if st.session_state.get(f"{si_key}_bytes"):
+                st.download_button(
+                    "Download Shipping Instruction PDF",
+                    st.session_state[f"{si_key}_bytes"],
+                    file_name=st.session_state.get(f"{si_key}_name", f"SI_{job_no}.pdf"),
+                    mime="application/pdf",
+                    key=f"{si_key}_dl",
+                    type="primary"
+                )
+        except Exception as exc:
+            st.error(f"Unable to load S/I: {exc}")

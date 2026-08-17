@@ -135,8 +135,39 @@ def render() -> None:
         with c3:
             _approval_actions("invoice", doc_no, status, user, f"invoice_{doc_no}")
 
-    # Job Sheet
-    section("Operational Reports")
+    # Job Sheet & Shipping Instruction (S/I)
+    section("Operational Documents & Instructions")
+    
+    # Shipping Instruction (S/I)
+    st.markdown("##### 📄 Shipping Instruction (S/I) / ใบแจ้งรายละเอียดเพื่อออก Master B/L")
+    si_col1, si_col2 = st.columns([3, 2])
+    with si_col1:
+        si_mode_choice = st.radio(
+            "B/L Issuance Type on S/I",
+            ["Direct B/L (Direct Master B/L to Customer)", "Agent B/L (HBL Mode — Agent Shipper & Nattayaarat Consignee)"],
+            index=1 if job.get("mode") in {"SEA", "OCEAN"} else 0,
+            key=f"si_mode_choice_{selected_job_no}",
+            horizontal=True
+        )
+    si_mode = "hbl" if "Agent B/L" in si_mode_choice else "direct"
+    
+    from managers.si_service import assemble_si_payload
+    try:
+        si_data = assemble_si_payload(selected_job_no, si_mode=si_mode)
+        with si_col2:
+            st.caption(f"**Shipper:** {_s(si_data.get('shipper')).splitlines()[0]} · **Consignee:** {_s(si_data.get('consignee')).splitlines()[0]} · **Notify:** {_s(si_data.get('notify_party'))}")
+        
+        c1, c2 = st.columns([5, 1])
+        c1.write(f"**Shipping Instruction (S/I)** · `{selected_job_no}` · `{si_data['si_mode_label']}` · Carrier: `{_s(si_data.get('carrier'))}`")
+        with c2:
+            def si_pdf(data=si_data):
+                from pdf.si_pdf import generate_si_pdf
+                return generate_si_pdf(data)
+            _pdf_download(f"si_{selected_job_no}_{si_mode}", si_pdf, f"SI_{si_mode.upper()}_{selected_job_no}.pdf")
+    except Exception as exc:
+        st.error(f"S/I error: {exc}")
+
+    st.divider()
     c1, c2 = st.columns([5, 1])
     c1.write("**Job Sheet** · operational snapshot")
     with c2:
