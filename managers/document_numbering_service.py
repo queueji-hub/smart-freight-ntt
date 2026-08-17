@@ -33,15 +33,16 @@ def normalize_doc_no(doc_no: str) -> str:
     normalized = re.sub(r'[\s\-\/\.]', '', doc_no)
     return normalized.upper()
 
-def generate_document_number(doc_type: str, ref_date=None, digits: int = 4) -> str:
+def generate_document_number(doc_type: str, ref_date=None, digits: int = 4, separator: str = "-") -> str:
     """
     Generates the next sequential document number using an atomic UPSERT.
-    Format: {PREFIX}-{YYMM}-{SEQ} (e.g., QT-2608-0001)
+    Format: {PREFIX}{SEPARATOR}{YYMM}{SEPARATOR}{SEQ} (e.g., QT-2608-0001, SOE26001611)
     
     Args:
-        doc_type (str): The canonical prefix (e.g., "QT", "INV", "JOB")
+        doc_type (str): The canonical prefix (e.g., "QT", "INV", "JOB", "SOE", "HBL", "MBL")
         ref_date (date|str|None): The business date to base the sequence on (YYMM)
         digits (int): Padding for the sequence number (default: 4)
+        separator (str): Delimiter between prefix, date, and sequence (default: "-")
         
     Returns:
         str: The generated human-readable business document number.
@@ -66,8 +67,6 @@ def generate_document_number(doc_type: str, ref_date=None, digits: int = 4) -> s
             """, (tenant_id, doc_type, yymm))
             row = cur.fetchone()
             
-            # In SQLite via cursor.execute, RETURNING works if the DB engine supports it (SQLite 3.35+). 
-            # Python's built-in sqlite3 generally supports it.
             # Fallback if RETURNING didn't return a row (driver issues):
             if not row:
                 cur.execute(
@@ -81,4 +80,7 @@ def generate_document_number(doc_type: str, ref_date=None, digits: int = 4) -> s
             running_val = row['last_running'] if isinstance(row, dict) or hasattr(row, 'keys') else row[0]
         
     seq = f"{running_val:0{digits}d}"
-    return f"{doc_type.upper()}-{yymm}-{seq}"
+    if separator:
+        return f"{doc_type.upper()}{separator}{yymm}{separator}{seq}"
+    return f"{doc_type.upper()}{d.strftime('%y')}{running_val:06d}"
+

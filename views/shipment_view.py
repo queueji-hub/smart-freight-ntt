@@ -113,7 +113,10 @@ def _overview(j):
     c = st.columns(4)
     v_str = f"{_s(j.get('vessel'))} {_s(j.get('voyage'))}".strip() or "—"
     mv_str = f"{_s(j.get('mother_vessel'))} {_s(j.get('mother_voyage'))}".strip() or "—"
-    with c[0]: _card("Shipment Info", "▣", f'Job Type: <b>{_s(j.get("job_type"))}</b><br>Mode: <b>{_s(j.get("mode"))}</b><br>Cargo: <b>{_s(j.get("cargo_type"))}</b><br>Incoterm: <b>{_s(j.get("incoterm"))}</b><br>Freight: <b>{_s(j.get("freight_term"))}</b>')
+    mbl_str = _s(j.get('mbl_no'), '—')
+    hbl_str = _s(j.get('hbl_no'), '—')
+    booking_str = _s(j.get('booking_no'), '—')
+    with c[0]: _card("Shipment Info", "▣", f'Job Type: <b>{_s(j.get("job_type"))}</b><br>Mode: <b>{_s(j.get("mode"))}</b><br>Carrier MBL: <b>{mbl_str}</b><br>HBL: <b>{hbl_str}</b><br>Booking: <b>{booking_str}</b>')
     with c[1]: _card("Route Info", "⌖", f'POL: <b>{_s(j.get("pol"))}</b><br>Transshipment: <b>{_s(j.get("transshipment_port"))}</b><br>POD: <b>{_s(j.get("pod"))}</b><br>Vessel / Voy: <b>{v_str}</b><br>Mother Vessel / Voy: <b>{mv_str}</b>')
     with c[2]: _card("Parties", "▤", f'Shipper: <b>{_s(j.get("shipper"))}</b><br>Consignee: <b>{_s(j.get("consignee"))}</b><br>Notify: <b>{_s(j.get("notify_party"))}</b><br>Sales: <b>{_s(j.get("sales_person"))}</b>')
     p = get_profit_summary(j.get("id")) or {}
@@ -149,6 +152,11 @@ def _operations(j):
         mother_vessel = mv1.text_input("Mother Vessel", value=_s(j.get("mother_vessel"), ""))
         mother_voyage = mv2.text_input("Mother Voyage No.", value=_s(j.get("mother_voyage"), ""))
 
+        b1, b2, b3 = st.columns(3)
+        mbl_no = b1.text_input("Carrier MBL No. (Master B/L)", value=_s(j.get("mbl_no"), ""))
+        hbl_no = b2.text_input("Company HBL No.", value=_s(j.get("hbl_no"), ""))
+        booking_no = b3.text_input("Booking No.", value=_s(j.get("booking_no"), ""))
+
         c10, c11, c12, c13 = st.columns(4)
         etd = c10.date_input("ETD", value=_dt(j.get("etd")) or date.today())
         eta = c11.date_input("ETA", value=_dt(j.get("eta")) or date.today())
@@ -171,6 +179,9 @@ def _operations(j):
                 "voyage": voyage.strip() or None,
                 "mother_vessel": mother_vessel.strip() or None,
                 "mother_voyage": mother_voyage.strip() or None,
+                "mbl_no": mbl_no.strip() or None,
+                "hbl_no": hbl_no.strip() or None,
+                "booking_no": booking_no.strip() or None,
                 "transshipment_port": trans or None,
                 "etd": etd.isoformat(),
                 "eta": eta.isoformat(),
@@ -469,11 +480,26 @@ def _new_job():
         sales_person = d.selectbox("Sales", sales_options or [""])
         etd = e.date_input("ETD", date.today())
         eta = f.date_input("ETA", date.today())
+        g, h, i = st.columns(3)
+        mbl_input = g.text_input("Carrier MBL No. (Master B/L)")
+        booking_input = h.text_input("Booking No.")
+        carrier_input = i.selectbox("Carrier", _opts("carrier"))
         create = st.form_submit_button("Create Job", type="primary", use_container_width=True)
     if create:
         customer_id = next((x.get("id") for x in customers if x.get("company_name") == customer), None)
         try:
-            no = create_shipment({"job_type": jt, "mode": mode, "customer_id": customer_id, "sales_person": sales_person, "etd": etd.isoformat(), "eta": eta.isoformat(), "status": "Proceed"})
+            no = create_shipment({
+                "job_type": jt,
+                "mode": mode,
+                "customer_id": customer_id,
+                "sales_person": sales_person,
+                "etd": etd.isoformat(),
+                "eta": eta.isoformat(),
+                "mbl_no": mbl_input.strip() or None,
+                "booking_no": booking_input.strip() or None,
+                "carrier": carrier_input or None,
+                "status": "Proceed"
+            })
             st.success(f"Job {no} created")
             st.session_state.pop("job_control_new", None)
             st.rerun()

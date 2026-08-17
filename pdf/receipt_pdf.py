@@ -118,7 +118,7 @@ def _header(styles: Dict[str, ParagraphStyle], copy_label: str) -> Table:
         try:
             ir = ImageReader(str(logo_path))
             iw, ih = ir.getSize()
-            scale = min(32 * mm / iw, 20 * mm / ih)
+            scale = min(34 * mm / iw, 19 * mm / ih)
             logo = Image(str(logo_path), width=iw * scale, height=ih * scale)
         except Exception:
             logo = None
@@ -154,7 +154,7 @@ def _header(styles: Dict[str, ParagraphStyle], copy_label: str) -> Table:
         Paragraph("Receipt/Tax Invoice", styles["doc_title_en"]),
     ]
 
-    tbl = Table([[logo, address_paragraphs, right_paragraphs]], colWidths=[28 * mm, 96 * mm, 58 * mm])
+    tbl = Table([[logo, address_paragraphs, right_paragraphs]], colWidths=[36 * mm, 90 * mm, 56 * mm])
     tbl.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ALIGN", (0, 0), (0, 0), "LEFT"),
@@ -163,6 +163,7 @@ def _header(styles: Dict[str, ParagraphStyle], copy_label: str) -> Table:
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING", (1, 0), (1, 0), 4),
     ]))
     return tbl
 

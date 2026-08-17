@@ -277,7 +277,14 @@ def generate_bl_pdf(bl_source: Any, output_path: str = None) -> str:
     elif isinstance(bl_source, dict) and "bl_no" in bl_source:
         # Given single B/L record dict
         bl_id = bl_source.get("id") or bl_source.get("bl_no")
-        payload = assemble_bl_pdf_payload(bl_id)
+        try:
+            payload = assemble_bl_pdf_payload(bl_id)
+        except Exception:
+            payload = {
+                "bl": bl_source,
+                "job": bl_source.get("job") or {},
+                "containers": bl_source.get("containers") or [],
+            }
     else:
         payload = assemble_bl_pdf_payload(bl_source)
 

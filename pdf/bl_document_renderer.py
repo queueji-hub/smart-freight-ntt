@@ -167,7 +167,7 @@ def generate_company_bl_pdf(payload: Dict[str, Any], output_path: Optional[str] 
         rightMargin=8 * mm,
         topMargin=7 * mm,
         bottomMargin=7 * mm,
-        title=f"Ocean Bill of Lading {bl_no}",
+        title=f"Bill of Lading {bl_no}",
         author=COMPANY.get("name", "NATTAYAARAT CO., LTD."),
     )
 
@@ -201,7 +201,7 @@ def generate_company_bl_pdf(payload: Dict[str, Any], output_path: Optional[str] 
         Paragraph(f"<b>{comp_name_en}</b>", styles["company_en"]),
         Paragraph(comp_addr, styles["company_addr"]),
         Spacer(1, 1 * mm),
-        Paragraph("<b>OCEAN BILL OF LADING</b>", styles["doc_title"]),
+        Paragraph("<b>BILL OF LADING</b>", styles["doc_title"]),
     ]
 
     header_logo_table = Table(
