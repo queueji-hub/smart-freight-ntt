@@ -36,7 +36,7 @@ def _render_form(user, record=None):
     origin_options = list(port_map)
     dest_options = list(port_map)
 
-    with st.form(f"rate_master_{record.get('id','new')}"):
+    with st.form(f"rate_card_form_{record.get('id', 'new')}"):
         section("Rate Card")
         a, b, c, d = st.columns(4)
         rate_no = a.text_input("Rate No. *", value=str(record.get("rate_no") or ""))
@@ -76,7 +76,7 @@ def _render_form(user, record=None):
                 "rate": st.column_config.NumberColumn("Rate", min_value=0.0, step=0.01),
                 "currency": st.column_config.TextColumn("Currency", max_chars=3),
             },
-            key=f"rate_master_lines_{record.get('id','new')}",
+            key=f"rate_card_lines_editor_{record.get('id', 'new')}",
         )
         save = st.form_submit_button("Update Rate Card" if record.get("id") else "Save Rate Card", type="primary", width="stretch")
 
@@ -107,6 +107,9 @@ def render():
         st.warning("Rate Master access is restricted to authorized users.")
         return
 
+    # Clean legacy key if present
+    st.session_state.pop("rate_master_new", None)
+
     section("Rate Card Ledger")
     rows = list_rate_cards(active_only=False, user=user)
     st.dataframe(pd.DataFrame([
@@ -119,19 +122,19 @@ def render():
         selected = st.selectbox("Select Rate Card", options, format_func=lambda r: f"{r.get('rate_no')} — {r.get('mode')} — {r.get('currency')}", key="rate_master_edit_selector")
         actions = st.columns(2)
         with actions[0]:
-            edit = st.button("Edit Selected", width="stretch")
+            edit = st.button("Edit Selected", width="stretch", key="rate_card_btn_edit")
         with actions[1]:
-            new_rate = st.button("New Rate Card", type="primary", width="stretch")
+            new_rate = st.button("New Rate Card", type="primary", width="stretch", key="rate_card_btn_new")
         if edit:
             st.session_state["rate_master_edit_id"] = int(selected["id"])
-            st.session_state.pop("rate_master_new", None)
+            st.session_state.pop("rate_master_create_mode", None)
         if new_rate:
-            st.session_state["rate_master_new"] = True
+            st.session_state["rate_master_create_mode"] = True
             st.session_state.pop("rate_master_edit_id", None)
     else:
-        new_rate = st.button("New Rate Card", type="primary", width="stretch")
+        new_rate = st.button("New Rate Card", type="primary", width="stretch", key="rate_card_btn_new_empty")
         if new_rate:
-            st.session_state["rate_master_new"] = True
+            st.session_state["rate_master_create_mode"] = True
 
     edit_id = st.session_state.get("rate_master_edit_id")
     if edit_id:
@@ -144,10 +147,10 @@ def render():
                 st.session_state.pop("rate_master_edit_id", None)
                 st.rerun()
 
-    if st.session_state.get("rate_master_new"):
+    if st.session_state.get("rate_master_create_mode"):
         if _render_form(user):
-            st.session_state.pop("rate_master_new", None)
+            st.session_state.pop("rate_master_create_mode", None)
             st.rerun()
         if st.button("Close", key="rate_master_close"):
-            st.session_state.pop("rate_master_new", None)
+            st.session_state.pop("rate_master_create_mode", None)
             st.rerun()
