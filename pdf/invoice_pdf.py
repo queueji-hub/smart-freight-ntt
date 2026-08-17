@@ -39,6 +39,9 @@ LINE_GRAY = colors.HexColor("#CBD5E1")
 
 DOC_TITLES = {
     "INV": ("ใบส่งของ/ใบแจ้งหนี้", "Delivery Order/Invoice"),
+    "INVOICE": ("ใบส่งของ/ใบแจ้งหนี้", "Delivery Order/Invoice"),
+    "ใบแจ้งหนี้": ("ใบแจ้งหนี้", "Invoice"),
+    "ใบส่งของ/ใบแจ้งหนี้": ("ใบส่งของ/ใบแจ้งหนี้", "Delivery Order/Invoice"),
     "TAX": ("ใบเสร็จรับเงิน/ใบกำกับภาษี", "Receipt/Tax Invoice"),
     "BN": ("ใบวางบิล", "Billing Note"),
     "CN": ("ใบลดหนี้", "Credit Note"),
@@ -94,7 +97,7 @@ def _styles() -> Dict[str, ParagraphStyle]:
         "company_addr": ParagraphStyle("inv_comp_addr", parent=base["Normal"], fontName=THAI_FONT, fontSize=7.2, leading=9.8, textColor=TEXT_DARK),
         
         "orig_copy_dark": ParagraphStyle("inv_orig_copy", parent=base["Normal"], fontName=THAI_FONT_BOLD, fontSize=9.5, leading=12, alignment=TA_RIGHT, textColor=TEXT_DARK),
-        "doc_title_th": ParagraphStyle("inv_doc_title_th", parent=base["Normal"], fontName=THAI_FONT_BOLD, fontSize=12.0, leading=14.5, alignment=TA_RIGHT, textColor=BLUE_PRIMARY),
+        "doc_title_th": ParagraphStyle("inv_doc_title_th", parent=base["Normal"], fontName=THAI_FONT_BOLD, fontSize=12.5, leading=15.5, alignment=TA_RIGHT, textColor=BLUE_PRIMARY),
         "doc_title_en": ParagraphStyle("inv_doc_title_en", parent=base["Normal"], fontName=THAI_FONT, fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=BLUE_PRIMARY),
         
         "cust_head": ParagraphStyle("inv_cust_head", parent=base["Normal"], fontName=THAI_FONT_BOLD, fontSize=8.2, leading=10.5, textColor=TEXT_DARK),
@@ -152,20 +155,20 @@ def _header(styles: Dict[str, ParagraphStyle], copy_label: str, doc_type: str = 
     tel_line = f"โทร: {COMPANY.get('tel', '')}"
 
     address_paragraphs = [
-        Paragraph(f"<b>{comp_th}</b>", styles["company_th"]),
-        Paragraph(f"<b>{comp_en}</b>", styles["company_en"]),
+        Paragraph(comp_th, styles["company_th"]),
+        Paragraph(comp_en, styles["company_en"]),
         Paragraph(addr_line1, styles["company_addr"]),
         Paragraph(tax_id_line, styles["company_addr"]),
         Paragraph(tel_line, styles["company_addr"]),
     ]
 
-    title_th, title_en = DOC_TITLES.get(doc_type, ("ใบส่งของ/ใบแจ้งหนี้", "Delivery Order/Invoice"))
+    title_th, title_en = DOC_TITLES.get(doc_type.upper() if doc_type else "INV", ("ใบส่งของ/ใบแจ้งหนี้", "Delivery Order/Invoice"))
     badge_label = "สำเนา/Copy" if copy_label == "copy" else "ต้นฉบับ/Original"
 
     right_paragraphs = [
-        Paragraph(f"<b>{badge_label}</b>", styles["orig_copy_dark"]),
+        Paragraph(badge_label, styles["orig_copy_dark"]),
         Spacer(1, 1.5 * mm),
-        Paragraph(f"<b>{title_th}</b>", styles["doc_title_th"]),
+        Paragraph(title_th, styles["doc_title_th"]),
         Paragraph(title_en, styles["doc_title_en"]),
     ]
 
@@ -497,18 +500,9 @@ def generate_invoice_pdf(
     story.append(PageBreak())
     story.extend(_build_page_story(invoice, customer, items, "copy", styles))
 
-    approval = str(invoice.get("approval_status") or invoice.get("status") or "Draft").strip().lower()
-    is_draft = approval in {"draft", "pending approval", "pending", "pending_approval"}
-
     def _draw_canvas(canvas, doc_obj):
-        canvas.saveState()
-        if is_draft:
-            canvas.setFont(THAI_FONT_BOLD, 58)
-            canvas.setFillColor(colors.Color(0.75, 0.10, 0.10, alpha=0.12))
-            canvas.translate(A4[0] / 2, A4[1] / 2)
-            canvas.rotate(32)
-            canvas.drawCentredString(0, 0, "DRAFT")
-        canvas.restoreState()
+        # Official presentation without draft watermark overlay
+        pass
 
     doc.build(story, onFirstPage=_draw_canvas, onLaterPages=_draw_canvas)
     return output_path

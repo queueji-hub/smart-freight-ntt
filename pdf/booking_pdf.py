@@ -135,14 +135,6 @@ def _grid(rows, styles, header=None, color=LIGHT):
 
 def _watermark(canvas, doc, approval_status):
     canvas.saveState()
-    if str(approval_status or 'Draft').strip().lower() in {'draft', 'pending approval', 'pending'}:
-        canvas.setFont(THAI_FONT_BOLD, 46)
-        canvas.setFillColor(colors.Color(0.72, 0.72, 0.72, alpha=0.24))
-        canvas.translate(A4[0] / 2, A4[1] / 2)
-        canvas.rotate(35)
-        canvas.drawCentredString(0, 0, 'DRAFT')
-    canvas.restoreState()
-    canvas.saveState()
     canvas.setFont(THAI_FONT, 8)
     canvas.setFillColor(colors.grey)
     canvas.drawCentredString(A4[0] / 2, 10 * mm, f'Page {doc.page}')

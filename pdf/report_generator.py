@@ -52,13 +52,6 @@ def _build_pdf(title="Smart Freight NTT", approval_status="Approved"):
             self.cell(0, 5, f"Tenant: {self.tenant_id}", 0, 1, "C")
             self.ln(5)
 
-            if str(approval_status).strip().lower() in {"draft", "pending approval", "pending"}:
-                self._font("B", 30)
-                self.set_text_color(220, 220, 220)
-                self.cell(0, 18, "DRAFT", 0, 1, "C")
-                self.set_text_color(0, 0, 0)
-                self.ln(2)
-
         def footer(self):
             self.set_y(-15)
             self._font("", 8)
