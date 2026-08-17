@@ -39,6 +39,9 @@ def _invoice_status(doc_no: str, fallback: str = "Draft") -> str:
         return fallback or "Draft"
 
 
+_status = _invoice_status
+
+
 def _customer_master(customer_id: Any) -> Dict[str, Any]:
     if customer_id is None:
         return {}
@@ -292,3 +295,60 @@ def render() -> None:
 
     if can_edit and status == "Draft":
         _edit(selected_doc)
+
+
+def _payments() -> None:
+    section("Payment Entry")
+    user = st.session_state.get("user", {})
+    can_edit = can_write(str(user.get("role", "")).lower(), "billing")
+    if not can_edit:
+        st.info("Payment entry requires billing write permission.")
+        return
+
+    invoices = list_invoices() or []
+    open_invoices = [
+        inv for inv in invoices
+        if float(inv.get("outstanding") or 0) > 0 and str(inv.get("status", "")).upper() != "CANCELLED"
+    ]
+    if not open_invoices:
+        st.success("No outstanding invoices requiring payment.")
+        return
+
+    choices = [inv.get("doc_no") for inv in open_invoices if inv.get("doc_no")]
+    selected = st.selectbox("Outstanding Invoice", choices, key="finance_payment_doc_select")
+    if not selected:
+        return
+
+    rec = next(inv for inv in open_invoices if inv.get("doc_no") == selected)
+    outstanding_amt = float(rec.get("outstanding") or 0)
+    st.caption(f"Customer: {rec.get('customer_name', '—')} · Outstanding: {outstanding_amt:,.2f} {rec.get('currency', 'THB')}")
+
+    with st.form("finance_record_payment_form"):
+        a, b = st.columns(2)
+        amount = a.number_input(
+            "Payment Amount",
+            min_value=0.01,
+            max_value=max(outstanding_amt, 0.01),
+            value=max(outstanding_amt, 0.01),
+            step=100.0,
+            key="finance_payment_amount",
+        )
+        method = b.selectbox("Payment Method", PAYMENT_METHODS, key="finance_payment_method")
+        c, d = st.columns(2)
+        ref = c.text_input("Transaction / Receipt Ref.", placeholder="e.g. Bank Slip No. / Cheque No.", key="finance_payment_ref")
+        pay_date = d.date_input("Payment Date", date.today(), key="finance_payment_date")
+        submitted = st.form_submit_button("Record Payment", type="primary", width="stretch")
+
+    if submitted:
+        try:
+            record_payment({
+                "doc_no": selected,
+                "amount": float(amount),
+                "method": method,
+                "reference": ref.strip(),
+                "date": pay_date.isoformat(),
+            })
+            st.success(f"Payment of {amount:,.2f} {rec.get('currency', 'THB')} recorded for {selected}.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Payment failed: {exc}")
