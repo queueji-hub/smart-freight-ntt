@@ -121,10 +121,10 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
                     """
                     SELECT id, username, password_hash, full_name, email, role, is_active 
                     FROM users 
-                    WHERE LOWER(username) = %s 
+                    WHERE username = %s OR LOWER(username) = %s 
                     LIMIT 1
                     """,
-                    (clean_username,)
+                    (clean_username, clean_username)
                 )
                 
                 row = cur.fetchone()

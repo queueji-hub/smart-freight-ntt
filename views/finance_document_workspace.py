@@ -35,25 +35,24 @@ def _filtered_rows(rows):
     return rows
 
 
-def _summary():
-    try:
-        s = get_outstanding_summary()
-    except Exception:
-        s = {"billed": 0, "paid": 0, "outstanding": 0}
+def _summary(rows):
+    billed = sum(float(r.get("total_amount") or r.get("grand_total") or 0) for r in rows if str(r.get("status", "")).upper() != "CANCELLED")
+    outstanding = sum(float(r.get("outstanding") or 0) for r in rows if str(r.get("status", "")).upper() != "CANCELLED")
+    paid = sum(float(r.get("paid_amount") or 0) for r in rows) if any(r.get("paid_amount") for r in rows) else max(billed - outstanding, 0.0)
     a, b, c = st.columns(3)
-    a.metric("Total Billed", f"{float(s.get('billed', 0)):,.2f}")
-    b.metric("Total Paid", f"{float(s.get('paid', 0)):,.2f}")
-    c.metric("Outstanding", f"{float(s.get('outstanding', 0)):,.2f}")
+    a.metric("Total Billed", f"{billed:,.2f}")
+    b.metric("Total Paid", f"{paid:,.2f}")
+    c.metric("Outstanding", f"{outstanding:,.2f}")
 
 
 def render():
     page_header("billing", status_text="Online")
     user = st.session_state.get("user", {})
     can_edit = can_write(str(user.get("role", "")).lower(), "billing")
-    _summary()
+    rows = list_invoices() or []
+    _summary(rows)
 
     tabs = st.tabs(["Document Register", "Payments"] + (["Create Document"] if can_edit else []))
-    rows = list_invoices() or []
 
     with tabs[0]:
         section("Finance Document Register")
