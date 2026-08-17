@@ -13,8 +13,8 @@ def register_thai_fonts() -> tuple:
         return _REGISTERED
     base = Path(BASE_DIR) / "assets" / "fonts"
     candidates = [
-        (base / "Sarabun-Regular.ttf", base / "Sarabun-Bold.ttf", "Sarabun"),
         (Path("C:/Windows/Fonts/tahoma.ttf"), Path("C:/Windows/Fonts/tahomabd.ttf"), "Tahoma"),
+        (base / "Sarabun-Regular.ttf", base / "Sarabun-Bold.ttf", "Sarabun"),
         (Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"), Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"), "DejaVuSans"),
     ]
     for regular, bold, name in candidates:

@@ -422,7 +422,7 @@ def _signature_block(styles: Dict[str, ParagraphStyle]) -> Table:
         try:
             ir = ImageReader(str(stamp_path))
             iw, ih = ir.getSize()
-            scale = min(28 * mm / iw, 13 * mm / ih)
+            scale = min(36 * mm / iw, 21 * mm / ih)
             stamp_img = Image(str(stamp_path), width=iw * scale, height=ih * scale)
         except Exception:
             stamp_img = None
@@ -436,7 +436,7 @@ def _signature_block(styles: Dict[str, ParagraphStyle]) -> Table:
         Paragraph("วันที่/Date:_____/_____/_____", styles["sign_date"]),
     ]
 
-    sig_tbl = Table([[box1, box2, box3]], colWidths=[60 * mm, 60 * mm, 62 * mm], rowHeights=[27 * mm])
+    sig_tbl = Table([[box1, box2, box3]], colWidths=[60 * mm, 60 * mm, 62 * mm], rowHeights=[36 * mm])
     sig_tbl.setStyle(TableStyle([
         ("BOX", (0, 0), (0, 0), 0.6, BLUE_BORDER),
         ("BOX", (1, 0), (1, 0), 0.6, BLUE_BORDER),
