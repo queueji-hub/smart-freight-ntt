@@ -37,10 +37,11 @@ def ensure_phase30_local_schema() -> None:
         with conn.cursor() as cur:
             table_columns = {
                 "quotations": {"sales_id": "INTEGER", "approval_status": "TEXT DEFAULT 'Draft'"},
-                "bookings": {"sales_id": "INTEGER", "approval_status": "TEXT DEFAULT 'Draft'", "carrier_booking_no": "TEXT", "mother_vessel": "TEXT", "booking_date": "TEXT"},
+                "bookings": {"sales_id": "INTEGER", "approval_status": "TEXT DEFAULT 'Draft'", "carrier_booking_no": "TEXT", "mother_vessel": "TEXT", "m_vessel": "TEXT", "mother_voyage": "TEXT", "m_voyage": "TEXT", "feeder_vessel": "TEXT", "feeder_voyage": "TEXT", "booking_date": "TEXT"},
+                "shipments": {"mother_vessel": "TEXT", "mother_voyage": "TEXT", "feeder_vessel": "TEXT", "feeder_voyage": "TEXT", "financial_locked": "INTEGER DEFAULT 0", "handover_to_accounting_at": "TEXT", "handover_by": "TEXT"},
                 "invoices": {"approval_status": "TEXT DEFAULT 'Draft'"},
                 "bills_of_lading": {"tenant_id": "TEXT DEFAULT 'default'", "approval_status": "TEXT DEFAULT 'Draft'", "consol_no": "TEXT", "consol_seq": "INTEGER DEFAULT 1", "bl_type": "TEXT DEFAULT 'BL'", "delivery_agent": "TEXT", "pre_carriage_by": "TEXT", "freight_payable_at": "TEXT", "place_of_issue": "TEXT", "number_of_originals": "INTEGER DEFAULT 3"},
-                "job_costs": {"tenant_id": "TEXT DEFAULT 'default'", "cost_status": "TEXT DEFAULT 'ESTIMATED'"},
+                "job_costs": {"tenant_id": "TEXT DEFAULT 'default'", "cost_status": "TEXT DEFAULT 'ESTIMATED'", "billable_to_customer": "INTEGER DEFAULT 1", "matched_charge_code": "TEXT", "vendor_invoice_no": "TEXT", "payout_status": "TEXT DEFAULT 'UNPAID'"},
                 "profit_sheets": {"tenant_id": "TEXT DEFAULT 'default'"},
             }
             for table, cols in table_columns.items():

@@ -152,15 +152,19 @@ def _create_form(user: Dict[str, Any]):
         with pod:
             pod_value = st.text_input("POD *")
 
-        l_col, v_col, mv_col, voy_col = st.columns(4)
+        l_col, v_col, voy_col = st.columns([1.2, 1.4, 1.4])
         with l_col:
             liner_value = st.selectbox("Liner", liner_options)
         with v_col:
-            vessel_value = st.selectbox("Vessel", vessel_options)
+            vessel_value = st.selectbox("Vessel (Feeder / Ocean)", vessel_options)
+        with voy_col:
+            voyage_value = st.text_input("Voyage No.")
+
+        mv_col, mvoy_col = st.columns(2)
         with mv_col:
             mother_value = st.text_input("Mother Vessel")
-        with voy_col:
-            voyage_value = st.text_input("Voyage")
+        with mvoy_col:
+            mother_voyage_value = st.text_input("Mother Voyage No.")
 
         etd_default = date.today()
         eta_default = etd_default + timedelta(days=14)
@@ -263,8 +267,11 @@ def _create_form(user: Dict[str, Any]):
             "transhipment_port": trans_value or None,
             "liner": liner_value or None,
             "vessel": vessel_value or None,
-            "m_vessel": mother_value.strip() or None,
             "voyage": voyage_value.strip() or None,
+            "m_vessel": mother_value.strip() or None,
+            "mother_vessel": mother_value.strip() or None,
+            "m_voyage": mother_voyage_value.strip() or None,
+            "mother_voyage": mother_voyage_value.strip() or None,
             "etd": etd_value.isoformat(),
             "eta": eta_value.isoformat(),
             "cargo_type": cargo_type,
@@ -304,10 +311,13 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
     section("Routing & Vessel")
     cols = st.columns(5)
     cols[0].write(f"**Liner**\n\n{_s(selected.get('liner'), '—')}")
-    cols[1].write(f"**Vessel**\n\n{_s(selected.get('vessel'), '—')}")
-    cols[2].write(f"**Mother Vessel**\n\n{resolve_vessel(selected.get('m_vessel'), selected.get('vessel')) or '—'}")
-    cols[3].write(f"**Voyage**\n\n{_s(selected.get('voyage'), '—')}")
-    cols[4].write(f"**Transshipment**\n\n{_s(selected.get('transhipment_port'), '—')}")
+    cols[1].write(f"**Vessel (Feeder / Ocean)**\n\n{_s(selected.get('vessel'), '—')}")
+    cols[2].write(f"**Voyage No.**\n\n{_s(selected.get('voyage'), '—')}")
+    m_vessel_val = _s(selected.get('mother_vessel') or selected.get('m_vessel'), '—')
+    m_voy_val = _s(selected.get('mother_voyage') or selected.get('m_voyage'), '')
+    m_full = f"{m_vessel_val} {m_voy_val}".strip() if m_vessel_val != '—' else '—'
+    cols[3].write(f"**Mother Vessel / Voyage**\n\n{m_full}")
+    cols[4].write(f"**Transshipment Port**\n\n{_s(selected.get('transhipment_port'), '—')}")
 
     profile = get_freight_profile(
         selected.get("job_type") if selected.get("job_type") else selected.get("mode", "SEA"),
@@ -359,14 +369,21 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
 
     if can_edit:
         with st.expander("Edit Booking", expanded=False):
-            section("Routing")
+            section("Routing & Transport")
             with st.form(f"edit_booking_{booking_no}"):
-                new_pol = st.text_input("POL", value=_s(selected.get("pol")))
-                new_pod = st.text_input("POD", value=_s(selected.get("pod")))
-                new_vessel = st.text_input("Vessel", value=_s(selected.get("vessel")))
-                new_mother = st.text_input("Mother Vessel", value=_s(selected.get("m_vessel")))
-                new_voyage = st.text_input("Voyage", value=_s(selected.get("voyage")))
-                new_trans = st.text_input("Transshipment Port", value=_s(selected.get("transhipment_port")))
+                r1, r2, r3 = st.columns(3)
+                new_pol = r1.text_input("POL", value=_s(selected.get("pol")))
+                new_trans = r2.text_input("Transshipment Port", value=_s(selected.get("transhipment_port")))
+                new_pod = r3.text_input("POD", value=_s(selected.get("pod")))
+
+                v1, v2 = st.columns(2)
+                new_vessel = v1.text_input("Vessel (Feeder / Ocean)", value=_s(selected.get("vessel")))
+                new_voyage = v2.text_input("Voyage No.", value=_s(selected.get("voyage")))
+
+                mv1, mv2 = st.columns(2)
+                new_mother = mv1.text_input("Mother Vessel", value=_s(selected.get("mother_vessel") or selected.get("m_vessel")))
+                new_mother_voyage = mv2.text_input("Mother Voyage No.", value=_s(selected.get("mother_voyage") or selected.get("m_voyage")))
+
                 new_remark = st.text_area("Remarks", value=_s(selected.get("remark")))
                 save = st.form_submit_button("Save Changes", type="primary", width="stretch")
             if save:
@@ -377,8 +394,11 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
                             "pol": new_pol.strip(),
                             "pod": new_pod.strip(),
                             "vessel": new_vessel.strip() or None,
-                            "m_vessel": new_mother.strip() or None,
                             "voyage": new_voyage.strip() or None,
+                            "m_vessel": new_mother.strip() or None,
+                            "mother_vessel": new_mother.strip() or None,
+                            "m_voyage": new_mother_voyage.strip() or None,
+                            "mother_voyage": new_mother_voyage.strip() or None,
                             "transhipment_port": new_trans.strip() or None,
                             "remark": new_remark.strip() or None,
                         },

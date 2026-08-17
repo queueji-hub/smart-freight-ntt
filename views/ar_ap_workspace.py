@@ -49,7 +49,7 @@ def render():
     c.metric("AR Outstanding", _money(outstanding))
     d.metric("Overdue", _money(overdue))
 
-    tabs = st.tabs(["AR Aging", "SOA View", "Payment Register"])
+    tabs = st.tabs(["AR Aging", "Statement of Account (SOA)", "Payment Register", "🌊 Cash Flow & Liquidity"])
     with tabs[0]:
         section("Accounts Receivable Aging")
         q = st.text_input("Customer / Document / Job / B/L", key="ar_search")
@@ -73,7 +73,17 @@ def render():
         if customer:
             view = [r for r in rows if r.get("customer_name") == customer and str(r.get("status", "")).upper() != "CANCELLED"]
             balance = sum(_num(r.get("outstanding")) for r in view)
-            st.metric("Customer Outstanding", _money(balance))
+            
+            # Compute Aging Buckets
+            today_str = date.today().isoformat()
+            bucket_current = sum(_num(r.get("outstanding")) for r in view if not r.get("due_date") or r.get("due_date") >= today_str)
+            bucket_overdue = sum(_num(r.get("outstanding")) for r in view if r.get("due_date") and r.get("due_date") < today_str)
+            
+            sc1, sc2, sc3 = st.columns(3)
+            sc1.metric("Customer Outstanding", _money(balance))
+            sc2.metric("Current (Not Due)", _money(bucket_current))
+            sc3.metric("Overdue", _money(bucket_overdue), delta_color="inverse")
+            
             st.dataframe(pd.DataFrame([{
                 "Document": r.get("doc_no"),
                 "Date": r.get("issue_date"),
@@ -100,10 +110,44 @@ def render():
             method = st.selectbox("Payment Method", PAYMENT_METHODS, key="ar_payment_method")
             reference = st.text_input("Transaction Reference", key="ar_payment_ref")
             payment_date = st.date_input("Payment Date", date.today(), key="ar_payment_date")
-            if st.button("Record Payment", type="primary", width="stretch", key="ar_record_payment"):
+            
+            rc_btn1, rc_btn2 = st.columns([1, 1])
+            if rc_btn1.button("Record Payment & Issue Receipt", type="primary", width="stretch", key="ar_record_payment"):
                 try:
                     record_payment({"doc_no": selected, "amount": amount, "method": method, "reference": reference.strip(), "date": payment_date.isoformat()})
-                    st.success(f"Payment recorded for {selected}.")
+                    st.success(f"Payment recorded for {selected}. Receipt / Tax Invoice ready.")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Payment failed: {exc}")
+
+            with rc_btn2:
+                from views.receipt_view import render_receipt_action
+                render_receipt_action(selected)
+
+    with tabs[3]:
+        section("Cash Flow & Liquidity Overview")
+        from managers.ap_manager import get_ap_vouchers
+        ap_vouchers = get_ap_vouchers() or []
+        
+        total_ap_payout = sum(float(v.get("total") or 0) for v in ap_vouchers if v.get("status") in ("POSTED", "PAID"))
+        total_ap_pending = sum(float(v.get("total") or 0) for v in ap_vouchers if v.get("status") not in ("PAID", "CANCELLED"))
+        
+        net_cashflow_realized = paid - total_ap_payout
+        net_cashflow_projected = billed - (total_ap_payout + total_ap_pending)
+        
+        cf1, cf2, cf3, cf4 = st.columns(4)
+        cf1.metric("Cash Inflow (AR Collections)", _money(paid))
+        cf2.metric("Cash Outflow (AP Disbursements)", _money(total_ap_payout))
+        cf3.metric("Net Realized Cash Flow", _money(net_cashflow_realized))
+        cf4.metric("Projected Net Cash Flow", _money(net_cashflow_projected))
+        
+        st.markdown("##### 📊 Cash Inflow vs. Outflow Summary")
+        cf_summary = [
+            {"Category": "AR Collections (เงินรับชำระจากลูกค้า)", "Amount (THB)": _money(paid), "Status": "Received Inflow"},
+            {"Category": "AR Outstanding (ยอดลูกหนี้รอเรียกเก็บ)", "Amount (THB)": _money(outstanding), "Status": "Pending Inflow"},
+            {"Category": "AP Disbursements (เงินจ่ายสายเรือ/Vendor)", "Amount (THB)": _money(total_ap_payout), "Status": "Disbursed Outflow"},
+            {"Category": "AP Pending (ยอดเจ้าหนี้รอเบิกจ่าย)", "Amount (THB)": _money(total_ap_pending), "Status": "Pending Outflow"},
+            {"Category": "Net Cash Position (กระแสเงินสดสุทธิ)", "Amount (THB)": _money(net_cashflow_realized), "Status": "Net Liquidity"},
+        ]
+        st.dataframe(pd.DataFrame(cf_summary), use_container_width=True, hide_index=True)
+

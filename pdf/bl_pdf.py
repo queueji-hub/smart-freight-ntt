@@ -260,6 +260,7 @@ def assemble_bl_pdf_payload(bl_id_or_no) -> Dict[str, Any]:
 def generate_bl_pdf(bl_source: Any, output_path: str = None) -> str:
     """
     Generate Bill of Lading PDF from a B/L dict or B/L ID/no.
+    Uses the canonical Ocean Bill of Lading renderer matching the approved sample layout.
     
     Arguments:
       bl_source: Can be a prepared payload dict, a B/L record dict, or a bl_id / bl_no (int/str).
@@ -268,6 +269,8 @@ def generate_bl_pdf(bl_source: Any, output_path: str = None) -> str:
     Returns:
       Absolute output file path string.
     """
+    from pdf.bl_document_renderer import generate_company_bl_pdf
+
     # Resolve payload
     if isinstance(bl_source, dict) and "bl" in bl_source and "containers" in bl_source:
         payload = bl_source
@@ -278,28 +281,7 @@ def generate_bl_pdf(bl_source: Any, output_path: str = None) -> str:
     else:
         payload = assemble_bl_pdf_payload(bl_source)
 
-    bl = payload["bl"]
-    job = payload.get("job") or {}
-    containers = payload.get("containers") or []
-
-    bl_no = _clean_str(bl.get("bl_no"), "DRAFT")
-    bl_type = _clean_str(bl.get("bl_type"), "HBL")
-    status = _clean_str(bl.get("status"), "Draft")
-
-    # Output path
-    if output_path is None:
-        prefix = "HBL" if bl_type == "HBL" else "MBL"
-        output_path = str(Path(OUTPUT_DIR) / f"{prefix}_{bl_no}.pdf")
-
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-    doc = SimpleDocTemplate(
-        output_path, pagesize=A4,
-        leftMargin=12*mm, rightMargin=12*mm,
-        topMargin=12*mm, bottomMargin=16*mm,
-        title=f"{bl_type} {bl_no}",
-        author=COMPANY.get("name", "FreightFlow NTT"),
-    )
+    return generate_company_bl_pdf(payload, output_path)
 
     styles = _get_styles()
     story = []

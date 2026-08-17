@@ -222,6 +222,19 @@ def ensure_phase30_profitability_schema(conn) -> None:
         _add_columns(cur, "job_costs", {
             "tenant_id": "TEXT DEFAULT 'default'",
             "cost_status": "TEXT DEFAULT 'ESTIMATED'",
+            "billable_to_customer": "BOOLEAN DEFAULT TRUE",
+            "matched_charge_code": "TEXT",
+            "vendor_invoice_no": "TEXT",
+            "payout_status": "TEXT DEFAULT 'UNPAID'",
+        })
+        _add_columns(cur, "shipments", {
+            "financial_locked": "BOOLEAN DEFAULT FALSE",
+            "handover_to_accounting_at": "TIMESTAMP",
+            "handover_by": "TEXT",
+            "mother_vessel": "TEXT",
+            "mother_voyage": "TEXT",
+            "feeder_vessel": "TEXT",
+            "feeder_voyage": "TEXT",
         })
         cur.execute("UPDATE job_costs SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''")
         cur.execute("UPDATE job_costs SET cost_status='ESTIMATED' WHERE cost_status IS NULL OR btrim(cost_status)=''")

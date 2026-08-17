@@ -40,6 +40,10 @@ def add_cost_line(data: Dict[str, Any]) -> int:
     currency = data.get("currency") or "THB"
     amount_thb = _convert_to_thb(amount, currency)
     cost_status = str(data.get("cost_status") or "ESTIMATED").upper()
+    billable = bool(data.get("billable_to_customer", True) in (True, 1, "1", "true", "True"))
+    matched_code = data.get("matched_charge_code")
+    vendor_inv = data.get("vendor_invoice_no")
+    payout_stat = str(data.get("payout_status") or "UNPAID").upper()
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -48,9 +52,10 @@ def add_cost_line(data: Dict[str, Any]) -> int:
                 INSERT INTO job_costs (
                     shipment_id, tenant_id, cost_type, category, description, supplier,
                     quantity, unit_price, amount, currency, amount_thb, remark,
-                    created_by, cost_status
+                    created_by, cost_status, billable_to_customer, matched_charge_code,
+                    vendor_invoice_no, payout_status
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id
                 """,
                 (
@@ -58,6 +63,7 @@ def add_cost_line(data: Dict[str, Any]) -> int:
                     data.get("category"), data.get("description"), data.get("supplier"),
                     qty, unit_price, amount, currency, amount_thb,
                     data.get("remark"), data.get("created_by"), cost_status,
+                    billable, matched_code, vendor_inv, payout_stat,
                 ),
             )
             row = cur.fetchone()
@@ -83,19 +89,25 @@ def update_cost_line(cost_id: int, data: Dict[str, Any]) -> bool:
             new_cur = data.get("currency", current_currency)
             amount_thb = _convert_to_thb(new_amt, new_cur)
             cost_status = str(data.get("cost_status", "ESTIMATED")).upper()
+            billable = bool(data.get("billable_to_customer", True) in (True, 1, "1", "true", "True"))
+            matched_code = data.get("matched_charge_code")
+            vendor_inv = data.get("vendor_invoice_no")
+            payout_stat = str(data.get("payout_status", "UNPAID")).upper()
 
             cur.execute(
                 """
                 UPDATE job_costs SET
                     category=%s, description=%s, supplier=%s, quantity=%s,
                     unit_price=%s, amount=%s, currency=%s, amount_thb=%s,
-                    remark=%s, cost_status=%s
+                    remark=%s, cost_status=%s, billable_to_customer=%s,
+                    matched_charge_code=%s, vendor_invoice_no=%s, payout_status=%s
                 WHERE id=%s AND tenant_id=%s
                 """,
                 (
                     data.get("category"), data.get("description"), data.get("supplier"),
                     data.get("quantity"), data.get("unit_price"), new_amt, new_cur,
-                    amount_thb, data.get("remark"), cost_status, cost_id, tenant_id,
+                    amount_thb, data.get("remark"), cost_status, billable,
+                    matched_code, vendor_inv, payout_stat, cost_id, tenant_id,
                 ),
             )
             conn.commit()
@@ -250,3 +262,147 @@ def update_signoff(sheet_id: int, role: str, signer_name: str) -> bool:
             )
             conn.commit()
             return cur.rowcount > 0
+
+
+def get_cost_sell_audit_matrix(shipment_id: int) -> Dict[str, Any]:
+    """
+    Reconciles Cost (AP) vs. Sell (AR) charges line-by-line for Operation review.
+    Detects unbilled costs, matched customer billings, and pure service revenues.
+    """
+    tenant_id = get_current_tenant_id()
+    ap_lines = get_cost_lines(shipment_id, cost_type="AP")
+    ar_lines = get_cost_lines(shipment_id, cost_type="AR")
+
+    total_cost_thb = sum(float(x.get("amount_thb") or 0) for x in ap_lines)
+    total_sell_thb = sum(float(x.get("amount_thb") or 0) for x in ar_lines)
+    gross_profit = total_sell_thb - total_cost_thb
+    margin_pct = (gross_profit / total_sell_thb * 100) if total_sell_thb > 0 else 0.0
+
+    # Build comparison rows
+    matrix_rows = []
+    matched_ar_ids = set()
+    unbilled_cost_count = 0
+    unbilled_cost_amount = 0.0
+
+    for ap in ap_lines:
+        ap_desc = (ap.get("description") or ap.get("category") or "").strip().lower()
+        ap_cat = (ap.get("category") or "").strip().lower()
+        ap_code = (ap.get("matched_charge_code") or "").strip().lower()
+        is_billable = ap.get("billable_to_customer", 1) in (1, True, "1", "true")
+
+        # Try to find corresponding AR line
+        matching_ar = None
+        for ar in ar_lines:
+            if ar["id"] in matched_ar_ids:
+                continue
+            ar_desc = (ar.get("description") or ar.get("category") or "").strip().lower()
+            ar_cat = (ar.get("category") or "").strip().lower()
+            ar_code = (ar.get("matched_charge_code") or "").strip().lower()
+
+            if (ap_code and ar_code and ap_code == ar_code) or \
+               (ap_desc and ap_desc == ar_desc) or \
+               (ap_cat and ap_cat == ar_cat):
+                matching_ar = ar
+                matched_ar_ids.add(ar["id"])
+                break
+
+        if not is_billable:
+            status = "NON_BILLABLE"
+            badge = "⚪ Non-Billable (Internal)"
+        elif matching_ar:
+            status = "MATCHED"
+            badge = "🟢 Matched & Billed"
+        else:
+            status = "UNBILLED_ALERT"
+            badge = "🔴 Unbilled Cost Alert!"
+            unbilled_cost_count += 1
+            unbilled_cost_amount += float(ap.get("amount_thb") or 0)
+
+        matrix_rows.append({
+            "cost_id": ap.get("id"),
+            "category": ap.get("category"),
+            "description": ap.get("description"),
+            "supplier": ap.get("supplier"),
+            "cost_amount": float(ap.get("amount") or 0),
+            "cost_currency": ap.get("currency", "THB"),
+            "cost_thb": float(ap.get("amount_thb") or 0),
+            "is_billable": is_billable,
+            "sell_id": matching_ar.get("id") if matching_ar else None,
+            "sell_description": matching_ar.get("description") if matching_ar else "—",
+            "sell_amount": float(matching_ar.get("amount") or 0) if matching_ar else 0.0,
+            "sell_currency": matching_ar.get("currency", "THB") if matching_ar else "THB",
+            "sell_thb": float(matching_ar.get("amount_thb") or 0) if matching_ar else 0.0,
+            "status": status,
+            "badge": badge,
+            "profit_thb": (float(matching_ar.get("amount_thb") or 0) if matching_ar else 0.0) - float(ap.get("amount_thb") or 0),
+        })
+
+    # Add standalone AR lines with no direct cost
+    for ar in ar_lines:
+        if ar["id"] not in matched_ar_ids:
+            matrix_rows.append({
+                "cost_id": None,
+                "category": ar.get("category"),
+                "description": ar.get("description"),
+                "supplier": "—",
+                "cost_amount": 0.0,
+                "cost_currency": "THB",
+                "cost_thb": 0.0,
+                "is_billable": True,
+                "sell_id": ar.get("id"),
+                "sell_description": ar.get("description"),
+                "sell_amount": float(ar.get("amount") or 0),
+                "sell_currency": ar.get("currency", "THB"),
+                "sell_thb": float(ar.get("amount_thb") or 0),
+                "status": "PURE_REVENUE",
+                "badge": "🔵 Service Revenue",
+                "profit_thb": float(ar.get("amount_thb") or 0),
+            })
+
+    return {
+        "shipment_id": shipment_id,
+        "total_cost_thb": round(total_cost_thb, 2),
+        "total_sell_thb": round(total_sell_thb, 2),
+        "gross_profit": round(gross_profit, 2),
+        "margin_pct": round(margin_pct, 2),
+        "unbilled_cost_count": unbilled_cost_count,
+        "unbilled_cost_amount": round(unbilled_cost_amount, 2),
+        "matrix_rows": matrix_rows,
+    }
+
+
+def lock_job_financials(shipment_id: int, user: Dict[str, Any]) -> bool:
+    """Lock Job Cost & Sell figures and handover to Accounting."""
+    tenant_id = get_current_tenant_id()
+    uname = user.get("username", "operation")
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE shipments
+                SET financial_locked = 1,
+                    handover_to_accounting_at = CURRENT_TIMESTAMP,
+                    handover_by = %s
+                WHERE id = %s
+                """,
+                (uname, shipment_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+
+def unlock_job_financials(shipment_id: int, user: Dict[str, Any]) -> bool:
+    """Unlock Job Cost & Sell figures for revision."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE shipments
+                SET financial_locked = 0
+                WHERE id = %s
+                """,
+                (shipment_id,),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+

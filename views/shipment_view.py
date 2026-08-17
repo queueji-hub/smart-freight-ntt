@@ -10,7 +10,11 @@ from managers.shipment_manager import (
     STATUS_FLOW, add_job_container, create_shipment, get_shipment,
     list_job_containers, list_milestones, list_shipments, update_shipment,
 )
-from managers.profit_manager import get_profit_summary
+from managers.profit_manager import (
+    get_profit_summary, get_cost_sell_audit_matrix, get_cost_lines,
+    add_cost_line, update_cost_line, delete_cost_line, lock_job_financials, unlock_job_financials,
+    AP_CATEGORIES, AR_CATEGORIES,
+)
 from core.audit import list_audit_logs, log_action
 
 
@@ -107,8 +111,10 @@ def _summary(j):
 
 def _overview(j):
     c = st.columns(4)
+    v_str = f"{_s(j.get('vessel'))} {_s(j.get('voyage'))}".strip() or "—"
+    mv_str = f"{_s(j.get('mother_vessel'))} {_s(j.get('mother_voyage'))}".strip() or "—"
     with c[0]: _card("Shipment Info", "▣", f'Job Type: <b>{_s(j.get("job_type"))}</b><br>Mode: <b>{_s(j.get("mode"))}</b><br>Cargo: <b>{_s(j.get("cargo_type"))}</b><br>Incoterm: <b>{_s(j.get("incoterm"))}</b><br>Freight: <b>{_s(j.get("freight_term"))}</b>')
-    with c[1]: _card("Route Info", "⌖", f'POL: <b>{_s(j.get("pol"))}</b><br>Transshipment: <b>{_s(j.get("transshipment_port"))}</b><br>POD: <b>{_s(j.get("pod"))}</b><br>Mother Vessel: <b>{_s(j.get("mother_vessel") or j.get("vessel"))}</b><br>Voyage: <b>{_s(j.get("voyage"))}</b>')
+    with c[1]: _card("Route Info", "⌖", f'POL: <b>{_s(j.get("pol"))}</b><br>Transshipment: <b>{_s(j.get("transshipment_port"))}</b><br>POD: <b>{_s(j.get("pod"))}</b><br>Vessel / Voy: <b>{v_str}</b><br>Mother Vessel / Voy: <b>{mv_str}</b>')
     with c[2]: _card("Parties", "▤", f'Shipper: <b>{_s(j.get("shipper"))}</b><br>Consignee: <b>{_s(j.get("consignee"))}</b><br>Notify: <b>{_s(j.get("notify_party"))}</b><br>Sales: <b>{_s(j.get("sales_person"))}</b>')
     p = get_profit_summary(j.get("id")) or {}
     with c[3]: _card("Financial Overview", "฿", f'Revenue: <b>{_money(p.get("ar_actual"))}</b><br>Cost: <b>{_money(p.get("ap_actual"))}</b><br>Profit: <b style="color:#169447">{_money(p.get("actual_net_profit"))}</b><br>Margin: <b>{float(p.get("actual_margin_pct") or 0):.2f}%</b>')
@@ -133,10 +139,16 @@ def _operations(j):
         pol = c4.selectbox("POL", _opts("pol"), index=_idx(_opts("pol"), j.get("pol")))
         pod = c5.selectbox("POD", _opts("pod"), index=_idx(_opts("pod"), j.get("pod")))
         carrier = c6.selectbox("Carrier", _opts("carrier"), index=_idx(_opts("carrier"), j.get("carrier")))
+
         c7, c8, c9 = st.columns(3)
-        vessel = c7.selectbox("Mother Vessel", _opts("vessel"), index=_idx(_opts("vessel"), j.get("mother_vessel") or j.get("vessel")))
-        trans = c8.selectbox("Transshipment", _opts("transshipment_port"), index=_idx(_opts("transshipment_port"), j.get("transshipment_port")))
-        voyage = c9.text_input("Voyage", value=_s(j.get("voyage"), ""))
+        vessel = c7.text_input("Vessel (Feeder / Ocean)", value=_s(j.get("vessel"), ""))
+        voyage = c8.text_input("Voyage No.", value=_s(j.get("voyage"), ""))
+        trans = c9.selectbox("Transshipment", _opts("transshipment_port"), index=_idx(_opts("transshipment_port"), j.get("transshipment_port")))
+
+        mv1, mv2 = st.columns(2)
+        mother_vessel = mv1.text_input("Mother Vessel", value=_s(j.get("mother_vessel"), ""))
+        mother_voyage = mv2.text_input("Mother Voyage No.", value=_s(j.get("mother_voyage"), ""))
+
         c10, c11, c12, c13 = st.columns(4)
         etd = c10.date_input("ETD", value=_dt(j.get("etd")) or date.today())
         eta = c11.date_input("ETA", value=_dt(j.get("eta")) or date.today())
@@ -155,10 +167,11 @@ def _operations(j):
                 "pol": pol or None,
                 "pod": pod or None,
                 "carrier": carrier or None,
-                "mother_vessel": vessel or None,
-                "vessel": vessel or None,
+                "vessel": vessel.strip() or None,
+                "voyage": voyage.strip() or None,
+                "mother_vessel": mother_vessel.strip() or None,
+                "mother_voyage": mother_voyage.strip() or None,
                 "transshipment_port": trans or None,
-                "voyage": voyage,
                 "etd": etd.isoformat(),
                 "eta": eta.isoformat(),
                 "actual_departure": actual_dep.isoformat() if actual_dep else None,
@@ -236,13 +249,198 @@ def _documents(j):
 
 
 def _financial(j):
-    st.markdown('<div class="s-section">Financial Overview</div>', unsafe_allow_html=True)
-    p = get_profit_summary(j["id"]) or {}
-    a, b, c, d = st.columns(4)
-    a.metric("Revenue", _money(p.get("ar_actual")))
-    b.metric("Cost", _money(p.get("ap_actual")))
-    c.metric("Gross Profit", _money(p.get("actual_net_profit")))
-    d.metric("Margin", f'{float(p.get("actual_margin_pct") or 0):.2f}%')
+    st.markdown('<div class="s-section">Operation Cost & Revenue Management (Cost vs. Sell)</div>', unsafe_allow_html=True)
+    st.caption("Operation team manages both Cost (AP) and Sell (AR) charges and reconciles billing coverage before handover to Accounting.")
+    
+    user = st.session_state.get("user", {})
+    can_edit = can_write(st.session_state.get("role", "admin"), "shipment")
+    is_locked = bool(j.get("financial_locked"))
+    audit_data = get_cost_sell_audit_matrix(j["id"])
+
+    # Top metrics bar
+    a, b, c, d, e = st.columns(5)
+    a.metric("Total Sell (Revenue)", _money(audit_data["total_sell_thb"]))
+    b.metric("Total Cost (Expense)", _money(audit_data["total_cost_thb"]))
+    c.metric("Gross Profit", _money(audit_data["gross_profit"]), delta=f"{audit_data['margin_pct']:.1f}% Margin")
+    d.metric("Unbilled Cost Items", str(audit_data["unbilled_cost_count"]), delta_color="inverse")
+    
+    with e:
+        st.write("**Handover Status**")
+        if is_locked:
+            st.success(f"🔒 Locked ({_s(j.get('handover_by'), 'Operation')})")
+            if can_edit and st.button("Unlock for Revision", key=f"unlock_fin_{j['id']}", use_container_width=True):
+                unlock_job_financials(j["id"], user)
+                st.rerun()
+        else:
+            st.warning("📝 Work in Progress")
+            if can_edit and st.button("🔒 Handover to Accounting", key=f"lock_fin_{j['id']}", type="primary", use_container_width=True):
+                if audit_data["unbilled_cost_count"] > 0:
+                    st.error(f"Cannot handover: {audit_data['unbilled_cost_count']} unbilled cost line(s) detected! Please verify customer billing.")
+                else:
+                    lock_job_financials(j["id"], user)
+                    st.success("Financials verified & handed over to Accounting.")
+                    st.rerun()
+
+    if audit_data["unbilled_cost_count"] > 0:
+        st.error(f"⚠️ **Attention Operation**: Found **{audit_data['unbilled_cost_count']} unbilled cost line(s)** totaling {_money(audit_data['unbilled_cost_amount'])}. Please review below to ensure all vendor costs are billed to customer or flagged as internal.")
+
+    fin_tabs = st.tabs(["📊 Cost vs. Sell Audit Matrix", "💰 Cost (AP - ต้นทุนจ่าย)", "🧾 Sell (AR - รายได้เรียกเก็บ)"])
+
+    # -------------------------------------------------------------
+    # TAB 1: AUDIT MATRIX
+    # -------------------------------------------------------------
+    with fin_tabs[0]:
+        st.markdown("##### 🔍 Reconciliation & Margin Audit")
+        matrix_rows = audit_data.get("matrix_rows", [])
+        if not matrix_rows:
+            st.info("No cost or sell charges recorded yet. Add Cost lines and Sell lines in the respective tabs.")
+        else:
+            display_rows = [{
+                "Audit Status": r["badge"],
+                "Cost Category / Description": f"{_s(r['category'])} - {_s(r['description'])}",
+                "Vendor / Supplier": _s(r["supplier"]),
+                "Cost (THB)": _money(r["cost_thb"]),
+                "Billable?": "Yes" if r["is_billable"] else "No (Internal)",
+                "Matching Customer Item": _s(r["sell_description"]),
+                "Sell (THB)": _money(r["sell_thb"]),
+                "Item Profit (THB)": _money(r["profit_thb"]),
+            } for r in matrix_rows]
+            st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
+
+    # -------------------------------------------------------------
+    # TAB 2: COST (AP) ENTRY
+    # -------------------------------------------------------------
+    with fin_tabs[1]:
+        st.markdown("##### 💰 Operational Cost Lines (Vendor / Carrier / Port / Trucking)")
+        ap_lines = get_cost_lines(j["id"], cost_type="AP")
+        if ap_lines:
+            ap_display = [{
+                "ID": r["id"],
+                "Category": r.get("category"),
+                "Description": r.get("description"),
+                "Supplier / Vendor": r.get("supplier"),
+                "Qty": r.get("quantity"),
+                "Price": r.get("unit_price"),
+                "Curr": r.get("currency"),
+                "Amount (THB)": _money(r.get("amount_thb")),
+                "Billable": "Yes" if r.get("billable_to_customer", 1) in (1, True, "1") else "No",
+                "Status": r.get("cost_status"),
+                "Payout": r.get("payout_status", "UNPAID"),
+            } for r in ap_lines]
+            st.dataframe(pd.DataFrame(ap_display), use_container_width=True, hide_index=True)
+
+            if can_edit and not is_locked:
+                del_col1, del_col2 = st.columns([4, 1])
+                del_id = del_col1.selectbox("Delete Cost Line", [r["id"] for r in ap_lines], format_func=lambda x: f"Cost #{x}: {next((r['description'] for r in ap_lines if r['id']==x), '')}", key=f"del_cost_sel_{j['id']}")
+                if del_col2.button("Delete Line", key=f"del_cost_btn_{j['id']}", use_container_width=True):
+                    delete_cost_line(del_id)
+                    st.rerun()
+        else:
+            st.info("No cost lines recorded.")
+
+        if can_edit and not is_locked:
+            with st.expander("＋ Add Operational Cost Line", expanded=(len(ap_lines) == 0)):
+                with st.form(f"add_cost_form_{j['id']}", clear_on_submit=True):
+                    c1, c2, c3 = st.columns(3)
+                    cat = c1.selectbox("Cost Category", AP_CATEGORIES)
+                    desc = c2.text_input("Description / Charge Name", value="Ocean Freight")
+                    supplier = c3.text_input("Vendor / Carrier / Transporter", value=_s(j.get("carrier"), ""))
+
+                    c4, c5, c6, c7 = st.columns(4)
+                    qty = c4.number_input("Quantity", min_value=0.01, value=1.0, step=1.0)
+                    price = c5.number_input("Unit Price", min_value=0.0, value=0.0, step=100.0)
+                    curr = c6.selectbox("Currency", ["THB", "USD", "EUR", "CNY"], index=0)
+                    billable = c7.selectbox("Billable to Customer?", ["Yes (เรียกเก็บลูกค้า)", "No (ต้นทุนภายในบริษัท)"], index=0)
+
+                    remark = st.text_input("Remarks / Notes")
+                    save_cost = st.form_submit_button("Save Cost Line", type="primary", use_container_width=True)
+
+                if save_cost:
+                    try:
+                        add_cost_line({
+                            "shipment_id": j["id"],
+                            "cost_type": "AP",
+                            "category": cat,
+                            "description": desc.strip(),
+                            "supplier": supplier.strip() or None,
+                            "quantity": qty,
+                            "unit_price": price,
+                            "amount": qty * price,
+                            "currency": curr,
+                            "billable_to_customer": (billable.startswith("Yes")),
+                            "remark": remark.strip() or None,
+                            "created_by": user.get("username", "operation"),
+                        })
+                        st.success("Cost line added.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Failed to add cost: {exc}")
+
+    # -------------------------------------------------------------
+    # TAB 3: SELL (AR) ENTRY
+    # -------------------------------------------------------------
+    with fin_tabs[2]:
+        st.markdown("##### 🧾 Customer Revenue Lines (Freight / Handling / Clearance / DOC)")
+        ar_lines = get_cost_lines(j["id"], cost_type="AR")
+        if ar_lines:
+            ar_display = [{
+                "ID": r["id"],
+                "Category": r.get("category"),
+                "Description": r.get("description"),
+                "Customer": r.get("supplier") or _s(j.get("customer_name")),
+                "Qty": r.get("quantity"),
+                "Price": r.get("unit_price"),
+                "Curr": r.get("currency"),
+                "Amount (THB)": _money(r.get("amount_thb")),
+                "Status": r.get("cost_status"),
+            } for r in ar_lines]
+            st.dataframe(pd.DataFrame(ar_display), use_container_width=True, hide_index=True)
+
+            if can_edit and not is_locked:
+                del_ar_col1, del_ar_col2 = st.columns([4, 1])
+                del_ar_id = del_ar_col1.selectbox("Delete Revenue Line", [r["id"] for r in ar_lines], format_func=lambda x: f"Sell #{x}: {next((r['description'] for r in ar_lines if r['id']==x), '')}", key=f"del_sell_sel_{j['id']}")
+                if del_ar_col2.button("Delete Line", key=f"del_sell_btn_{j['id']}", use_container_width=True):
+                    delete_cost_line(del_ar_id)
+                    st.rerun()
+        else:
+            st.info("No customer revenue lines recorded.")
+
+        if can_edit and not is_locked:
+            with st.expander("＋ Add Customer Revenue Line", expanded=(len(ar_lines) == 0)):
+                with st.form(f"add_sell_form_{j['id']}", clear_on_submit=True):
+                    s1, s2, s3 = st.columns(3)
+                    s_cat = s1.selectbox("Revenue Category", AR_CATEGORIES)
+                    s_desc = s2.text_input("Description / Charge Name", value="Ocean Freight Revenue")
+                    s_cust = s3.text_input("Customer", value=_s(j.get("customer_name"), ""))
+
+                    s4, s5, s6 = st.columns(3)
+                    s_qty = s4.number_input("Quantity", min_value=0.01, value=1.0, step=1.0, key=f"ar_qty_{j['id']}")
+                    s_price = s5.number_input("Unit Price", min_value=0.0, value=0.0, step=100.0, key=f"ar_prc_{j['id']}")
+                    s_curr = s6.selectbox("Currency", ["THB", "USD", "EUR", "CNY"], index=0, key=f"ar_curr_{j['id']}")
+
+                    s_remark = st.text_input("Remarks / Notes", key=f"ar_rem_{j['id']}")
+                    save_sell = st.form_submit_button("Save Customer Revenue Line", type="primary", use_container_width=True)
+
+                if save_sell:
+                    try:
+                        add_cost_line({
+                            "shipment_id": j["id"],
+                            "cost_type": "AR",
+                            "category": s_cat,
+                            "description": s_desc.strip(),
+                            "supplier": s_cust.strip() or None,
+                            "quantity": s_qty,
+                            "unit_price": s_price,
+                            "amount": s_qty * s_price,
+                            "currency": s_curr,
+                            "billable_to_customer": True,
+                            "remark": s_remark.strip() or None,
+                            "created_by": user.get("username", "operation"),
+                        })
+                        st.success("Customer revenue line added.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Failed to add revenue: {exc}")
 
 
 def _history(j):

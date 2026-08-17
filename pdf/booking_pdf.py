@@ -165,9 +165,11 @@ def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None, appro
         ('ETD', _fmt(booking.get('etd')), 'ETA', _fmt(booking.get('eta'))),
     ], stl, header='Booking Details', color=BLUE), Spacer(1, 4 * mm)]
 
-    vessel_name = _s(booking.get('vessel') or booking.get('m_vessel') or booking.get('mother_vessel'))
-    vessel_voyage = vessel_name if vessel_name == '—' else f"{vessel_name} / {_s(booking.get('voyage'))}".strip(' /')
-    mother_vessel = _s(booking.get('m_vessel') or booking.get('mother_vessel'))
+    vessel_name = _s(booking.get('vessel') or booking.get('feeder_vessel') or booking.get('m_vessel') or booking.get('mother_vessel'))
+    vessel_voyage = vessel_name if vessel_name == '—' else f"{vessel_name} / {_s(booking.get('voyage') or booking.get('feeder_voyage'))}".strip(' /')
+    mv_name = _s(booking.get('mother_vessel') or booking.get('m_vessel'))
+    mv_voy = _s(booking.get('mother_voyage') or booking.get('m_voyage'))
+    mother_vessel = mv_name if mv_name == '—' else (f"{mv_name} / {mv_voy}".strip(' /') if mv_voy else mv_name)
     story += [_grid([
         ('POL', booking.get('pol'), 'POR', booking.get('por')),
         ('Transshipment Port', booking.get('transhipment_port'), 'POD', booking.get('pod')),

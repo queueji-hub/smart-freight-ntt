@@ -452,10 +452,10 @@ def _workspace_view(tenant_id, can_edit, user):
             v1, v2, v3, v4 = st.columns(4)
             carrier = v1.text_input("Carrier", value=_s(selected.get("carrier")), disabled=not allow_full_edit)
             liner = v1.text_input("Liner", value=_s(selected.get("liner")), disabled=not allow_full_edit)
-            vessel = v2.text_input("Vessel", value=_s(selected.get("vessel")), disabled=not allow_full_edit)
-            voyage = v2.text_input("Voyage", value=_s(selected.get("voyage")), disabled=not allow_full_edit)
-            mvessel = v3.text_input("Mother Vessel", value=_s(selected.get("m_vessel")), disabled=not allow_full_edit)
-            feeder = v3.text_input("Feeder", value=_s(selected.get("feeder")), disabled=not allow_full_edit)
+            vessel = v2.text_input("Vessel (Feeder / Ocean)", value=_s(selected.get("vessel")), disabled=not allow_full_edit)
+            voyage = v2.text_input("Voyage No.", value=_s(selected.get("voyage")), disabled=not allow_full_edit)
+            mvessel = v3.text_input("Mother Vessel", value=_s(selected.get("mother_vessel") or selected.get("m_vessel")), disabled=not allow_full_edit)
+            mvoyage = v3.text_input("Mother Voyage No.", value=_s(selected.get("mother_voyage") or selected.get("m_voyage")), disabled=not allow_full_edit)
 
             etd = v4.date_input("ETD", value=_parse_date(selected.get("etd")), disabled=not allow_full_edit)
             eta = v4.date_input("ETA", value=_parse_date(selected.get("eta")), disabled=not allow_full_edit)
@@ -517,7 +517,9 @@ def _workspace_view(tenant_id, can_edit, user):
                 "vessel": vessel.strip() if vessel else None,
                 "voyage": voyage.strip() if voyage else None,
                 "m_vessel": mvessel.strip() if mvessel else None,
-                "feeder": feeder.strip() if feeder else None,
+                "mother_vessel": mvessel.strip() if mvessel else None,
+                "m_voyage": mvoyage.strip() if mvoyage else None,
+                "mother_voyage": mvoyage.strip() if mvoyage else None,
                 "etd": etd.isoformat() if etd else None,
                 "eta": eta.isoformat() if eta else None,
                 "cy_date": cy_date.isoformat() if cy_date else None,
@@ -664,10 +666,10 @@ def _create_form(user, tenant_id):
         v1, v2, v3, v4 = st.columns(4)
         carrier = v1.text_input("Carrier", value=_s(pre.get("carrier")))
         liner = v1.text_input("Liner", value=_s(pre.get("liner")))
-        vessel = v2.text_input("Vessel", value=_s(pre.get("vessel")))
-        voyage = v2.text_input("Voyage", value=_s(pre.get("voyage")))
-        m_vessel = v3.text_input("Mother Vessel", value=_s(pre.get("m_vessel")))
-        feeder = v3.text_input("Feeder", value=_s(pre.get("feeder")))
+        vessel = v2.text_input("Vessel (Feeder / Ocean)", value=_s(pre.get("vessel")))
+        voyage = v2.text_input("Voyage No.", value=_s(pre.get("voyage")))
+        m_vessel = v3.text_input("Mother Vessel", value=_s(pre.get("mother_vessel") or pre.get("m_vessel")))
+        m_voyage = v3.text_input("Mother Voyage No.", value=_s(pre.get("mother_voyage") or pre.get("m_voyage")))
 
         pre_etd = _parse_date(pre.get("etd")) or date.today()
         pre_eta = _parse_date(pre.get("eta")) or (date.today() + pd.Timedelta(days=14))
@@ -741,7 +743,9 @@ def _create_form(user, tenant_id):
                 "vessel": vessel.strip() if vessel else None,
                 "voyage": voyage.strip() if voyage else None,
                 "m_vessel": m_vessel.strip() if m_vessel else None,
-                "feeder": feeder.strip() if feeder else None,
+                "mother_vessel": m_vessel.strip() if m_vessel else None,
+                "m_voyage": m_voyage.strip() if m_voyage else None,
+                "mother_voyage": m_voyage.strip() if m_voyage else None,
                 "etd": etd.isoformat() if etd else None,
                 "eta": eta.isoformat() if eta else None,
                 "cy_date": cy_date.isoformat() if cy_date else None,

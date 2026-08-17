@@ -76,18 +76,21 @@ def render():
             rec = next(r for r in rows if r.get("doc_no") == selected)
             status = finance._status(selected, rec.get("status"))
             st.caption(f"{DOC_TYPES.get(rec.get('doc_type'), rec.get('doc_type'))} · {rec.get('customer_name', '—')} · {status}")
-            a, b, c, d = st.columns(4)
+            a, b, c, d, e = st.columns(5)
             with a:
                 finance._pdf(selected)
             with b:
+                from views.receipt_view import render_receipt_action
+                render_receipt_action(selected)
+            with c:
                 if can_edit and status == "Draft" and st.button("Edit", key=f"workspace_edit_{selected}", width="stretch"):
                     st.session_state["finance_edit"] = selected
                     st.rerun()
-            with c:
+            with d:
                 if can_edit and status == "Draft" and st.button("Submit", key=f"workspace_submit_{selected}", width="stretch"):
                     finance.submit_for_approval("invoice", selected, user)
                     st.rerun()
-            with d:
+            with e:
                 if can_edit and st.button("Duplicate", key=f"workspace_dup_{selected}", width="stretch"):
                     st.success(f"Created {finance.duplicate_invoice(selected, user)} as Draft.")
                     st.rerun()

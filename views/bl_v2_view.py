@@ -195,13 +195,42 @@ def _edit(bl: Dict[str, Any]) -> None:
 
 
 def _preview(bl: Dict[str, Any]) -> None:
-    section("Document Preview Data")
-    st.caption("Field order mirrors the Ocean Bill of Lading reference; the official PDF is the print/export surface.")
-    a, b = st.columns(2)
-    a.markdown(f"**Shipper**\n\n{_s(bl.get('shipper'))}\n\n**Consignee**\n\n{_s(bl.get('consignee'))}\n\n**Notify Party**\n\n{_s(bl.get('notify_party'))}")
-    b.markdown(f"**B/L No.** `{_s(bl.get('bl_no'))}`\n\n**Originals** {_s(bl.get('number_of_originals'), '0')}\n\n**Place / Date** {_s(bl.get('place_of_issue'))} / {_s(bl.get('bl_date'))}")
-    st.dataframe(pd.DataFrame([{"Pre-Carriage": _s(bl.get('pre_carriage_by')), "Place of Receipt": _s(bl.get('place_of_receipt')), "POL": _s(bl.get('port_of_loading')), "POD": _s(bl.get('port_of_discharge')), "Delivery": _s(bl.get('place_of_delivery')), "Final Destination": _s(bl.get('final_destination')), "Vessel / Voyage": f"{_s(bl.get('vessel'))} / {_s(bl.get('voyage'))}"}]), hide_index=True, width="stretch")
-    st.dataframe(pd.DataFrame([{"Marks & Numbers": _s(bl.get('marks_numbers')), "Packages": f"{_s(bl.get('package_qty'), '0')} {_s(bl.get('package_type'), '')}", "Description": _s(bl.get('description_of_goods')), "Gross KG": float(bl.get('gross_weight') or 0), "CBM": float(bl.get('measurement_cbm') or 0), "HS Code": _s(bl.get('hs_code')), "Freight": _s(bl.get('freight_term'))}]), hide_index=True, width="stretch")
+    section("Ocean Bill of Lading Preview")
+    st.caption("Field layout mirrors the official Ocean Bill of Lading form (NATTAYAARAT CO., LTD.).")
+    
+    # Header & Parties
+    p1, p2 = st.columns(2)
+    with p1:
+        st.markdown(f"**Shipper**\n\n{_s(bl.get('shipper'))}\n\n**Consignee**\n\n{_s(bl.get('consignee'))}\n\n**Notify Party**\n\n{_s(bl.get('notify_party'))}")
+    with p2:
+        st.markdown(f"**B/L No.** `{_s(bl.get('bl_no'))}`\n\n**For Delivery of Goods Please Apply to**\n\n{_s(bl.get('delivery_agent'))}")
+        st.markdown(f"**Originals:** {_s(bl.get('number_of_originals'), '3 (THREE)')} · **Place & Date:** {_s(bl.get('place_of_issue'))}, {_s(bl.get('bl_date'))}")
+
+    # Routing Grid
+    st.markdown("##### Routing & Transport")
+    st.dataframe(pd.DataFrame([{
+        "Pre-Carriage by": _s(bl.get('pre_carriage_by')),
+        "Place of Receipt": _s(bl.get('place_of_receipt')),
+        "Ocean Vessel / Voyage No.": f"{_s(bl.get('vessel'))} {_s(bl.get('voyage'))}".strip() or "—",
+        "Port of Loading": _s(bl.get('port_of_loading')),
+        "Port of Discharge": _s(bl.get('port_of_discharge')),
+        "Place of Delivery": _s(bl.get('place_of_delivery')),
+        "Final Destination": _s(bl.get('final_destination')),
+    }]), hide_index=True, width="stretch")
+
+    # Cargo Grid
+    st.markdown("##### Cargo Specifications & Manifest")
+    st.dataframe(pd.DataFrame([{
+        "Marks and Numbers / Container & Seal Numbers": _s(bl.get('marks_numbers')),
+        "No. of Packages": f"{_s(bl.get('package_qty'), '0')} {_s(bl.get('package_type'), '')}",
+        "Description of Packages and Goods": _s(bl.get('description_of_goods')),
+        "Gross Weight Kgs": float(bl.get('gross_weight') or 0),
+        "Measurement CBM": float(bl.get('measurement_cbm') or 0),
+        "HS Code": _s(bl.get('hs_code')),
+        "Freight": _s(bl.get('freight_term')),
+        "Freight Payable At": _s(bl.get('freight_payable_at')),
+    }]), hide_index=True, width="stretch")
+
     if bl.get("remarks") or bl.get("special_instructions"):
         st.markdown(f"**Remarks:** {_s(bl.get('remarks'), '')}  \n**Special Instructions:** {_s(bl.get('special_instructions'), '')}")
 

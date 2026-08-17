@@ -15,7 +15,7 @@ def list_customers(active_only: bool = False, user: Optional[Dict[str, Any]] = N
     where = "WHERE tenant_id=%s"
     params: list[Any] = [tenant]
     if active_only:
-        where += " AND is_active=TRUE"
+        where += " AND LOWER(COALESCE(is_active::text, '0')) IN ('1','true','t')"
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(f"SELECT * FROM customers {where} ORDER BY customer_code, company_name", params)
         return [dict(r) for r in cur.fetchall()]
@@ -35,11 +35,20 @@ def save_customer(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
             data.get("contact_person"), data.get("tel"), data.get("email"), data.get("address"),
             data.get("billing_address") or data.get("address"), data.get("billing_country_code"),
             data.get("tax_id"), float(data.get("credit_limit") or 0), data.get("credit_currency") or "THB",
-            data.get("payment_term_code"), data.get("credit_status") or "NORMAL", bool(data.get("credit_hold")),
-            bool(data.get("is_active", True)), data.get("updated_by") or (user or {}).get("username"),
+            data.get("payment_term_code"), data.get("credit_status") or "NORMAL",
+            bool(data.get("credit_hold")),
+            1 if data.get("is_active", True) else 0,
+            data.get("updated_by") or (user or {}).get("username"),
         )
-        if data.get("id"):
-            customer_id = int(data["id"])
+        customer_id = data.get("id")
+        if not customer_id:
+            cur.execute("SELECT id FROM customers WHERE tenant_id=%s AND customer_code=%s LIMIT 1", (tenant, code))
+            existing = cur.fetchone()
+            if existing:
+                customer_id = existing["id"] if isinstance(existing, dict) or hasattr(existing, "keys") else existing[0]
+
+        if customer_id:
+            customer_id = int(customer_id)
             cur.execute("""UPDATE customers SET customer_code=%s, company_name=%s, display_name=%s, billing_name=%s,
                 contact_person=%s, tel=%s, email=%s, address=%s, billing_address=%s, billing_country_code=%s,
                 tax_id=%s, credit_limit=%s, credit_currency=%s, payment_term_code=%s, credit_status=%s, credit_hold=%s,
@@ -50,9 +59,10 @@ def save_customer(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
                 (tenant_id, customer_code, company_name, display_name, billing_name, contact_person, tel, email, address,
                  billing_address, billing_country_code, tax_id, credit_limit, credit_currency, payment_term_code,
                  credit_status, credit_hold, is_active, updated_by)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                 (tenant,) + values)
-            customer_id = int(cur.fetchone()[0])
+            row = cur.fetchone()
+            customer_id = int(row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0])
         conn.commit()
         return customer_id
 

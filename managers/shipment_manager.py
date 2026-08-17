@@ -18,7 +18,7 @@ SHIPMENT_FIELDS = [
     "origin_country", "destination_country",
     "etd", "eta", "actual_departure", "actual_arrival",
     "mbl_no", "hbl_no", "bl_no", "invoice_no",
-    "vessel", "voyage", "incoterm", "service_type", "freight_term",
+    "vessel", "voyage", "mother_vessel", "mother_voyage", "feeder_vessel", "feeder_voyage", "incoterm", "service_type", "freight_term",
     "commodity", "hs_code", "package_type", "package_quantity",
     "gross_weight", "net_weight", "cbm", "chargeable_weight",
     "is_dg", "is_temp_controlled", "special_cargo_remarks",

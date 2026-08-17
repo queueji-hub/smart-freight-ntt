@@ -31,7 +31,21 @@ def test_company_branch_profile_configured():
 
 
 def test_db_persistence_safe_execution():
-    """Verify db_persistence.push_db_to_github handles missing config gracefully."""
-    success, msg = db_p.push_db_to_github(force=False)
+    """Verify db_persistence functions handle missing config gracefully and export required APIs."""
+    from managers.db_persistence import get_backup_status, force_push, push_db_to_github
+
+    success, msg = push_db_to_github(force=False)
     assert isinstance(success, bool)
     assert isinstance(msg, str)
+
+    status = get_backup_status()
+    assert isinstance(status, dict)
+    assert "configured" in status
+    assert "last_push_str" in status
+    assert "db_size_bytes" in status
+    assert "is_dirty" in status
+
+    force_ok, force_msg = force_push()
+    assert isinstance(force_ok, bool)
+    assert isinstance(force_msg, str)
+

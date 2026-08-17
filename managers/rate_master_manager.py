@@ -47,8 +47,15 @@ def upsert_rate_card(data: Dict[str, Any], lines: List[Dict[str, Any]], user: Op
     if not rate_no or not mode:
         raise ValueError("Rate No. and Mode are required.")
     with get_connection() as conn, conn.cursor() as cur:
-        if data.get("id"):
-            rate_id = int(data["id"])
+        rate_id = data.get("id")
+        if not rate_id:
+            cur.execute("SELECT id FROM rate_cards WHERE tenant_id=%s AND rate_no=%s LIMIT 1", (tenant, rate_no))
+            existing = cur.fetchone()
+            if existing:
+                rate_id = existing["id"] if isinstance(existing, dict) or hasattr(existing, "keys") else existing[0]
+
+        if rate_id:
+            rate_id = int(rate_id)
             cur.execute("""UPDATE rate_cards SET rate_no=%s, carrier_id=%s, origin_port_id=%s,
                 destination_port_id=%s, mode=%s, service_type=%s, equipment_type=%s, currency=%s,
                 valid_from=%s, valid_to=%s, status=%s WHERE id=%s AND tenant_id=%s""",
@@ -64,7 +71,8 @@ def upsert_rate_card(data: Dict[str, Any], lines: List[Dict[str, Any]], user: Op
                 (tenant, rate_no, data.get("carrier_id"), data.get("origin_port_id"), data.get("destination_port_id"), mode,
                  data.get("service_type"), data.get("equipment_type"), data.get("currency") or "USD",
                  data.get("valid_from"), data.get("valid_to"), data.get("status") or "ACTIVE"))
-            rate_id = int(cur.fetchone()[0])
+            row = cur.fetchone()
+            rate_id = int(row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0])
         for line in lines:
             charge_id = line.get("charge_id")
             rate = float(line.get("rate") or 0)

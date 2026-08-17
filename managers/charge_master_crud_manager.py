@@ -60,7 +60,14 @@ def upsert_charge(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
                 data.get("default_currency") or "USD",
                 bool(data.get("is_active", True)),
             )
-            if data.get("id"):
+            charge_id = data.get("id")
+            if not charge_id:
+                cur.execute("SELECT id FROM charge_master WHERE tenant_id=%s AND charge_code=%s LIMIT 1", (tenant, code))
+                existing = cur.fetchone()
+                if existing:
+                    charge_id = existing["id"] if isinstance(existing, dict) or hasattr(existing, "keys") else existing[0]
+
+            if charge_id:
                 cur.execute(
                     """UPDATE charge_master
                        SET charge_code=%s, description=%s, category=%s,
@@ -68,9 +75,9 @@ def upsert_charge(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
                            default_currency=%s, is_active=%s,
                            updated_at=CURRENT_TIMESTAMP
                        WHERE id=%s AND tenant_id=%s""",
-                    (*params, int(data["id"]), tenant),
+                    (*params, int(charge_id), tenant),
                 )
-                charge_id = int(data["id"])
+                charge_id = int(charge_id)
             else:
                 cur.execute(
                     """INSERT INTO charge_master
@@ -80,6 +87,7 @@ def upsert_charge(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
                        RETURNING id""",
                     (tenant, *params),
                 )
-                charge_id = int(cur.fetchone()[0])
+                row = cur.fetchone()
+                charge_id = int(row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0])
         conn.commit()
         return charge_id
