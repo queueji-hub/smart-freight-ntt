@@ -25,7 +25,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
 from reportlab.lib.utils import ImageReader
 
-from config import COMPANY, OUTPUT_DIR
+from config import COMPANY, OUTPUT_DIR, BASE_DIR
 from pdf.fonts import THAI_FONT, THAI_FONT_BOLD
 from utils.number_to_words import thai_baht_text
 
@@ -400,49 +400,53 @@ def _totals_section(invoice: Dict[str, Any], items: List[Dict[str, Any]], styles
 
 def _signature_block(styles: Dict[str, ParagraphStyle]) -> Table:
     box1 = [
-        Spacer(1, 15 * mm),
-        Paragraph("<b>ผู้รับสินค้า / Receiver</b>", styles["sign_role"]),
+        Spacer(1, 13 * mm),
+        Paragraph("ผู้รับสินค้า / Receiver", styles["sign_role"]),
         Spacer(1, 1.5 * mm),
-        Paragraph("วันที่/Date:_____/____/______", styles["sign_date"]),
+        Paragraph("วันที่/Date:_____/_____/_____", styles["sign_date"]),
     ]
 
     box2 = [
-        Spacer(1, 15 * mm),
-        Paragraph("<b>ผู้ส่งสินค้า / Sender</b>", styles["sign_role"]),
+        Spacer(1, 13 * mm),
+        Paragraph("ผู้ส่งสินค้า / Sender", styles["sign_role"]),
         Spacer(1, 1.5 * mm),
-        Paragraph("วันที่/Date:_____/____/______", styles["sign_date"]),
+        Paragraph("วันที่/Date:_____/_____/_____", styles["sign_date"]),
     ]
 
-    logo_path = COMPANY.get("logo_path")
-    logo_img = None
-    if logo_path and Path(logo_path).exists():
+    stamp_path = Path(BASE_DIR) / "assets" / "company_stamp_blue.png"
+    if not stamp_path.exists():
+        stamp_path = Path(COMPANY.get("logo_path", ""))
+    
+    stamp_img = None
+    if stamp_path.exists():
         try:
-            ir = ImageReader(str(logo_path))
+            ir = ImageReader(str(stamp_path))
             iw, ih = ir.getSize()
-            scale = min(28 * mm / iw, 12 * mm / ih)
-            logo_img = Image(str(logo_path), width=iw * scale, height=ih * scale)
+            scale = min(28 * mm / iw, 13 * mm / ih)
+            stamp_img = Image(str(stamp_path), width=iw * scale, height=ih * scale)
         except Exception:
-            logo_img = None
+            stamp_img = None
 
     box3 = [
-        logo_img or Spacer(1, 4 * mm),
-        Paragraph("<b>ผู้มีอำนาจลงนาม</b>", styles["sign_role"]),
+        stamp_img or Spacer(1, 4 * mm),
+        Spacer(1, 0.5 * mm),
+        Paragraph("ผู้มีอำนาจลงนาม", styles["sign_role"]),
         Paragraph("Authorized Signature", styles["sign_role"]),
-        Spacer(1, 1.5 * mm),
-        Paragraph("วันที่/Date:_____/____/______", styles["sign_date"]),
+        Spacer(1, 0.8 * mm),
+        Paragraph("วันที่/Date:_____/_____/_____", styles["sign_date"]),
     ]
 
-    sig_tbl = Table([[box1, box2, box3]], colWidths=[60 * mm, 60 * mm, 62 * mm], rowHeights=[26 * mm])
+    sig_tbl = Table([[box1, box2, box3]], colWidths=[60 * mm, 60 * mm, 62 * mm], rowHeights=[27 * mm])
     sig_tbl.setStyle(TableStyle([
         ("BOX", (0, 0), (0, 0), 0.6, BLUE_BORDER),
         ("BOX", (1, 0), (1, 0), 0.6, BLUE_BORDER),
         ("BOX", (2, 0), (2, 0), 0.6, BLUE_BORDER),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]))
     return sig_tbl
 

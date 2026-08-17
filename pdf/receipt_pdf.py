@@ -375,42 +375,47 @@ def _totals_block(invoice: Dict[str, Any], styles: Dict[str, ParagraphStyle]) ->
 
 def _signatures_block(styles: Dict[str, ParagraphStyle]) -> Table:
     col1 = [
-        Spacer(1, 10 * mm),
+        Spacer(1, 11 * mm),
         Paragraph("ผู้จ่ายเงิน / Payer", styles["sign_role"]),
+        Spacer(1, 1.0 * mm),
         Paragraph("วันที่/Date:____/____/______", styles["sign_date"]),
     ]
     col2 = [
-        Spacer(1, 10 * mm),
+        Spacer(1, 11 * mm),
         Paragraph("ผู้รับเงิน / Receiver", styles["sign_role"]),
+        Spacer(1, 1.0 * mm),
         Paragraph("วันที่/Date:____/____/______", styles["sign_date"]),
     ]
     
-    # Stamp
-    logo_path = COMPANY.get("logo_path")
+    # Blue Company Stamp
+    from config import BASE_DIR
+    stamp_path = Path(BASE_DIR) / "assets" / "company_stamp_blue.png"
+    if not stamp_path.exists():
+        stamp_path = Path(COMPANY.get("logo_path", ""))
+        
     stamp_img = None
-    if logo_path and Path(logo_path).exists():
+    if stamp_path.exists():
         try:
-            ir = ImageReader(str(logo_path))
+            ir = ImageReader(str(stamp_path))
             iw, ih = ir.getSize()
-            scale = min(24 * mm / iw, 12 * mm / ih)
-            stamp_img = Image(str(logo_path), width=iw * scale, height=ih * scale)
+            scale = min(36 * mm / iw, 21 * mm / ih)
+            stamp_img = Image(str(stamp_path), width=iw * scale, height=ih * scale)
         except Exception:
             stamp_img = None
 
     col3 = [
-        stamp_img or Spacer(1, 4 * mm),
-        Paragraph("บริษัท ณัฐยาราชย์ จำกัด", styles["sign_comp"]),
-        Paragraph("NATTAYAARAT CO., LTD.", styles["sign_comp"]),
+        stamp_img or Spacer(1, 11 * mm),
     ]
 
     col4 = [
-        Spacer(1, 10 * mm),
+        Spacer(1, 11 * mm),
         Paragraph("ผู้มีอำนาจลงนาม", styles["sign_role"]),
         Paragraph("Authorized Signature", styles["sign_role"]),
+        Spacer(1, 1.0 * mm),
         Paragraph("วันที่/Date:____/____/______", styles["sign_date"]),
     ]
 
-    tbl = Table([[col1, col2, col3, col4]], colWidths=[45.5 * mm, 45.5 * mm, 45.5 * mm, 45.5 * mm], rowHeights=[26 * mm])
+    tbl = Table([[col1, col2, col3, col4]], colWidths=[45.5 * mm, 45.5 * mm, 45.5 * mm, 45.5 * mm], rowHeights=[27 * mm])
     tbl.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.8, GREEN_BORDER),
         ("INNERGRID", (0, 0), (-1, -1), 0.5, GREEN_BORDER),
