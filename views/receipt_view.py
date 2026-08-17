@@ -6,7 +6,7 @@ customer directory. It does not create a second financial data store.
 import os
 import streamlit as st
 
-from managers.invoice_manager import get_invoice_snapshot
+from managers.document_duplicate_service import get_invoice_snapshot
 from managers.customer_manager import get_customer
 from pdf.receipt_pdf import generate_receipt_pdf
 

@@ -277,3 +277,10 @@ def get_outstanding_summary() -> Dict[str, Decimal]:
             outstanding = Decimal(str(row[2] if isinstance(row, (tuple, list)) else row["total_outstanding"]))
 
     return {"billed": billed, "paid": paid, "outstanding": outstanding}
+
+
+def get_invoice_snapshot(doc_no: str) -> tuple:
+    """Retrieve an invoice snapshot (invoice dict, items list) for the given doc_no."""
+    from managers.document_duplicate_service import get_invoice_snapshot as _get_invoice_snapshot
+    return _get_invoice_snapshot(doc_no)
+

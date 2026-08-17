@@ -248,18 +248,20 @@ def create_bl(
 
 def get_bl(bl_id: int) -> Optional[Dict]:
     """Fetch a B/L record by id. Returns None if not found."""
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM bills_of_lading WHERE id = %s AND tenant_id = %s", (bl_id,))
+            cur.execute("SELECT * FROM bills_of_lading WHERE id = %s AND tenant_id = %s", (bl_id, tenant_id))
             row = cur.fetchone()
             return dict(row) if row else None
 
 
 def get_bl_by_no(bl_no: str) -> Optional[Dict]:
     """Fetch a B/L record by bl_no."""
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM bills_of_lading WHERE bl_no = %s", (bl_no,))
+            cur.execute("SELECT * FROM bills_of_lading WHERE bl_no = %s AND tenant_id = %s", (bl_no, tenant_id))
             row = cur.fetchone()
             return dict(row) if row else None
 
@@ -298,6 +300,7 @@ def update_bl(bl_id: int, data: Dict[str, Any]) -> bool:
     Does NOT touch job/booking/quotation data.
     """
     _ensure_bl_unlocked(bl_id)
+    tenant_id = get_current_tenant_id()
 
     # Numeric validation
     for field, label in [("gross_weight", "Gross Weight"), ("measurement_cbm", "CBM"), ("package_qty", "Package Qty")]:
@@ -317,6 +320,7 @@ def update_bl(bl_id: int, data: Dict[str, Any]) -> bool:
     sets = ", ".join([f"{k}=%s" for k in data.keys()])
     values = list(data.values())
     values.append(bl_id)
+    values.append(tenant_id)
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -335,9 +339,10 @@ def delete_bl(bl_id: int) -> bool:
     Never removes Job containers.
     """
     _ensure_bl_unlocked(bl_id)
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM bills_of_lading WHERE id = %s AND tenant_id = %s", (bl_id,))
+            cur.execute("DELETE FROM bills_of_lading WHERE id = %s AND tenant_id = %s", (bl_id, tenant_id))
             conn.commit()
             return cur.rowcount > 0
 
@@ -368,11 +373,12 @@ def update_bl_status(bl_id: int, new_status: str) -> bool:
         if missing:
             raise ValueError(f"Cannot Issue B/L — missing required fields: {', '.join(missing)}")
 
+    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE bills_of_lading SET status=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
-                (new_status, bl_id)
+                "UPDATE bills_of_lading SET status=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s AND tenant_id=%s",
+                (new_status, bl_id, tenant_id)
             )
             conn.commit()
             return cur.rowcount > 0
@@ -408,11 +414,12 @@ def add_bl_container(bl_id: int, container_id: int) -> bool:
     """
     doc = _ensure_bl_unlocked(bl_id)
     bl_job_no = doc.get("job_no")
+    tenant_id = get_current_tenant_id()
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             # Fetch container to verify existence & same-job
-            cur.execute("SELECT job_no FROM containers WHERE id = %s AND tenant_id = %s", (container_id,))
+            cur.execute("SELECT job_no FROM containers WHERE id = %s AND tenant_id = %s", (container_id, tenant_id))
             c_row = cur.fetchone()
             if not c_row:
                 raise ValueError(f"Container id={container_id} does not exist.")

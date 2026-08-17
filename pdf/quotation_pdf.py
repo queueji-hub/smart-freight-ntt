@@ -336,21 +336,31 @@ def _page_decoration(canvas, doc):
 
 
 def generate_quotation_pdf(
-    quotation: Dict[str, Any],
-    items: List[Dict[str, Any]],
+    quotation: Any,
+    items: List[Dict[str, Any]] | None = None,
     output_path: str | None = None,
 ) -> str:
     """Generate the A4 quotation PDF.
     
     Args:
-        quotation: dict with quotation header fields (quotation_no, customer_name,
-                   carrier, pol, pod, etc.)
-        items: list of dicts with keys: description, currency, price, unit, remark
+        quotation: dict with quotation header fields or quotation_no string.
+        items: optional list of dicts with keys: description, currency, price, unit, remark.
+               If None, read from quotation['items'].
         output_path: optional output path. Defaults to OUTPUT_DIR/<quotation_no>.pdf
     
     Returns:
         The output file path as a string.
     """
+    if isinstance(quotation, str):
+        from managers.quotation_manager import get_quotation_by_no
+        q_doc = get_quotation_by_no(quotation)
+        if not q_doc:
+            raise ValueError(f"Quotation '{quotation}' not found.")
+        quotation = q_doc
+
+    if items is None:
+        items = quotation.get("items", [])
+
     if output_path is None:
         qno = quotation.get("quotation_no", "quotation")
         output_path = str(Path(OUTPUT_DIR) / f"{qno}.pdf")

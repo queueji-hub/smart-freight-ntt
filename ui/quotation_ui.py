@@ -1,7 +1,7 @@
 import streamlit as st
 from core.state import init_state, add_item, remove_item
 from services.quotation_service import create_quotation
-from exports.pdf import generate_pdf
+from pdf.quotation_pdf import generate_quotation_pdf as generate_pdf
 
 
 def render():

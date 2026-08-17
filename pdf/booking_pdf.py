@@ -149,7 +149,13 @@ def _watermark(canvas, doc, approval_status):
     canvas.restoreState()
 
 
-def generate_booking_pdf(booking: Dict[str, Any], output_path: str = None, approval_status: str = 'Draft') -> str:
+def generate_booking_pdf(booking: Any, output_path: str = None, approval_status: str = 'Draft') -> str:
+    if isinstance(booking, str):
+        from managers.booking_manager import get_booking
+        b_doc = get_booking(booking)
+        if not b_doc:
+            raise ValueError(f"Booking '{booking}' not found.")
+        booking = b_doc
     bno = _s(booking.get('booking_no'), 'BOOKING')
     if output_path is None:
         output_path = str(Path(OUTPUT_DIR) / f'BC_{bno}.pdf')

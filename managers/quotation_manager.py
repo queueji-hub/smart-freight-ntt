@@ -197,6 +197,12 @@ def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
             return q_data
 
 
+def get_quotation(quotation_no: str) -> Optional[Dict[str, Any]]:
+    """Alias for get_quotation_by_no."""
+    return get_quotation_by_no(quotation_no)
+
+
+
 # =========================================================
 # MUTATION WRITING: UPDATE QUOTATION
 # =========================================================
