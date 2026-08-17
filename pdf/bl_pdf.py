@@ -508,6 +508,13 @@ def generate_bl_pdf(bl_source: Any, output_path: str = None) -> str:
     if hs_code_val:
         desc_full += f"<br/><b>HS CODE:</b> {hs_code_val}"
 
+    use_attached_sheet = bool(bl.get("use_attached_sheet"))
+    if use_attached_sheet:
+        marks_val = ""
+        desc_full = "AS PER ATTACHED SHEET"
+        gw_str = ""
+        cbm_str = ""
+
     cargo_body = [
         [Paragraph(marks_val.replace("\n", "<br/>"), styles["value_text_small"]),
          Paragraph(pkg_str, styles["value_text_small"]),
@@ -643,6 +650,44 @@ def generate_bl_pdf(bl_source: Any, output_path: str = None) -> str:
         ("LEFTPADDING", (0,0), (-1,-1), 2),
     ]))
     story.append(KeepTogether(sig_tbl))
+
+    if use_attached_sheet:
+        from reportlab.platypus import PageBreak
+        story.append(PageBreak())
+        
+        # Attached Sheet Header
+        att_title = f"<b>ATTACHED SHEET TO BILL OF LADING NO. {bl_no}</b>"
+        story.append(Paragraph(att_title, styles["doc_title"]))
+        story.append(Spacer(1, 10*mm))
+        
+        # Cargo Body with Original Values
+        orig_marks = _clean_str(bl.get("marks_numbers"), "N/M")
+        orig_hs_code = _clean_str(bl.get("hs_code"))
+        orig_desc = commodity_str
+        if orig_hs_code:
+            orig_desc += f"<br/><b>HS CODE:</b> {orig_hs_code}"
+            
+        orig_gw = _fmt_num(bl.get("gross_weight") or job.get("gross_weight"), precision=2, unit="KG") or "—"
+        orig_cbm = _fmt_num(bl.get("measurement_cbm") or job.get("cbm"), precision=3, unit="CBM") or "—"
+
+        att_body = [
+            [Paragraph(orig_marks.replace("\n", "<br/>"), styles["value_text_small"]),
+             Paragraph(pkg_str, styles["value_text_small"]),
+             Paragraph(orig_desc.replace("\n", "<br/>"), styles["value_text_small"]),
+             Paragraph(orig_gw, styles["value_text_small"]),
+             Paragraph(orig_cbm, styles["value_text_small"])]
+        ]
+        att_body_tbl = Table(cargo_headers + att_body, colWidths=[35*mm, 25*mm, 75*mm, 26*mm, 25*mm])
+        att_body_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), BRAND_BLUE),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("LEFTPADDING", (0,0), (-1,-1), 3),
+            ("TOPPADDING", (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+            ("BOX", (0,0), (-1,-1), 0.5, BORDER_GREY),
+            ("INNERGRID", (0,0), (-1,-1), 0.3, colors.HexColor("#E2E8F0")),
+        ]))
+        story.append(att_body_tbl)
 
     # Build PDF with NumberedCanvas
     doc.build(story, canvasmaker=NumberedCanvas)

@@ -154,6 +154,7 @@ def _edit(bl: Dict[str, Any]) -> None:
         bl_date = b.date_input("B/L Date", _d(bl.get("bl_date")))
         originals = c.number_input("Number of original B/Ls", min_value=0, value=int(bl.get("number_of_originals") or 3), step=1)
         remarks = st.text_area("Remarks", _s(bl.get("remarks"), ""))
+        use_attached_sheet = st.checkbox("Print AS PER ATTACHED SHEET for long descriptions", value=bool(bl.get("use_attached_sheet")))
 
         save = st.form_submit_button("Save B/L Data", type="primary", width="stretch")
     if save:
@@ -186,6 +187,7 @@ def _edit(bl: Dict[str, Any]) -> None:
                     "bl_date": bl_date.isoformat(),
                     "number_of_originals": originals,
                     "remarks": remarks.strip(),
+                    "use_attached_sheet": use_attached_sheet,
                 },
             )
             st.success("B/L updated.")

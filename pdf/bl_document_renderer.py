@@ -452,13 +452,24 @@ def generate_company_bl_pdf(payload: Dict[str, Any], output_path: Optional[str] 
 
     desc_html = "<br/>".join(desc_parts)
 
-    cargo_body_row = [
-        Paragraph(marks_html, styles["cargo_cell"]),
-        Paragraph(f"<b>{pkg_text}</b>", styles["cargo_center"]),
-        Paragraph(desc_html, styles["cargo_cell"]),
-        Paragraph(f"<b>{gross_val}</b>", styles["cargo_center"]),
-        Paragraph(f"<b>{cbm_val}</b>", styles["cargo_center"]),
-    ]
+    use_attached_sheet = bool(bl.get("use_attached_sheet"))
+    
+    if use_attached_sheet:
+        cargo_body_row = [
+            Paragraph("", styles["cargo_cell"]),
+            Paragraph(f"<b>{pkg_text}</b>", styles["cargo_center"]),
+            Paragraph("<b>AS PER ATTACHED SHEET</b>", styles["cargo_cell"]),
+            Paragraph("", styles["cargo_center"]),
+            Paragraph("", styles["cargo_center"]),
+        ]
+    else:
+        cargo_body_row = [
+            Paragraph(marks_html, styles["cargo_cell"]),
+            Paragraph(f"<b>{pkg_text}</b>", styles["cargo_center"]),
+            Paragraph(desc_html, styles["cargo_cell"]),
+            Paragraph(f"<b>{gross_val}</b>", styles["cargo_center"]),
+            Paragraph(f"<b>{cbm_val}</b>", styles["cargo_center"]),
+        ]
 
     # Freight status footer row inside cargo block
     freight_term_cell = Paragraph(f"<b>{freight_term_display}</b>", styles["terms_watermark"])
@@ -602,6 +613,43 @@ def generate_company_bl_pdf(payload: Dict[str, Any], output_path: Optional[str] 
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
     ]))
     story.append(footer_table)
+
+    if use_attached_sheet:
+        from reportlab.platypus import PageBreak
+        story.append(PageBreak())
+        
+        # Attached Sheet Header
+        att_title = f"<b>ATTACHED SHEET TO BILL OF LADING NO. {bl_no}</b>"
+        story.append(Paragraph(att_title, styles["doc_title"]))
+        story.append(Spacer(1, 10*mm))
+        
+        # Draw the original cargo table we suppressed
+        att_body_row = [
+            Paragraph(marks_html, styles["cargo_cell"]),
+            Paragraph(f"<b>{pkg_text}</b>", styles["cargo_center"]),
+            Paragraph(desc_html, styles["cargo_cell"]),
+            Paragraph(f"<b>{gross_val}</b>", styles["cargo_center"]),
+            Paragraph(f"<b>{cbm_val}</b>", styles["cargo_center"]),
+        ]
+        
+        att_cargo_table = Table(
+            [
+                cargo_headers,
+                att_body_row,
+            ],
+            colWidths=[48 * mm, 26 * mm, 72 * mm, 24 * mm, 24 * mm],
+        )
+        att_cargo_table.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.6, BORDER_GREEN),
+            ("BACKGROUND", (0, 0), (-1, 0), BG_HEADER),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3.0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3.0),
+            ("TOPPADDING", (0, 0), (-1, -1), 2.0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2.0),
+        ]))
+        story.append(att_cargo_table)
 
     watermark_label = "ORIGINAL" if approval_status.lower() in {"approved", "issued", "released"} else "COPY"
 

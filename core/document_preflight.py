@@ -22,9 +22,9 @@ def validate_document(entity: str, record: Dict[str, Any]) -> List[str]:
             errors.append("Customer is required.")
         if not _has(record, "sales_id", "salesperson"):
             errors.append("Sales is required.")
-        if not _has(record, "pol"):
+        if not _has(record, "pol", "port_of_loading"):
             errors.append("POL is required.")
-        if not _has(record, "pod"):
+        if not _has(record, "pod", "port_of_discharge"):
             errors.append("POD is required.")
         if not _has(record, "validity_date"):
             errors.append("Valid Until is required.")
@@ -32,9 +32,9 @@ def validate_document(entity: str, record: Dict[str, Any]) -> List[str]:
     elif entity == "booking":
         if not _has(record, "customer_id", "customer_name"):
             errors.append("Customer is required.")
-        if not _has(record, "pol"):
+        if not _has(record, "pol", "port_of_loading"):
             errors.append("POL is required.")
-        if not _has(record, "pod"):
+        if not _has(record, "pod", "port_of_discharge"):
             errors.append("POD is required.")
         if not _has(record, "etd"):
             errors.append("ETD is required.")
@@ -56,9 +56,9 @@ def validate_document(entity: str, record: Dict[str, Any]) -> List[str]:
             errors.append("Shipper is required.")
         if not _has(record, "consignee"):
             errors.append("Consignee is required.")
-        if not _has(record, "pol"):
+        if not _has(record, "pol", "port_of_loading"):
             errors.append("POL is required.")
-        if not _has(record, "pod"):
+        if not _has(record, "pod", "port_of_discharge"):
             errors.append("POD is required.")
 
     return errors
