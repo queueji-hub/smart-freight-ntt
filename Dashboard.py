@@ -88,6 +88,9 @@ def _sync_navigation(allowed_ids):
 
 
 def main():
+    for k in list(st.session_state.keys()):
+        if str(k).startswith("_rendered_hdr_"):
+            del st.session_state[k]
     _bootstrap_db()
     user = _restore_user()
     if not user:

@@ -35,8 +35,13 @@ _TABLE_FIELD_MAP = {
 }
 
 
+_COLUMN_CACHE: Dict[str, Set[str]] = {}
+
+
 def _existing_columns(cur, table: str) -> Set[str]:
     """Return columns visible in PostgreSQL for a known application table."""
+    if table in _COLUMN_CACHE:
+        return _COLUMN_CACHE[table]
     cur.execute(
         """
         SELECT column_name
@@ -46,7 +51,10 @@ def _existing_columns(cur, table: str) -> Set[str]:
         """,
         (table,),
     )
-    return {row["column_name"] for row in cur.fetchall()}
+    cols = {row["column_name"] for row in cur.fetchall()}
+    if cols:
+        _COLUMN_CACHE[table] = cols
+    return cols
 
 
 def list_sales_users() -> List[Dict[str, Any]]:

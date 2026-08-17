@@ -108,17 +108,88 @@ def _draw_watermark(canvas, doc, watermark_text: str = "COPY"):
     canvas.restoreState()
 
 
+def resolve_document_title(
+    payload_or_bl: Optional[Dict[str, Any]] = None,
+    job: Optional[Dict[str, Any]] = None,
+    booking: Optional[Dict[str, Any]] = None,
+    bl: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Resolve official document title based on transport mode / job type:
+      - Sea Freight:   OCEAN BILL OF LADING
+      - Truck Freight: TRUCK WAYBILL
+      - Air Freight:   AIR WAYBILL
+      - Default:       OCEAN BILL OF LADING
+    """
+    target = bl if bl is not None else payload_or_bl
+    if isinstance(target, dict) and "bl" in target and isinstance(target.get("bl"), dict):
+        bl_dict = target.get("bl") or {}
+        job_dict = target.get("job") or job or {}
+        booking_dict = target.get("booking") or booking or {}
+    else:
+        bl_dict = target or {}
+        job_dict = job or {}
+        booking_dict = booking or {}
+
+    raw_candidates = [
+        bl_dict.get("mode"),
+        bl_dict.get("job_type"),
+        bl_dict.get("transport_mode"),
+        bl_dict.get("service_type"),
+        bl_dict.get("doc_title"),
+        job_dict.get("mode"),
+        job_dict.get("job_type"),
+        job_dict.get("service_type"),
+        job_dict.get("cargo_type"),
+        job_dict.get("transport"),
+        booking_dict.get("job_type"),
+        booking_dict.get("mode"),
+        booking_dict.get("cargo_type"),
+    ]
+
+    tokens = [str(x).strip().upper() for x in raw_candidates if x is not None and str(x).strip()]
+
+    # 1. Check TRUCK / ROAD / LAND
+    truck_codes = {"TE", "TI", "TRUCK", "TRK", "ROAD", "LAND", "TRK_EXP", "TRK_IMP", "CROSSBORDER", "CROSS_BORDER", "TRUCKING"}
+    for t in tokens:
+        if t in truck_codes:
+            return "TRUCK WAYBILL"
+
+    # 2. Check AIR
+    air_codes = {"AE", "AI", "AIR", "AIR_EXP", "AIR_IMP", "AIRCRAFT", "AIRWAY"}
+    for t in tokens:
+        if t in air_codes:
+            return "AIR WAYBILL"
+
+    # 3. Text search in tokens and identifier strings
+    search_scope = " ".join(tokens + [
+        str(bl_dict.get("bl_no") or "").upper(),
+        str(job_dict.get("job_no") or "").upper(),
+        str(booking_dict.get("booking_no") or "").upper(),
+    ])
+
+    if any(k in search_scope for k in ["TRUCK", "ROAD", "LAND", "รถ", "CROSSBORDER", "TRK"]):
+        return "TRUCK WAYBILL"
+
+    if any(k in search_scope for k in ["AIR", "FLIGHT", "เครื่องบิน", "AERO", "AWB"]):
+        return "AIR WAYBILL"
+
+    # Default to Sea Freight
+    return "OCEAN BILL OF LADING"
+
+
 def generate_company_bl_pdf(payload: Dict[str, Any], output_path: Optional[str] = None) -> str:
     if not isinstance(payload, dict) or "bl" not in payload:
         raise ValueError("B/L PDF requires a validated payload dict with a 'bl' record.")
 
     bl = dict(payload.get("bl") or {})
     job = dict(payload.get("job") or {})
+    booking = dict(payload.get("booking") or {})
     containers = list(payload.get("containers") or [])
     styles = _styles()
 
     bl_no = _s(bl.get("bl_no"), "NATTA-BKKSGN2608001")
     approval_status = _s(bl.get("approval_status") or bl.get("status"), "Draft")
+    doc_title = resolve_document_title(payload, job=job, booking=booking)
 
     shipper = _s(bl.get("shipper"))
     consignee = _s(bl.get("consignee"))
@@ -167,7 +238,7 @@ def generate_company_bl_pdf(payload: Dict[str, Any], output_path: Optional[str] 
         rightMargin=8 * mm,
         topMargin=7 * mm,
         bottomMargin=7 * mm,
-        title=f"Bill of Lading {bl_no}",
+        title=f"{doc_title.title()} {bl_no}",
         author=COMPANY.get("name", "NATTAYAARAT CO., LTD."),
     )
 
@@ -201,7 +272,7 @@ def generate_company_bl_pdf(payload: Dict[str, Any], output_path: Optional[str] 
         Paragraph(f"<b>{comp_name_en}</b>", styles["company_en"]),
         Paragraph(comp_addr, styles["company_addr"]),
         Spacer(1, 1 * mm),
-        Paragraph("<b>BILL OF LADING</b>", styles["doc_title"]),
+        Paragraph(f"<b>{doc_title}</b>", styles["doc_title"]),
     ]
 
     header_logo_table = Table(

@@ -329,15 +329,27 @@ def _financial(j):
         else:
             st.warning("📝 Work in Progress")
             if can_edit and st.button("🔒 Handover to Accounting", key=f"lock_fin_{j['id']}", type="primary", use_container_width=True):
-                if audit_data["unbilled_cost_count"] > 0:
-                    st.error(f"Cannot handover: {audit_data['unbilled_cost_count']} unbilled cost line(s) detected! Please verify customer billing.")
-                else:
+                try:
                     lock_job_financials(j["id"], user)
-                    st.success("Financials verified & handed over to Accounting.")
+                    if audit_data["unbilled_cost_count"] > 0:
+                        st.success(f"Financials handed over to Accounting ({audit_data['unbilled_cost_count']} unbilled/unmatched cost line(s) noted).")
+                    else:
+                        st.success("Financials verified & handed over to Accounting.")
                     st.rerun()
+                except Exception as exc:
+                    st.error(f"Handover failed: {exc}")
 
     if audit_data["unbilled_cost_count"] > 0:
-        st.error(f"⚠️ **Attention Operation**: Found **{audit_data['unbilled_cost_count']} unbilled cost line(s)** totaling {_money(audit_data['unbilled_cost_amount'])}. Please review below to ensure all vendor costs are billed to customer or flagged as internal.")
+        st.warning(f"ℹ️ **Reconciliation Notice**: Found **{audit_data['unbilled_cost_count']} unbilled cost line(s)** totaling {_money(audit_data['unbilled_cost_amount'])}. (Note: You can still handover to Accounting — unmatched items will be recorded for accounting review).")
+
+    # Load charge master options for streamlined entry
+    std_charges = []
+    try:
+        from managers.charge_master_manager import list_charges
+        std_charges = list_charges(active_only=True) or []
+    except Exception:
+        std_charges = []
+    std_charge_opts = ["— Custom / Freeform —"] + [f"{c['charge_code']} - {c['description']} ({c.get('category','Other')})" for c in std_charges]
 
     fin_tabs = st.tabs(["📊 Cost vs. Sell Audit Matrix", "💰 Cost (AP - ต้นทุนจ่าย)", "🧾 Sell (AR - รายได้เรียกเก็บ)"])
 
@@ -371,6 +383,7 @@ def _financial(j):
         if ap_lines:
             ap_display = [{
                 "ID": r["id"],
+                "Code": _s(r.get("matched_charge_code")),
                 "Category": r.get("category"),
                 "Description": r.get("description"),
                 "Supplier / Vendor": r.get("supplier"),
@@ -396,7 +409,8 @@ def _financial(j):
         if can_edit and not is_locked:
             with st.expander("＋ Add Operational Cost Line", expanded=(len(ap_lines) == 0)):
                 with st.form(f"add_cost_form_{j['id']}", clear_on_submit=True):
-                    c1, c2, c3 = st.columns(3)
+                    c0, c1, c2, c3 = st.columns([2, 2, 2, 2])
+                    charge_pick = c0.selectbox("Standard Charge", std_charge_opts, key=f"ap_std_{j['id']}")
                     cat = c1.selectbox("Cost Category", AP_CATEGORIES)
                     desc = c2.text_input("Description / Charge Name", value="Ocean Freight")
                     supplier = c3.text_input("Vendor / Carrier / Transporter", value=_s(j.get("carrier"), ""))
@@ -412,17 +426,25 @@ def _financial(j):
 
                 if save_cost:
                     try:
+                        matched_code = None
+                        final_desc = desc.strip()
+                        if charge_pick and not charge_pick.startswith("—"):
+                            matched_code = charge_pick.split(" - ")[0].strip()
+                            if not final_desc or final_desc == "Ocean Freight":
+                                final_desc = charge_pick.split(" - ")[1].split(" (")[0].strip()
+
                         add_cost_line({
                             "shipment_id": j["id"],
                             "cost_type": "AP",
                             "category": cat,
-                            "description": desc.strip(),
+                            "description": final_desc,
                             "supplier": supplier.strip() or None,
                             "quantity": qty,
                             "unit_price": price,
                             "amount": qty * price,
                             "currency": curr,
                             "billable_to_customer": (billable.startswith("Yes")),
+                            "matched_charge_code": matched_code,
                             "remark": remark.strip() or None,
                             "created_by": user.get("username", "operation"),
                         })
@@ -440,6 +462,7 @@ def _financial(j):
         if ar_lines:
             ar_display = [{
                 "ID": r["id"],
+                "Code": _s(r.get("matched_charge_code")),
                 "Category": r.get("category"),
                 "Description": r.get("description"),
                 "Customer": r.get("supplier") or _s(j.get("customer_name")),
@@ -463,7 +486,8 @@ def _financial(j):
         if can_edit and not is_locked:
             with st.expander("＋ Add Customer Revenue Line", expanded=(len(ar_lines) == 0)):
                 with st.form(f"add_sell_form_{j['id']}", clear_on_submit=True):
-                    s1, s2, s3 = st.columns(3)
+                    s0, s1, s2, s3 = st.columns([2, 2, 2, 2])
+                    s_charge_pick = s0.selectbox("Standard Charge", std_charge_opts, key=f"ar_std_{j['id']}")
                     s_cat = s1.selectbox("Revenue Category", AR_CATEGORIES)
                     s_desc = s2.text_input("Description / Charge Name", value="Ocean Freight Revenue")
                     s_cust = s3.text_input("Customer", value=_s(j.get("customer_name"), ""))
@@ -478,17 +502,25 @@ def _financial(j):
 
                 if save_sell:
                     try:
+                        s_matched_code = None
+                        final_s_desc = s_desc.strip()
+                        if s_charge_pick and not s_charge_pick.startswith("—"):
+                            s_matched_code = s_charge_pick.split(" - ")[0].strip()
+                            if not final_s_desc or final_s_desc == "Ocean Freight Revenue":
+                                final_s_desc = s_charge_pick.split(" - ")[1].split(" (")[0].strip()
+
                         add_cost_line({
                             "shipment_id": j["id"],
                             "cost_type": "AR",
                             "category": s_cat,
-                            "description": s_desc.strip(),
+                            "description": final_s_desc,
                             "supplier": s_cust.strip() or None,
                             "quantity": s_qty,
                             "unit_price": s_price,
                             "amount": s_qty * s_price,
                             "currency": s_curr,
                             "billable_to_customer": True,
+                            "matched_charge_code": s_matched_code,
                             "remark": s_remark.strip() or None,
                             "created_by": user.get("username", "operation"),
                         })

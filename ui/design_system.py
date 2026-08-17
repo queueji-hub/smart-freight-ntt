@@ -44,6 +44,8 @@ def apply_theme() -> None:
     st.markdown(
         """
         <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sarabun:wght@400;500;600;700;800&display=swap');
+
         :root {
             --sf-navy: #0f172a;
             --sf-blue: #2563eb;
@@ -56,31 +58,56 @@ def apply_theme() -> None:
             --sf-warning: #d97706;
             --sf-danger: #dc2626;
         }
+
+        html, body, [class*="css"], [class*="st-"] {
+            font-family: 'Inter', 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif !important;
+            -webkit-font-smoothing: antialiased;
+        }
+
         .block-container {
             padding-top: 1rem !important;
             padding-bottom: 2rem !important;
-            max-width: 1500px;
+            max-width: 1560px;
         }
+
         section[data-testid="stSidebar"] {
             border-right: 1px solid var(--sf-border);
         }
+
+        /* Metric cards - Adaptive typography and zero clipping */
         div[data-testid="stMetric"] {
             background: var(--sf-card);
             border: 1px solid var(--sf-border);
             border-radius: 12px;
-            padding: .85rem 1rem;
+            padding: 0.85rem 1rem;
             box-shadow: 0 2px 8px rgba(15,23,42,.05);
+            min-width: 0 !important;
+            overflow: visible !important;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        div[data-testid="stMetric"]:hover {
+            box-shadow: 0 4px 12px rgba(15,23,42,.08);
         }
         div[data-testid="stMetric"] label {
             color: var(--sf-muted) !important;
-            font-size: .75rem !important;
+            font-size: 0.76rem !important;
             font-weight: 600 !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+            line-height: 1.25 !important;
         }
         div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
             color: var(--sf-text) !important;
-            font-size: 1.45rem !important;
-            font-weight: 700 !important;
+            font-size: clamp(0.95rem, 1.35vw, 1.35rem) !important;
+            font-weight: 750 !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+            overflow-wrap: anywhere !important;
+            text-overflow: clip !important;
+            line-height: 1.25 !important;
+            letter-spacing: -0.01em !important;
         }
+
         .sf-page-title {
             margin: 0;
             color: var(--sf-text);
@@ -106,6 +133,35 @@ def apply_theme() -> None:
             padding: 1rem 1.1rem;
             box-shadow: 0 2px 8px rgba(15,23,42,.04);
         }
+
+        /* Fully visible dataframes & tables */
+        .stDataFrame, div[data-testid="stTable"] {
+            width: 100% !important;
+        }
+
+        /* Refined primary action buttons */
+        button[kind="primary"] {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+            border: none !important;
+            border-radius: 8px !important;
+            font-weight: 600 !important;
+            transition: all 0.2s ease !important;
+            box-shadow: 0 2px 6px rgba(37,99,235,0.2) !important;
+        }
+        button[kind="primary"]:hover {
+            transform: translateY(-1px) !important;
+            box-shadow: 0 4px 12px rgba(37,99,235,0.3) !important;
+        }
+        button[kind="secondary"] {
+            border-radius: 8px !important;
+            transition: all 0.15s ease !important;
+        }
+
+        /* High-contrast alert boxes */
+        div[data-testid="stAlert"] {
+            border-radius: 10px !important;
+            padding: 0.75rem 1rem !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -113,6 +169,12 @@ def apply_theme() -> None:
 
 
 def page_header(page_id: str, status_text: str | None = None) -> None:
+    # Deduplicate header within a single render execution
+    render_key = f"_rendered_hdr_{page_id}"
+    if st.session_state.get(render_key):
+        return
+    st.session_state[render_key] = True
+
     title = PAGE_TITLES.get(page_id, page_id.replace("_", " ").title())
     subtitle = PAGE_SUBTITLES.get(page_id, "").strip()
     badge = f"<span class='sf-card' style='padding:.3rem .65rem;border-radius:999px;font-size:.72rem;color:#166534;background:#f0fdf4;border-color:#bbf7d0'>{status_text}</span>" if status_text else ""

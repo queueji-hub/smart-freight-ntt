@@ -315,10 +315,15 @@ def generate_bl_pdf(bl_source: Any, output_path: str = None) -> str:
         f"{COMPANY.get('address_line2', '')} {COMPANY.get('address_line3', '')}<br/>"
         f"Tax ID: {COMPANY.get('tax_id', '')} · Tel: {COMPANY.get('tel', '')} · Email: {COMPANY.get('email', '')}"
     )
-    comp_block = Paragraph(addr_html, styles["company_addr"])
-
-    title_text = "BILL OF LADING"
-    type_text = f"HOUSE BILL OF LADING ({bl_no})" if bl_type == "HBL" else f"MASTER BILL OF LADING ({bl_no})"
+    from pdf.bl_document_renderer import resolve_document_title
+    doc_title = resolve_document_title(payload_or_bl=bl_doc, job=job_doc, booking=booking_doc)
+    title_text = doc_title
+    if doc_title == "AIR WAYBILL":
+        type_text = f"HOUSE AIR WAYBILL ({bl_no})" if bl_type == "HBL" else f"MASTER AIR WAYBILL ({bl_no})"
+    elif doc_title == "TRUCK WAYBILL":
+        type_text = f"HOUSE TRUCK WAYBILL ({bl_no})" if bl_type == "HBL" else f"MASTER TRUCK WAYBILL ({bl_no})"
+    else:
+        type_text = f"HOUSE BILL OF LADING ({bl_no})" if bl_type == "HBL" else f"MASTER BILL OF LADING ({bl_no})"
 
     title_block = [
         Paragraph(title_text, styles["doc_title"]),

@@ -195,8 +195,18 @@ def _edit(bl: Dict[str, Any]) -> None:
 
 
 def _preview(bl: Dict[str, Any]) -> None:
-    section("Ocean Bill of Lading Preview")
-    st.caption("Field layout mirrors the official Ocean Bill of Lading form (NATTAYAARAT CO., LTD.).")
+    job = {}
+    if bl.get("job_no"):
+        try:
+            from managers.shipment_manager import get_shipment
+            job = get_shipment(bl.get("job_no")) or {}
+        except Exception:
+            pass
+    from pdf.bl_document_renderer import resolve_document_title
+    doc_title = resolve_document_title(bl=bl, job=job)
+
+    section(f"{doc_title.title()} Preview")
+    st.caption(f"Field layout mirrors the official {doc_title.title()} form (NATTAYAARAT CO., LTD.).")
     
     # Header & Parties
     p1, p2 = st.columns(2)
@@ -291,13 +301,15 @@ def render() -> None:
     status = _s(bl.get("approval_status"), "Draft")
 
     section("B/L Summary")
-    m = st.columns(6)
-    m[0].metric("B/L No.", _s(bl.get("bl_no")))
-    m[1].metric("Job", _s(bl.get("job_no")))
-    m[2].metric("Seq", bl.get("consol_seq") or 1)
-    m[3].metric("POL", _s(bl.get("port_of_loading")))
-    m[4].metric("POD", _s(bl.get("port_of_discharge")))
-    m[5].metric("Status", status)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("B/L No.", _s(bl.get("bl_no")))
+    m2.metric("Job No.", _s(bl.get("job_no")))
+    m3.metric("Status", status)
+
+    m4, m5, m6 = st.columns(3)
+    m4.metric("Consolidation Seq", f"#{bl.get('consol_seq') or 1}")
+    m5.metric("Port of Loading (POL)", _s(bl.get("port_of_loading")))
+    m6.metric("Port of Discharge (POD)", _s(bl.get("port_of_discharge")))
 
     section("Actions")
     a, b, c, d = st.columns([2, 1, 1, 1])

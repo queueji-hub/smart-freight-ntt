@@ -78,7 +78,7 @@ def render():
     st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Job Tracking Identifier", str(ship["job_no"]))
-    c2.metric("Corporate Debtor Title", str(ship.get("customer_name") or "—")[:18])
+    c2.metric("Corporate Debtor Title", str(ship.get("customer_name") or "—"))
     c3.metric("Freight Life Status", str(ship.get("status", "Proceed")))
     c4.metric("Intermodal Unit Equipment", str(ship.get("container_no") or "—"))
     

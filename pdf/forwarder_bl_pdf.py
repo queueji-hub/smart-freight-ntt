@@ -143,8 +143,11 @@ def generate_forwarder_bl_pdf(bl_id: int, output_path: str | None = None) -> str
         f"Tax ID: {COMPANY.get('tax_id','')} · Tel: {COMPANY.get('tel','')} · Email: {COMPANY.get('email','')}"
     )
 
+    from pdf.bl_document_renderer import resolve_document_title
+    doc_title = resolve_document_title(bl=bl, job=job)
+
     header = Table([
-        [Paragraph(f"<b>{COMPANY.get('short_name','NATTA')}</b>", styles["title"]), Paragraph(company, styles["small"]), Paragraph("BILL OF LADING", styles["title"])],
+        [Paragraph(f"<b>{COMPANY.get('short_name','NATTA')}</b>", styles["title"]), Paragraph(company, styles["small"]), Paragraph(doc_title, styles["title"])],
         ["", "", Paragraph(f"<b>{bl_no}</b>", styles["sub"])],
     ], colWidths=[28*mm, 94*mm, 64*mm])
     header.setStyle(TableStyle([
