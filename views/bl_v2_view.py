@@ -332,7 +332,7 @@ def render() -> None:
         section("Shipping Instruction (S/I) for Shipping Line")
         si_mode_choice = st.radio(
             "S/I Issuance Mode",
-            ["Direct B/L (Direct Master B/L to Customer)", "Agent B/L (HBL Mode — Agent Shipper & Nattayaarat Consignee)"],
+            ["Direct B/L (Direct Master B/L to Customer)", "Agent B/L (HBL Mode — Nattayaarat Shipper & Agent Consignee)"],
             index=1,
             key=f"bl_si_mode_choice_{selected}",
             horizontal=True

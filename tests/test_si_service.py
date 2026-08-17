@@ -1,7 +1,7 @@
 """Unit tests for Shipping Instruction (S/I) service and PDF generation."""
 import os
 import pytest
-from managers.si_service import assemble_si_payload, NATTAYAARAT_OFFICIAL_CONSIGNEE
+from managers.si_service import assemble_si_payload, NATTAYAARAT_OFFICIAL_SHIPPER
 from pdf.si_pdf import generate_si_pdf
 from managers.shipment_manager import list_shipments, create_shipment
 from managers.tenant_context import set_current_tenant_id
@@ -57,8 +57,9 @@ def test_si_hbl_mode_parties():
     payload = assemble_si_payload(job_no, si_mode="hbl")
     assert payload["si_mode"] == "hbl"
     assert payload["si_mode_label"] == "AGENT B/L (HBL MODE)"
-    assert "NATTAYAARAT CO., LTD." in payload["consignee"]
-    assert "TAX ID: 073-556-800-4823" in payload["consignee"]
+    assert "NATTAYAARAT CO., LTD." in payload["shipper"]
+    assert "TAX ID: 073-556-800-4823" in payload["shipper"]
+    assert "DESTINATION AGENT" in payload["consignee"] or "AGENT" in payload["consignee"]
     assert payload["notify_party"] == "SAME AS CONSIGNEE"
 
     pdf_path = generate_si_pdf(payload)

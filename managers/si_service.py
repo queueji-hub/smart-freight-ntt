@@ -3,13 +3,13 @@
 Handles:
 - Direct B/L mode: Actual Shipper, Actual Consignee, Actual Notify Party from customer data.
 - Agent B/L (HBL) mode:
-  - Shipper: Destination Delivery Agent ("For Delivery of Goods Please Apply to :")
-  - Consignee: Official Nattayaarat Head Office entity:
+  - Shipper: Official Nattayaarat Head Office entity:
       NATTAYAARAT CO., LTD.
       59/9 THE BALANZ ZIGMA VILLAGE. MOO4, SOI BANGKRATHUEK 3,
       BANGKRATHUEK SUBDISTRICT, SAMPHRAN DISTRICT, NAKHON
       PATHOM PROVINCE 73210
       TAX ID: 073-556-800-4823
+  - Consignee: Destination Delivery Agent ("For Delivery of Goods Please Apply to :")
   - Notify Party: "SAME AS CONSIGNEE"
 """
 from __future__ import annotations
@@ -23,13 +23,14 @@ from managers.shipment_manager import get_shipment, list_job_containers
 from managers.bl_workflow_service import list_bls
 from managers.document_numbering_service import generate_document_number
 
-NATTAYAARAT_OFFICIAL_CONSIGNEE = (
+NATTAYAARAT_OFFICIAL_SHIPPER = (
     "NATTAYAARAT CO., LTD.\n"
     "59/9 THE BALANZ ZIGMA VILLAGE. MOO4, SOI BANGKRATHUEK 3,\n"
     "BANGKRATHUEK SUBDISTRICT, SAMPHRAN DISTRICT, NAKHON\n"
     "PATHOM PROVINCE 73210\n"
     "TAX ID: 073-556-800-4823"
 )
+NATTAYAARAT_OFFICIAL_CONSIGNEE = NATTAYAARAT_OFFICIAL_SHIPPER
 
 
 def _s(val: Any, default: str = "") -> str:
@@ -74,12 +75,12 @@ def assemble_si_payload(
     agent_info = _s(bl.get("delivery_agent") or job.get("delivery_agent") or "")
     
     if is_hbl_mode:
-        # In HBL mode, Shipper on Ocean S/I is the Agent, Consignee is Nattayaarat, Notify is SAME AS CONSIGNEE
-        shipper = overrides.get("shipper") or agent_info or "OVERSEAS AGENT / FORWARDER PARTNER"
-        consignee = overrides.get("consignee") or NATTAYAARAT_OFFICIAL_CONSIGNEE
+        # In HBL mode: Shipper on Ocean S/I is Nattayaarat, Consignee is the Destination Agent, Notify is SAME AS CONSIGNEE
+        shipper = overrides.get("shipper") or NATTAYAARAT_OFFICIAL_SHIPPER
+        consignee = overrides.get("consignee") or agent_info or "OVERSEAS AGENT / FORWARDER PARTNER"
         notify_party = overrides.get("notify_party") or "SAME AS CONSIGNEE"
     else:
-        # In Direct mode, actual commercial customer data
+        # In Direct mode: actual commercial customer data
         shipper = overrides.get("shipper") or _s(bl.get("shipper") or job.get("shipper"))
         consignee = overrides.get("consignee") or _s(bl.get("consignee") or job.get("consignee"))
         notify_party = overrides.get("notify_party") or _s(bl.get("notify_party") or job.get("notify_party") or "SAME AS CONSIGNEE")

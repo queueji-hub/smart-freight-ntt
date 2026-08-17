@@ -264,7 +264,7 @@ def _documents(j):
     with si_c1:
         si_mode_choice = st.radio(
             "B/L Issuance Type on S/I",
-            ["Direct B/L (Direct Master B/L to Customer)", "Agent B/L (HBL Mode — Agent Shipper & Nattayaarat Consignee)"],
+            ["Direct B/L (Direct Master B/L to Customer)", "Agent B/L (HBL Mode — Nattayaarat Shipper & Agent Consignee)"],
             index=1 if j.get("mode") in {"SEA", "OCEAN"} else 0,
             key=f"shipment_si_mode_{j['id']}",
             horizontal=True

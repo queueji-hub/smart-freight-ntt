@@ -144,7 +144,7 @@ def render() -> None:
     with si_col1:
         si_mode_choice = st.radio(
             "B/L Issuance Type on S/I",
-            ["Direct B/L (Direct Master B/L to Customer)", "Agent B/L (HBL Mode — Agent Shipper & Nattayaarat Consignee)"],
+            ["Direct B/L (Direct Master B/L to Customer)", "Agent B/L (HBL Mode — Nattayaarat Shipper & Agent Consignee)"],
             index=1 if job.get("mode") in {"SEA", "OCEAN"} else 0,
             key=f"si_mode_choice_{selected_job_no}",
             horizontal=True
