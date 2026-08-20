@@ -15,7 +15,7 @@ from managers.master_data_manager import list_sales_users
 from managers.charge_master_manager import list_charges
 from managers.master_data_crud_manager import list_parties, list_ports
 from managers.quotation_manager import duplicate_quotation, get_quotation_by_no, list_quotations
-from managers.quotation_ssot_service import create_quotation_ssot
+from managers.quotation_ssot_service import create_quotation_ssot, update_quotation_ssot
 from managers.rate_lookup_service import find_applicable_rates
 from ui.design_system import page_header, section
 
@@ -75,7 +75,7 @@ def _master_data():
     return customer_map, sales_map, carrier_map, port_map, charge_map
 
 
-def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | None = None) -> list[dict]:
+def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | None = None, key: str = "qv2_items") -> list[dict]:
     rows = []
     for raw in existing or []:
         item = dict(raw or {})
@@ -84,7 +84,9 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
             desc = _s(item.get("description")).lower()
             match = next((c for c in charge_map.values() if _s(c.get("description")).lower() == desc), None)
             code = _s(match.get("charge_code")).upper() if match else ""
-        rows.append({"charge_code": code, "quantity": float(item.get("quantity") or 1), "unit_rate": float(item.get("unit_rate") or 0), "price": float(item.get("price") or 0), "remark": _s(item.get("remark"))})
+        qty = float(item.get("quantity") or 1)
+        rate = float(item.get("unit_rate") or item.get("price") or 0)
+        rows.append({"charge_code": code, "quantity": qty, "unit_rate": rate, "price": qty * rate, "remark": _s(item.get("remark"))})
     if not rows:
         default_code = next(iter(charge_map), "")
         rows = [{"charge_code": default_code, "quantity": 1.0, "unit_rate": 0.0, "price": 0.0, "remark": ""}]
@@ -103,7 +105,7 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
             "price": st.column_config.NumberColumn("Amount", disabled=True),
             "remark": st.column_config.TextColumn("Remarks"),
         },
-        key="qv2_items",
+        key=key,
     )
     edited["charge_code"] = edited["charge_code"].fillna("").astype(str).str.upper().str.strip()
     edited["price"] = pd.to_numeric(edited["quantity"], errors="coerce").fillna(1) * pd.to_numeric(edited["unit_rate"], errors="coerce").fillna(0)
@@ -173,7 +175,7 @@ def _create_form(user: Dict[str, Any]):
             selected_rate = None
 
         section("Pricing")
-        items_df = _item_editor(charge_map)
+        items_df = _item_editor(charge_map, key="qv2_items")
         if selected_rate and items_df:
             for row in items_df:
                 if _s(row.get("charge_code")).upper() == _s(selected_rate.get("charge_code")).upper():
@@ -222,6 +224,7 @@ def _create_form(user: Dict[str, Any]):
             "pod_id": pod_id,
             "pol": port_map[pol_id] if pol_id else None,
             "pod": port_map[pod_id] if pod_id else None,
+            "carrier": carrier_map[carrier_id] if carrier_id else None,
             "mode": mode,
             "service_type": service_type,
             "equipment_type": equipment_type.strip() or None,
@@ -237,6 +240,147 @@ def _create_form(user: Dict[str, Any]):
             st.rerun()
         except Exception as exc:
             st.error(f"Unable to save quotation: {exc}")
+
+
+def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
+    qno = _s(selected.get("quotation_no"))
+    customer_map, sales_map, carrier_map, port_map, charge_map = _master_data()
+    today = date.today()
+
+    # Index resolution
+    cust_keys = list(customer_map)
+    cur_cust = selected.get("customer_id")
+    if cur_cust not in customer_map:
+        c_name = _s(selected.get("customer_name")).lower()
+        cur_cust = next((cid for cid, name in customer_map.items() if name.lower() == c_name), cust_keys[0] if cust_keys else None)
+    cust_idx = cust_keys.index(cur_cust) if cur_cust in cust_keys else 0
+
+    sales_keys = list(sales_map)
+    cur_sales = selected.get("sales_id")
+    if cur_sales not in sales_map:
+        s_name = _s(selected.get("salesperson") or selected.get("sales_person")).lower()
+        cur_sales = next((sid for sid, name in sales_map.items() if name.lower() == s_name), sales_keys[0] if sales_keys else None)
+    sales_idx = sales_keys.index(cur_sales) if cur_sales in sales_keys else 0
+
+    job_keys = list(JOB_TYPES.keys())
+    cur_job = _s(selected.get("job_type"), job_keys[0] if job_keys else "SEA_EXPORT")
+    job_idx = job_keys.index(cur_job) if cur_job in job_keys else 0
+
+    carrier_keys = list(carrier_map)
+    cur_carrier = selected.get("carrier_id")
+    carrier_idx = carrier_keys.index(cur_carrier) if cur_carrier in carrier_keys else 0
+
+    port_keys = list(port_map)
+    cur_pol = selected.get("pol_id")
+    pol_idx = port_keys.index(cur_pol) if cur_pol in port_keys else 0
+    cur_pod = selected.get("pod_id")
+    pod_idx = port_keys.index(cur_pod) if cur_pod in port_keys else 0
+
+    cur_mode = _s(selected.get("mode"), "SEA").upper()
+    mode_idx = MODE_OPTIONS.index(cur_mode) if cur_mode in MODE_OPTIONS else 0
+
+    serv_opts = ["", "FCL", "LCL", "AIR", "FTL", "LTL"]
+    cur_serv = _s(selected.get("service_type"))
+    serv_idx = serv_opts.index(cur_serv) if cur_serv in serv_opts else 0
+
+    inco_opts = ["", "EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DDP", "DDU"]
+    cur_inco = _s(selected.get("incoterm"))
+    inco_idx = inco_opts.index(cur_inco) if cur_inco in inco_opts else 0
+
+    issue_date_val = _date(selected.get("quotation_date"), today)
+    valid_until_val = _date(selected.get("validity_date"), issue_date_val + timedelta(days=30))
+
+    with st.form(f"quotation_v2_edit_{qno}"):
+        section("Quotation Details")
+        c1, c2 = st.columns(2)
+        with c1:
+            customer_id = st.selectbox("Customer *", cust_keys, index=cust_idx, format_func=lambda x: customer_map[x], key=f"edit_cust_{qno}") if cust_keys else None
+            job_type = st.selectbox("Job Type *", job_keys, index=job_idx, format_func=lambda x: JOB_TYPES.get(x, x), key=f"edit_job_{qno}")
+            issue_date = st.date_input("Issue Date", issue_date_val, key=f"edit_issue_{qno}")
+        with c2:
+            sales_id = st.selectbox("Sales", sales_keys, index=sales_idx, format_func=lambda x: sales_map[x], key=f"edit_sales_{qno}") if sales_keys else None
+            valid_until = st.date_input("Valid Until", valid_until_val, key=f"edit_valid_{qno}")
+            payment_term = st.text_input("Payment Terms", value=_s(selected.get("payment_term"), "Net 30"), key=f"edit_pay_{qno}")
+
+        section("Shipment")
+        r1, r2, r3 = st.columns(3)
+        with r1:
+            carrier_id = st.selectbox("Carrier", carrier_keys, index=carrier_idx, format_func=lambda x: carrier_map[x], key=f"edit_carr_{qno}") if carrier_keys else None
+        with r2:
+            pol_id = st.selectbox("POL", port_keys, index=pol_idx, format_func=lambda x: port_map[x], key=f"edit_pol_{qno}") if port_keys else None
+        with r3:
+            pod_id = st.selectbox("POD", port_keys, index=pod_idx, format_func=lambda x: port_map[x], key=f"edit_pod_{qno}") if port_keys else None
+        r4, r5, r6 = st.columns(3)
+        with r4:
+            mode = st.selectbox("Transport Mode", MODE_OPTIONS, index=mode_idx, key=f"edit_mode_{qno}")
+        with r5:
+            service_type = st.selectbox("Service", serv_opts, index=serv_idx, key=f"edit_serv_{qno}")
+        with r6:
+            equipment_type = st.text_input("Equipment", value=_s(selected.get("equipment_type")), key=f"edit_equip_{qno}")
+        commodity = st.text_input("Commodity", value=_s(selected.get("commodity")), key=f"edit_comm_{qno}")
+        incoterm = st.selectbox("Incoterm", inco_opts, index=inco_idx, key=f"edit_inco_{qno}")
+        subject = st.text_input("Subject", value=_s(selected.get("subject")), key=f"edit_subj_{qno}")
+
+        section("Pricing & Line Items")
+        items_df = _item_editor(charge_map, existing=selected.get("items", []), key=f"qv2_edit_items_{qno}")
+
+        section("Terms")
+        terms = st.text_area("Terms & Conditions", value=_s(selected.get("terms_conditions"), DEFAULT_TERMS), height=120, key=f"edit_terms_{qno}")
+        submitted = st.form_submit_button("Save Changes", type="primary", width="stretch")
+
+    if submitted:
+        errors = []
+        if customer_id is None:
+            errors.append("Customer is required.")
+        if valid_until < issue_date:
+            errors.append("Valid Until cannot be earlier than Issue Date.")
+        if pol_id is None or pod_id is None:
+            errors.append("POL and POD are required.")
+        if not charge_map:
+            errors.append("Charge Master has no active charges.")
+        clean_items = []
+        for idx, row in enumerate(items_df, 1):
+            if not _s(row.get("charge_code")):
+                errors.append(f"Line {idx}: Charge is required.")
+                continue
+            if float(row.get("unit_rate") or 0) < 0:
+                errors.append(f"Line {idx}: Rate cannot be negative.")
+            clean_items.append(row)
+        if errors:
+            for error in errors:
+                st.error(error)
+            return
+
+        payload = {
+            "job_type": job_type,
+            "customer_id": customer_id,
+            "customer_name": customer_map[customer_id],
+            "sales_id": sales_id,
+            "salesperson": sales_map.get(sales_id, "") if sales_id else "",
+            "quotation_date": issue_date.isoformat(),
+            "validity_date": valid_until.isoformat(),
+            "payment_term": payment_term.strip(),
+            "carrier_id": carrier_id,
+            "pol_id": pol_id,
+            "pod_id": pod_id,
+            "pol": port_map[pol_id] if pol_id else None,
+            "pod": port_map[pod_id] if pod_id else None,
+            "carrier": carrier_map[carrier_id] if carrier_id else None,
+            "mode": mode,
+            "service_type": service_type,
+            "equipment_type": equipment_type.strip() or None,
+            "commodity": commodity.strip() or None,
+            "incoterm": incoterm,
+            "subject": subject.strip() or None,
+            "terms_conditions": terms.strip(),
+            "status": selected.get("status") or "Draft",
+        }
+        try:
+            update_quotation_ssot(qno, payload, clean_items)
+            st.success(f"Quotation {qno} updated successfully.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Unable to update quotation: {exc}")
 
 
 def render():
@@ -296,3 +440,8 @@ def render():
                 st.error(str(exc))
     with a3:
         st.metric("Status", _s(selected.get("status"), "Draft"))
+
+    if can_edit:
+        with st.expander("✏️ Edit Quotation", expanded=False):
+            _render_edit_form(selected, user)
+
