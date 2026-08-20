@@ -13,7 +13,8 @@ def render():
     with col:
         st.markdown("""
         <div style="text-align:center;padding:2rem 0">
-            <h1 style="margin:0">🚢 FreightFlow NTT,</h1>
+            <h2 style="margin:0; color:#64748b; font-weight:500;">Hello 👋</h2>
+            <h1 style="margin:0.5rem 0 0">🚢 FreightFlow NTT,</h1>
             <p style="color:#9CA0A8;margin:0.5rem 0 0">Freight Forwarding OS</p>
         </div>
         """, unsafe_allow_html=True)

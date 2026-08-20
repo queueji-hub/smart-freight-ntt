@@ -46,6 +46,141 @@ def setup_sidebar() -> None:
         }
 
         /* ===============================
+           1.5 MATERIAL SYMBOLS & STREAMLIT ICONS
+        =============================== */
+        
+        /* ซ่อน Footer "Made with Streamlit" */
+        footer {
+            display: none !important;
+        }
+
+        /* Sidebar toggle icon */
+        [data-testid="stSidebarCollapseButton"] span,
+        [data-testid="stSidebarHeaderCollapseButton"] span,
+        [data-testid="collapsedControl"] span {
+            font-size: 0px !important;
+            line-height: 0 !important;
+            color: transparent !important;
+            text-indent: -9999px !important;
+            width: 24px !important;
+            height: 24px !important;
+            display: inline-flex !important;
+            overflow: hidden !important;
+            position: relative !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] span::after,
+        section[data-testid="stSidebar"] [data-testid="stSidebarHeaderCollapseButton"] span::after {
+            content: "◀" !important;
+            font-size: 13px !important;
+            color: #64748b !important;
+            text-indent: 0 !important;
+            position: absolute !important;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        [data-testid="collapsedControl"] span::after {
+            content: "▶" !important;
+            font-size: 13px !important;
+            color: #2563eb !important;
+            text-indent: 0 !important;
+            position: absolute !important;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+
+        /* Password eye icon */
+        div[data-testid="stTextInput"] button span,
+        div[data-testid="stPasswordInput"] button span {
+            font-size: 0px !important;
+            line-height: 0 !important;
+            color: transparent !important;
+            text-indent: -9999px !important;
+            width: 20px !important;
+            height: 20px !important;
+            display: inline-flex !important;
+            overflow: hidden !important;
+            position: relative !important;
+        }
+        div[data-testid="stTextInput"] button span::after,
+        div[data-testid="stPasswordInput"] button span::after {
+            content: "👁" !important;
+            font-size: 14px !important;
+            color: #64748b !important;
+            text-indent: 0 !important;
+            position: absolute !important;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+
+        /* Expander chevron */
+        [data-testid="stExpanderToggleIcon"],
+        details summary span:first-child {
+            font-size: 0px !important;
+            line-height: 0 !important;
+            color: transparent !important;
+            text-indent: -9999px !important;
+            width: 18px !important;
+            height: 18px !important;
+            display: inline-flex !important;
+            overflow: hidden !important;
+            position: relative !important;
+        }
+        [data-testid="stExpanderToggleIcon"]::after,
+        details summary span:first-child::after {
+            content: "▼" !important;
+            font-size: 10px !important;
+            color: #64748b !important;
+            text-indent: 0 !important;
+            position: absolute !important;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        details[open] summary [data-testid="stExpanderToggleIcon"]::after,
+        details[open] summary span:first-child::after {
+            content: "▲" !important;
+        }
+
+        /* Selectbox dropdown arrow */
+        [data-testid="stSelectbox"] [data-baseweb="select"] span[class*="material"],
+        [data-testid="stSelectbox"] [data-baseweb="select"] div[role="button"] span {
+            font-size: 0px !important;
+            line-height: 0 !important;
+            color: transparent !important;
+            text-indent: -9999px !important;
+            width: 16px !important;
+            height: 16px !important;
+            display: inline-flex !important;
+            overflow: hidden !important;
+            position: relative !important;
+        }
+        [data-testid="stSelectbox"] [data-baseweb="select"] span[class*="material"]::after,
+        [data-testid="stSelectbox"] [data-baseweb="select"] div[role="button"] span::after {
+            content: "▼" !important;
+            font-size: 9px !important;
+            color: #64748b !important;
+            text-indent: 0 !important;
+            position: absolute !important;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+
+        /* ซ่อน Toolbar ที่ไม่จำเป็น */
+        [data-testid="stElementToolbar"],
+        [data-testid="stHeaderActionElements"] {
+            display: none !important;
+        }
+
+        /* ===============================
            2. MOBILE RESPONSIVE (MAX 768px)
         =============================== */
         
