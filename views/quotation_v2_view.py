@@ -341,23 +341,6 @@ def _create_form(user: Dict[str, Any]):
             "terms_conditions": terms.strip(),
             "status": "Draft",
         }
-            "mode": mode,
-            "service_type": service_type,
-            "incoterm": incoterm,
-            "freight_term": freight_term,
-            "commodity": commodity.strip() or None,
-            "hs_code": hs_code.strip() or None,
-            "container_type": container_type,
-            "container_quantity": container_qty,
-            "package_type": package_type,
-            "quantity": package_qty,
-            "weight_kg": weight_kg,
-            "volume_cbm": volume_cbm,
-            "is_dg": is_dg,
-            "subject": subject.strip() or None,
-            "terms_conditions": terms.strip(),
-            "status": "Draft",
-        }
         try:
             qno = create_quotation_ssot(payload, items_df)
             st.success(f"🎉 Quotation {qno} created successfully!")
