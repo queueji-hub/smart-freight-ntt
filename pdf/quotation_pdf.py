@@ -257,17 +257,6 @@ def _build_items_table(items: List[Dict[str, Any]], styles) -> Table:
             Paragraph(str(item.get("remark") or ""), styles["body"]),
         ])
     
-    # Add Total Rows by Currency
-    if currency_totals:
-        for curr, tot in currency_totals.items():
-            if tot > 0:
-                data.append([
-                    "", "", "", "",
-                    Paragraph(f"<b>Total {curr}:</b>", styles["body"]),
-                    Paragraph(f"<b>{tot:,.2f}</b>", styles["body"]),
-                    ""
-                ])
-    
     tbl = Table(
         data,
         colWidths=[55*mm, 15*mm, 15*mm, 15*mm, 20*mm, 25*mm, 35*mm],
@@ -292,7 +281,7 @@ def _build_items_table(items: List[Dict[str, Any]], styles) -> Table:
         ("TOPPADDING", (0,0), (-1,-1), 3),
         ("BOTTOMPADDING", (0,0), (-1,-1), 3),
         ("BOX", (0,0), (-1,-1), 0.5, colors.black),
-        ("INNERGRID", (0,0), (-1,len(items)+1), 0.5, colors.black),
+        ("INNERGRID", (0,0), (-1,-1), 0.5, colors.black),
     ]))
     return tbl
 

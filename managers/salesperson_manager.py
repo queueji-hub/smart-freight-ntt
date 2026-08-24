@@ -237,15 +237,45 @@ def save_salesperson(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None
 
 
 def delete_salesperson(salesperson_id: Any, user: Optional[Dict[str, Any]] = None) -> bool:
-    if str(salesperson_id).startswith("u_"):
-        return True
+    if not salesperson_id:
+        return False
     tenant = get_current_tenant_id()
+    sid_str = str(salesperson_id).strip()
+    
     with get_connection() as conn:
         _ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute("""
-                DELETE FROM salespersons
-                WHERE id = %s AND (tenant_id = %s OR tenant_id IS NULL OR tenant_id = 'default')
-            """, (int(salesperson_id), tenant))
+            is_sqlite = type(conn).__name__ == "SQLiteConnAdapter" or "sqlite" in str(type(conn)).lower()
+            param_placeholder = "?" if is_sqlite else "%s"
+
+            if sid_str.startswith("u_"):
+                uid = sid_str.split("_")[1]
+                cur.execute(f"SELECT id, username, full_name, email FROM users WHERE id={param_placeholder}", (uid,))
+                u = cur.fetchone()
+                if u:
+                    uname = u.get("username") or ""
+                    disp_name = u.get("full_name") or uname
+                    # Insert inactive record into salespersons so it's ignored and excluded from list
+                    cur.execute(f"""
+                        INSERT INTO salespersons (tenant_id, sales_code, name, email, remarks, is_active)
+                        VALUES ({param_placeholder}, {param_placeholder}, {param_placeholder}, {param_placeholder}, 'Excluded from Sales', 0)
+                    """ if is_sqlite else f"""
+                        INSERT INTO salespersons (tenant_id, sales_code, name, email, remarks, is_active)
+                        VALUES ({param_placeholder}, {param_placeholder}, {param_placeholder}, {param_placeholder}, 'Excluded from Sales', FALSE)
+                    """, (tenant, uname.upper()[:10], disp_name, u.get("email") or ""))
+            else:
+                try:
+                    cur.execute(f"""
+                        DELETE FROM salespersons
+                        WHERE id = {param_placeholder} AND (tenant_id = {param_placeholder} OR tenant_id IS NULL OR tenant_id = 'default')
+                    """, (int(salesperson_id), tenant))
+                except Exception:
+                    cur.execute(f"""
+                        UPDATE salespersons SET is_active = 0
+                        WHERE id = {param_placeholder} AND (tenant_id = {param_placeholder} OR tenant_id IS NULL OR tenant_id = 'default')
+                    """ if is_sqlite else f"""
+                        UPDATE salespersons SET is_active = FALSE
+                        WHERE id = {param_placeholder} AND (tenant_id = {param_placeholder} OR tenant_id IS NULL OR tenant_id = 'default')
+                    """, (int(salesperson_id), tenant))
             conn.commit()
             return True

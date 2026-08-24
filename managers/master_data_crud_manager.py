@@ -364,21 +364,53 @@ def delete_port(port_id: int, user: Optional[Dict[str, Any]] = None) -> bool:
     with get_connection() as conn:
         _ensure_master_schema(conn)
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM ports WHERE id=%s AND tenant_id=%s", (int(port_id), tenant))
+            is_sqlite = type(conn).__name__ == "SQLiteConnAdapter" or "sqlite" in str(type(conn)).lower()
+            param_placeholder = "?" if is_sqlite else "%s"
+            try:
+                cur.execute(f"DELETE FROM ports WHERE id={param_placeholder} AND (tenant_id={param_placeholder} OR tenant_id IS NULL OR tenant_id='default')", (int(port_id), tenant))
+            except Exception:
+                cur.execute(f"UPDATE ports SET is_active=0 WHERE id={param_placeholder}" if is_sqlite else f"UPDATE ports SET is_active=FALSE WHERE id={param_placeholder}", (int(port_id),))
             conn.commit()
             return True
 
 
 def delete_party(party_id: int, user: Optional[Dict[str, Any]] = None) -> bool:
-    """Deletes a business party record and associated roles/finance profiles."""
+    """Deletes a business party record and associated roles/finance profiles/legacy records."""
     if not party_id:
         return False
     tenant = _tenant(user)
     with get_connection() as conn:
         _ensure_master_schema(conn)
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM party_roles WHERE party_id=%s AND tenant_id=%s", (int(party_id), tenant))
-            cur.execute("DELETE FROM party_finance_profiles WHERE party_id=%s AND tenant_id=%s", (int(party_id), tenant))
-            cur.execute("DELETE FROM business_parties WHERE id=%s AND tenant_id=%s", (int(party_id), tenant))
+            is_sqlite = type(conn).__name__ == "SQLiteConnAdapter" or "sqlite" in str(type(conn)).lower()
+            param_placeholder = "?" if is_sqlite else "%s"
+            
+            # Fetch party_code to delete matching legacy customer/vendor records
+            cur.execute(f"SELECT party_code FROM business_parties WHERE id={param_placeholder}", (int(party_id),))
+            row = cur.fetchone()
+            pcode = row["party_code"] if row and (isinstance(row, dict) or hasattr(row, "keys")) else (row[0] if row else None)
+
+            try:
+                cur.execute(f"DELETE FROM party_roles WHERE party_id={param_placeholder}", (int(party_id),))
+            except Exception:
+                pass
+            try:
+                cur.execute(f"DELETE FROM party_finance_profiles WHERE party_id={param_placeholder}", (int(party_id),))
+            except Exception:
+                pass
+            try:
+                cur.execute(f"DELETE FROM business_parties WHERE id={param_placeholder}", (int(party_id),))
+            except Exception:
+                cur.execute(f"UPDATE business_parties SET is_active=0 WHERE id={param_placeholder}" if is_sqlite else f"UPDATE business_parties SET is_active=FALSE WHERE id={param_placeholder}", (int(party_id),))
+
+            if pcode:
+                try:
+                    cur.execute(f"DELETE FROM customers WHERE customer_code={param_placeholder}", (pcode,))
+                except Exception:
+                    pass
+                try:
+                    cur.execute(f"DELETE FROM vendors WHERE vendor_code={param_placeholder}", (pcode,))
+                except Exception:
+                    pass
             conn.commit()
             return True
