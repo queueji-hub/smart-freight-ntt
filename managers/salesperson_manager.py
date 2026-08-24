@@ -80,7 +80,7 @@ def list_salespersons(active_only: bool = False, user: Optional[Dict[str, Any]] 
             except Exception:
                 pass
 
-            # Also include users from users table if not already present
+            # Also include users from users table by ensuring/syncing them as real salespersons
             try:
                 cur.execute("""
                     SELECT id, username, full_name, email, role
@@ -97,9 +97,26 @@ def list_salespersons(active_only: bool = False, user: Optional[Dict[str, Any]] 
                     urole = str(u.get("role") or "").lower()
                     if urole in ("sales", "admin", "manager", "operation") or len(sales) == 0:
                         if uname.upper() not in existing_codes and disp_name.lower() not in existing_names:
+                            # Auto-create genuine record in salespersons table
+                            scode = uname.upper()[:10]
+                            cur.execute(f"""
+                                INSERT INTO salespersons (tenant_id, sales_code, name, email, remarks, is_active)
+                                VALUES ({param_placeholder}, {param_placeholder}, {param_placeholder}, {param_placeholder}, {param_placeholder}, {param_placeholder})
+                            """ if is_sqlite else f"""
+                                INSERT INTO salespersons (tenant_id, sales_code, name, email, remarks, is_active)
+                                VALUES ({param_placeholder}, {param_placeholder}, {param_placeholder}, {param_placeholder}, {param_placeholder}, {param_placeholder})
+                                RETURNING id
+                            """, (tenant, scode, disp_name, u.get("email") or "", f"System User ({urole})", 1 if is_sqlite else True))
+                            if is_sqlite:
+                                new_id = cur.lastrowid
+                            else:
+                                ret_row = cur.fetchone()
+                                new_id = ret_row[0] if ret_row else u["id"]
+                            conn.commit()
+
                             sales.append({
-                                "id": f"u_{u['id']}",
-                                "sales_code": uname.upper()[:10],
+                                "id": new_id,
+                                "sales_code": scode,
                                 "name": disp_name,
                                 "email": u.get("email") or "",
                                 "phone": "",
@@ -107,6 +124,8 @@ def list_salespersons(active_only: bool = False, user: Optional[Dict[str, Any]] 
                                 "remarks": f"System User ({urole})",
                                 "is_active": True,
                             })
+                            existing_codes.add(scode)
+                            existing_names.add(disp_name.lower())
             except Exception:
                 pass
 
@@ -127,28 +146,55 @@ def list_salespersons(active_only: bool = False, user: Optional[Dict[str, Any]] 
             return sales
 
 
-def get_salesperson(sales_id: Any, user: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-    if str(sales_id).startswith("u_"):
-        uid = int(str(sales_id).split("_")[1])
-        with get_connection() as conn:
-            _ensure_schema(conn)
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, username, full_name, email FROM users WHERE id=%s", (uid,))
-                u = cur.fetchone()
-                if u:
-                    ud = dict(u)
-                    return {
-                        "id": f"u_{ud['id']}",
-                        "sales_code": ud["username"].upper()[:10],
-                        "name": ud.get("full_name") or ud["username"],
-                        "email": ud.get("email") or "",
-                        "phone": "",
-                        "commission_rate": 0.0,
-                        "remarks": "System User",
-                        "is_active": True,
-                    }
-                return None
+def resolve_salesperson_id(sales_id: Any, tenant: str = "default") -> Optional[int]:
+    if not sales_id:
+        return None
+    if isinstance(sales_id, int):
+        return sales_id
+    sid_str = str(sales_id).strip()
+    if sid_str.isdigit():
+        return int(sid_str)
+    if sid_str.startswith("u_"):
+        uid_str = sid_str.split("_")[1]
+        if uid_str.isdigit():
+            uid = int(uid_str)
+            with get_connection() as conn:
+                _ensure_schema(conn)
+                with conn.cursor() as cur:
+                    is_sqlite = type(conn).__name__ == "SQLiteConnAdapter" or "sqlite" in str(type(conn)).lower()
+                    p = "?" if is_sqlite else "%s"
+                    cur.execute(f"SELECT id, username, full_name, email FROM users WHERE id={p}", (uid,))
+                    u = cur.fetchone()
+                    if u:
+                        uname = u.get("username") or f"USER{uid}"
+                        disp_name = u.get("full_name") or uname
+                        cur.execute(f"SELECT id FROM salespersons WHERE sales_code={p} AND (tenant_id={p} OR tenant_id IS NULL OR tenant_id='default')", (uname.upper()[:20], tenant))
+                        sp = cur.fetchone()
+                        if sp:
+                            return sp["id"] if isinstance(sp, dict) or hasattr(sp, "keys") else sp[0]
+                        else:
+                            cur.execute(f"""
+                                INSERT INTO salespersons (tenant_id, sales_code, name, email, remarks, is_active)
+                                VALUES ({p}, {p}, {p}, {p}, 'Auto-created from User', 1)
+                            """ if is_sqlite else f"""
+                                INSERT INTO salespersons (tenant_id, sales_code, name, email, remarks, is_active)
+                                VALUES ({p}, {p}, {p}, {p}, 'Auto-created from User', TRUE)
+                                RETURNING id
+                            """, (tenant, uname.upper()[:20], disp_name, u.get("email") or ""))
+                            if is_sqlite:
+                                return cur.lastrowid
+                            else:
+                                ret_row = cur.fetchone()
+                                conn.commit()
+                                return ret_row[0] if ret_row else uid
+            return uid
+    return None
 
+
+def get_salesperson(sales_id: Any, user: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    real_id = resolve_salesperson_id(sales_id)
+    if not real_id:
+        return None
     tenant = get_current_tenant_id()
     with get_connection() as conn:
         _ensure_schema(conn)
@@ -157,7 +203,7 @@ def get_salesperson(sales_id: Any, user: Optional[Dict[str, Any]] = None) -> Opt
                 SELECT id, tenant_id, sales_code, name, email, phone, commission_rate, remarks, is_active
                 FROM salespersons
                 WHERE id = %s AND (tenant_id = %s OR tenant_id IS NULL OR tenant_id = 'default')
-            """, (int(sales_id), tenant))
+            """, (int(real_id), tenant))
             row = cur.fetchone()
             return dict(row) if row else None
 

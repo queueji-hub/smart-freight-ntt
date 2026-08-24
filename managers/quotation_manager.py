@@ -237,6 +237,18 @@ def get_quotation(quotation_no: str) -> Optional[Dict[str, Any]]:
 # =========================================================
 # MUTATION WRITING: UPDATE QUOTATION
 # =========================================================
+def _normalize_job_type(job_type: Any) -> str:
+    jt = str(job_type or "SE").strip().upper()
+    if jt in ["SE", "SI", "AE", "AI", "TE", "TI"]:
+        return jt
+    mapping = {
+        "SEA_EXP": "SE", "SEA_IMP": "SI", "AIR_EXP": "AE", "AIR_IMP": "AI",
+        "TRK_EXP": "TE", "TRK_IMP": "TI", "FREIGHT": "SE", "EXPORT": "SE",
+        "IMPORT": "SI", "SEA": "SE", "AIR": "AE", "ROAD": "TE", "TRUCK": "TE"
+    }
+    return mapping.get(jt, "SE")
+
+
 def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[str, Any]]) -> None:
     """
     Updates quotation metadata master record and replaces line rows in a block.
@@ -252,6 +264,7 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                     raise ValueError(f"Quotation '{quotation_no}' not found in database.")
 
                 q_id = header[0] if isinstance(header, (tuple, list)) else header["id"]
+                norm_job_type = _normalize_job_type(data.get("job_type"))
 
                 # 2. Mutating structural properties data
                 cur.execute("""
@@ -268,7 +281,7 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                         approval_status = COALESCE(%s, approval_status, status)
                     WHERE id = %s AND (tenant_id = %s OR tenant_id IS NULL OR tenant_id = 'default');
                 """, (
-                    data.get("job_type"), data.get("customer_name"), data.get("attention"), data.get("tel"),
+                    norm_job_type, data.get("customer_name"), data.get("attention"), data.get("tel"),
                     data.get("carrier"), data.get("pol"), data.get("pod"), data.get("quotation_date"),
                     data.get("validity_date"), data.get("payment_term"), data.get("commodity"),
                     data.get("subject"), data.get("terms_conditions"),

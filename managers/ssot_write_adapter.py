@@ -41,14 +41,41 @@ def _column_exists(cur, table: str, column: str, sqlite: bool = False) -> bool:
     return cur.fetchone() is not None
 
 
+def _sanitize_id(key: str, val: Any, tenant: str = "default") -> Optional[int]:
+    if val is None:
+        return None
+    if isinstance(val, int):
+        return val
+    s = str(val).strip()
+    if s.isdigit():
+        return int(s)
+    if s.startswith("u_") and s[2:].isdigit():
+        try:
+            from managers.salesperson_manager import resolve_salesperson_id
+            res = resolve_salesperson_id(s, tenant)
+            if res is not None:
+                return res
+        except Exception:
+            pass
+        return int(s[2:])
+    return None
+
+
 def persist_master_ids(table: str, document_key: str, document_value: Any, values: Dict[str, Any]) -> bool:
     """Persist supported master IDs when the current DB schema exposes the columns."""
     allowed = _ALLOWED.get(table, set())
-    candidate = {k: values.get(k) for k in allowed if values.get(k) is not None}
+    tenant_id = get_current_tenant_id()
+    candidate = {}
+    for k in allowed:
+        v = values.get(k)
+        if v is not None:
+            clean_v = _sanitize_id(k, v, tenant_id)
+            if clean_v is not None:
+                candidate[k] = clean_v
+
     if not candidate:
         return False
 
-    tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
             sqlite = _is_sqlite_connection(conn)
@@ -59,7 +86,7 @@ def persist_master_ids(table: str, document_key: str, document_value: Any, value
             sets = ", ".join(f"{key}=%s" for key in writable)
             params = list(writable.values()) + [document_value, tenant_id]
             cur.execute(
-                f"UPDATE {table} SET {sets} WHERE {document_key}=%s AND tenant_id=%s",
+                f"UPDATE {table} SET {sets} WHERE {document_key}=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default')",
                 params,
             )
             updated = cur.rowcount > 0

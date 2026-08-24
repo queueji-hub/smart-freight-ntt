@@ -11,7 +11,7 @@ import streamlit as st
 from config import DEFAULT_TERMS, JOB_TYPES
 from managers.auth_manager import can_write
 from managers.customer_master_manager import list_customers
-from managers.salesperson_manager import list_salespersons
+from managers.salesperson_manager import list_salespersons, resolve_salesperson_id
 from managers.charge_master_manager import list_charges
 from managers.master_data_crud_manager import list_parties, list_ports
 from managers.quotation_manager import duplicate_quotation, get_quotation_by_no, list_quotations
@@ -294,8 +294,12 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
         if not desc and code and code != "CHG":
             desc = charge_map.get(code, {}).get("description") or ""
         
-        qty = float(item.get("quantity") if item.get("quantity") is not None else 1.0)
-        rate = float(item.get("unit_rate") if item.get("unit_rate") is not None else (item.get("price") or 0.0))
+        raw_rate = item.get("unit_rate") if item.get("unit_rate") is not None else (item.get("price") or item.get("amount"))
+        try:
+            rate_val = float(raw_rate) if raw_rate is not None and str(raw_rate).strip() != "" else 0.0
+        except (ValueError, TypeError):
+            rate_val = 0.0
+            
         unit = _s(item.get("unit") or item.get("basis"), default_u).upper()
         currency = _s(item.get("currency"), "USD").upper()
         
@@ -303,9 +307,7 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
             "description": desc,
             "unit": unit,
             "currency": currency,
-            "quantity": qty,
-            "unit_rate": rate,
-            "price": qty * rate,
+            "unit_rate": rate_val if rate_val > 0 else 0.0,
             "remark": _s(item.get("remark")),
         })
 
@@ -314,9 +316,7 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
             "description": default_d,
             "unit": default_u,
             "currency": "USD",
-            "quantity": 1.0,
             "unit_rate": 0.0,
-            "price": 0.0,
             "remark": "",
         }]
 
@@ -327,12 +327,10 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
         hide_index=True,
         width="stretch",
         column_config={
-            "description": st.column_config.TextColumn("Description (รายการค่าบริการ / ค่าระวาง - เว้นว่างได้)", required=False, width="large"),
+            "description": st.column_config.TextColumn("Description (รายการค่าบริการ / ข้อกำหนด - ใส่เดี่ยวๆ ได้)", required=False, width="large"),
             "unit": st.column_config.TextColumn("Unit (หน่วย เช่น CONTAINER, CBM, TRIP, KG, PALLET)", default=default_u, required=False, width="small"),
             "currency": st.column_config.TextColumn("Curr (สกุลเงิน เช่น USD, THB, EUR, CNY)", default="USD", required=False, width="small"),
-            "quantity": st.column_config.NumberColumn("Qty (จำนวน)", min_value=0.0, step=0.01, format="%.2f", width="small"),
-            "unit_rate": st.column_config.NumberColumn("Unit Rate (ราคา/หน่วย)", min_value=0.0, step=0.01, format="%.2f", width="small"),
-            "price": st.column_config.NumberColumn("Total Amount", disabled=True, format="%.2f", width="medium"),
+            "unit_rate": st.column_config.NumberColumn("Unit Rate (ราคา/หน่วย - ถ้าไม่มีเว้นว่างหรือใส่ 0 ได้)", min_value=0.0, step=0.01, format="%.2f", width="small"),
             "remark": st.column_config.TextColumn("Remark (หมายเหตุ)", width="medium"),
         },
         key=key,
@@ -341,17 +339,19 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
     output = []
     for row in edited.to_dict("records"):
         desc = _s(row.get("description"))
-        qty = float(row.get("quantity") if row.get("quantity") is not None else 0.0)
-        rate = float(row.get("unit_rate") if row.get("unit_rate") is not None else 0.0)
+        raw_rate = row.get("unit_rate")
+        try:
+            rate = float(raw_rate) if raw_rate is not None and not pd.isna(raw_rate) and str(raw_rate).strip() != "" else 0.0
+        except (ValueError, TypeError):
+            rate = 0.0
+            
         unit = _s(row.get("unit"), default_u).upper()
         currency = _s(row.get("currency"), "USD").upper()
+        remark = _s(row.get("remark"))
 
-        # If description is empty BUT user entered rate, qty, unit, or curr
-        if not desc:
-            if rate > 0 or qty > 0 or row.get("unit") or row.get("currency") or row.get("remark"):
-                desc = ""
-            else:
-                continue
+        # Skip only completely empty rows
+        if not desc and rate <= 0 and not remark and not row.get("unit") and not row.get("currency"):
+            continue
 
         # Auto-derive charge_code behind the scenes
         code = "CHG"
@@ -380,13 +380,13 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
             "charge_code": code,
             "description": desc,
             "basis": unit,
-            "quantity": qty,
+            "quantity": 1.0,
             "unit": unit,
             "currency": currency,
             "unit_rate": rate,
-            "price": qty * rate,
-            "amount": qty * rate,
-            "remark": _s(row.get("remark")),
+            "price": rate,
+            "amount": rate,
+            "remark": remark,
         })
     return output
 
@@ -498,15 +498,8 @@ def _create_form(user: Dict[str, Any]):
             is_dg = st.checkbox("Dangerous Goods (สินค้าอันตราย / DG)", value=False, key="qv2_new_dg")
 
         section("4. Pricing & Selling Charges (รายการค่าใช้จ่ายและราคาขาย)")
-        st.caption(f"💡 รายการเสนอราคาสำหรับ {selected_mode} Freight (ใส่ Unit, Curr, Qty, Unit Rate ได้อย่างอิสระ Description เว้นว่างได้)")
+        st.caption(f"💡 รายการเสนอราคาสำหรับ {selected_mode} Freight (ใส่ Description, Unit, Curr, Unit Rate ได้อย่างอิสระ รายการข้อกำหนดใส่เฉพาะ Description ได้)")
         items_df = _item_editor(charge_map, mode=selected_mode, key=f"qv2_items_create_table_{selected_mode}")
-
-        if items_df:
-            totals_by_curr = {}
-            for item in items_df:
-                curr = item.get("currency", "USD")
-                totals_by_curr[curr] = totals_by_curr.get(curr, 0.0) + float(item.get("price") or 0.0)
-            st.write("**Total Summary:** " + " | ".join([f"**{tot:,.2f} {curr}**" for curr, tot in totals_by_curr.items()]))
 
         section("5. Terms & Remarks (เงื่อนไขและหมายเหตุ)")
         default_auto_subj = _generate_quotation_subject(
@@ -535,6 +528,7 @@ def _create_form(user: Dict[str, Any]):
             return
 
         final_addr = customer_address.strip() or _s(cust_info.get("billing_address") or cust_info.get("address"))
+        real_sales_id = resolve_salesperson_id(sales_id)
 
         payload = {
             "job_type": job_type,
@@ -543,7 +537,7 @@ def _create_form(user: Dict[str, Any]):
             "customer_address": final_addr,
             "shipper": shipper.strip() or None,
             "consignee": consignee.strip() or None,
-            "sales_id": sales_id,
+            "sales_id": real_sales_id,
             "salesperson": sales_map.get(sales_id, "") if sales_id else "",
             "attention": attention.strip(),
             "tel": tel.strip(),
@@ -735,7 +729,7 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             is_dg = st.checkbox("Dangerous Goods (DG)", value=bool(selected.get("is_dg")), key=f"edit_dg_{qno}")
 
         section("4. Pricing & Line Items")
-        st.caption("💡 พิมพ์ Description, Unit, Curr, Qty, Rate ได้อิสระ โดยไม่ต้องระบุ Charge Code")
+        st.caption("💡 พิมพ์ Description, Unit, Curr, Unit Rate ได้อย่างอิสระ รายการข้อกำหนดสามารถระบุเฉพาะ Description ได้")
         items_df = _item_editor(charge_map, existing=selected.get("items", []), mode=mode, key=f"qv2_edit_items_{qno}")
 
         section("5. Terms & Remarks")
@@ -763,6 +757,8 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             c_rec = customer_dict[customer_id]
             final_edit_addr = _s(c_rec.get("billing_address") or c_rec.get("address"))
 
+        real_edit_sales_id = resolve_salesperson_id(sales_id)
+
         payload = {
             "job_type": job_type,
             "customer_id": customer_id,
@@ -770,7 +766,7 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             "customer_address": final_edit_addr,
             "shipper": shipper.strip() or None,
             "consignee": consignee.strip() or None,
-            "sales_id": sales_id,
+            "sales_id": real_edit_sales_id,
             "salesperson": sales_map.get(sales_id, "") if sales_id else "",
             "attention": attention.strip(),
             "tel": tel.strip(),

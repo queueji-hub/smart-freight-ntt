@@ -232,19 +232,34 @@ def _build_items_table(items: List[Dict[str, Any]], styles) -> Table:
     data = [header, sub_header]
     
     for item in items:
-        amount = float(item.get("amount") or item.get("price") or 0)
-        rate = float(item.get("unit_rate") if item.get("unit_rate") is not None else amount)
-        curr = str(item.get("currency") or "USD").upper()
+        raw_rate = item.get("unit_rate")
+        if raw_rate is None or raw_rate == "":
+            raw_rate = item.get("price") or item.get("amount")
         
+        try:
+            rate_val = float(raw_rate) if raw_rate is not None and str(raw_rate).strip() != "" else 0.0
+        except (ValueError, TypeError):
+            rate_val = 0.0
+
         desc = _clean_text(item.get("description", "")) or ""
-        unit = _clean_text(item.get("unit") or item.get("basis") or "")
         remark = str(item.get("remark") or "")
-        
+
+        if rate_val > 0:
+            unit = _clean_text(item.get("unit") or item.get("basis") or "")
+            curr = str(item.get("currency") or "USD").upper()
+            rate_cell = Paragraph(f"<b>{rate_val:,.2f}</b>", styles["body"])
+        else:
+            # If unit rate is 0 or None / empty, do not display unit rate or currency
+            raw_unit = _clean_text(item.get("unit") or item.get("basis") or "")
+            unit = raw_unit if raw_unit and raw_unit != "CONTAINER" else ""
+            curr = ""
+            rate_cell = Paragraph("", styles["body"])
+
         data.append([
             Paragraph(desc, styles["body"]),
             Paragraph(unit, styles["body"]),
             Paragraph(curr, styles["body"]),
-            Paragraph(f"<b>{rate:,.2f}</b>", styles["body"]),
+            rate_cell,
             Paragraph(remark, styles["body"]),
         ])
     
