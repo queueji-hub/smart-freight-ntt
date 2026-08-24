@@ -415,61 +415,61 @@ def _create_form(user: Dict[str, Any]):
     with st.form("quotation_v2_create_form"):
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            attention = st.text_input("Attention (ผู้ติดต่อ)", value=_s(cust_info.get("contact_person")), key="qv2_new_att")
+            attention = st.text_input("Attention (ผู้ติดต่อ)", value=_s(cust_info.get("contact_person")), key=f"qv2_new_att_{selected_cust_id}")
         with c2:
-            tel = st.text_input("Telephone (เบอร์โทร)", value=_s(cust_info.get("tel") or cust_info.get("phone")), key="qv2_new_tel")
+            tel = st.text_input("Telephone (เบอร์โทร)", value=_s(cust_info.get("tel") or cust_info.get("phone")), key=f"qv2_new_tel_{selected_cust_id}")
         with c3:
             sales_keys = list(sales_map)
             sales_id = st.selectbox(
                 "Salesperson * (เลือกพนักงานขาย)",
                 sales_keys,
                 format_func=lambda x: sales_map[x],
-                key="qv2_new_sales"
+                key=f"qv2_new_sales_{selected_cust_id}"
             ) if sales_keys else None
         with c4:
-            customer_email = st.text_input("Customer Email (อีเมล)", value=_s(cust_info.get("email")), key="qv2_new_email")
+            customer_email = st.text_input("Customer Email (อีเมล)", value=_s(cust_info.get("email")), key=f"qv2_new_email_{selected_cust_id}")
 
         d1, d2, d3, d4 = st.columns(4)
         with d1:
-            job_type = st.selectbox("Job Type * (ประเภทงาน)", list(JOB_TYPES.keys()), format_func=lambda x: JOB_TYPES.get(x, x), key="qv2_new_job")
+            job_type = st.selectbox("Job Type * (ประเภทงาน)", list(JOB_TYPES.keys()), format_func=lambda x: JOB_TYPES.get(x, x), key=f"qv2_new_job_{selected_cust_id}")
         with d2:
-            payment_term = st.text_input("Payment Terms (เงื่อนไขการชำระ)", value=_s(cust_info.get("payment_term_code") or "Net 30"), key="qv2_new_pay")
+            payment_term = st.text_input("Payment Terms (เงื่อนไขการชำระ)", value=_s(cust_info.get("payment_term_code") or "Net 30"), key=f"qv2_new_pay_{selected_cust_id}")
         with d3:
-            issue_date = st.date_input("Issue Date (วันที่ออก)", today, key="qv2_new_issue")
+            issue_date = st.date_input("Issue Date (วันที่ออก)", today, key=f"qv2_new_issue_{selected_cust_id}")
         with d4:
-            valid_until = st.date_input("Valid Until (ใช้ได้ถึง)", today + timedelta(days=30), key="qv2_new_valid")
+            valid_until = st.date_input("Valid Until (ใช้ได้ถึง)", today + timedelta(days=30), key=f"qv2_new_valid_{selected_cust_id}")
 
         # Auto-populated Customer Billing Address
         default_addr = _s(cust_info.get("billing_address") or cust_info.get("address"))
-        customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า - ดึงจากฐานข้อมูล Business Party อัตโนมัติ)", value=default_addr, height=70, key="qv2_new_addr")
+        customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า - ดึงจากฐานข้อมูล Business Party อัตโนมัติ)", value=default_addr, height=70, key=f"qv2_new_addr_{selected_cust_id}")
 
         # Non-mandatory Shipper & Consignee
         sh1, sh2 = st.columns(2)
         with sh1:
-            shipper = st.text_area("Shipper (ผู้ส่งสินค้า - ไม่บังคับ)", height=68, placeholder="ระบุชื่อบริษัท / ที่อยู่ของ Shipper (ถ้ามี)", key="qv2_new_shp")
+            shipper = st.text_area("Shipper (ผู้ส่งสินค้า - ไม่บังคับ)", height=68, placeholder="ระบุชื่อบริษัท / ที่อยู่ของ Shipper (ถ้ามี)", key=f"qv2_new_shp_{selected_cust_id}")
         with sh2:
-            consignee = st.text_area("Consignee (ผู้รับสินค้า - ไม่บังคับ)", height=68, placeholder="ระบุชื่อบริษัท / ที่อยู่ของ Consignee (ถ้ามี)", key="qv2_new_csg")
+            consignee = st.text_area("Consignee (ผู้รับสินค้า - ไม่บังคับ)", height=68, placeholder="ระบุชื่อบริษัท / ที่อยู่ของ Consignee (ถ้ามี)", key=f"qv2_new_csg_{selected_cust_id}")
 
         section(f"2. Routing & Carrier ({mcfg['label']})")
         r1, r2, r3, r4 = st.columns(4)
         with r1:
-            service_type = st.selectbox("Service Type (บริการ)", SERVICE_OPTIONS, key="qv2_new_serv")
+            service_type = st.selectbox("Service Type (บริการ)", SERVICE_OPTIONS, key=f"qv2_new_serv_{selected_mode}")
         with r2:
-            pol = st.text_input(mcfg["pol_label"], placeholder=mcfg["pol_placeholder"], key="qv2_new_pol")
+            pol = st.text_input(mcfg["pol_label"], placeholder=mcfg["pol_placeholder"], key=f"qv2_new_pol_{selected_mode}")
         with r3:
-            pod = st.text_input(mcfg["pod_label"], placeholder=mcfg["pod_placeholder"], key="qv2_new_pod")
+            pod = st.text_input(mcfg["pod_label"], placeholder=mcfg["pod_placeholder"], key=f"qv2_new_pod_{selected_mode}")
         with r4:
-            incoterm = st.selectbox("Incoterm", INCOTERM_OPTIONS, key="qv2_new_inco")
+            incoterm = st.selectbox("Incoterm", INCOTERM_OPTIONS, key=f"qv2_new_inco_{selected_mode}")
 
         r5, r6, r7, r8 = st.columns(4)
         with r5:
-            origin = st.text_input("Place of Origin / Receipt (ต้นทางรับของ)", key="qv2_new_orig")
+            origin = st.text_input("Place of Origin / Receipt (ต้นทางรับของ)", key=f"qv2_new_orig_{selected_mode}")
         with r6:
-            destination = st.text_input("Place of Destination / Delivery (ปลายทางส่งของ)", key="qv2_new_dest")
+            destination = st.text_input("Place of Destination / Delivery (ปลายทางส่งของ)", key=f"qv2_new_dest_{selected_mode}")
         with r7:
-            carrier = st.text_input(mcfg["carrier_label"], placeholder=mcfg["carrier_placeholder"], key="qv2_new_carr")
+            carrier = st.text_input(mcfg["carrier_label"], placeholder=mcfg["carrier_placeholder"], key=f"qv2_new_carr_{selected_mode}")
         with r8:
-            freight_term = st.selectbox("Freight Term", ["", "Prepaid", "Collect"], key="qv2_new_frt")
+            freight_term = st.selectbox("Freight Term", ["", "Prepaid", "Collect"], key=f"qv2_new_frt_{selected_mode}")
 
         section("3. Cargo Specifications (ข้อมูลสินค้า & บรรจุภัณฑ์)")
         g1, g2, g3 = st.columns(3)
@@ -494,7 +494,7 @@ def _create_form(user: Dict[str, Any]):
 
         section("4. Pricing & Selling Charges (รายการค่าใช้จ่ายและราคาขาย)")
         st.caption(f"💡 รายการเสนอราคาสำหรับ {selected_mode} Freight (ใส่ Unit, Curr, Qty, Unit Rate ได้อย่างอิสระ Description เว้นว่างได้)")
-        items_df = _item_editor(charge_map, mode=selected_mode, key="qv2_items_create_table")
+        items_df = _item_editor(charge_map, mode=selected_mode, key=f"qv2_items_create_table_{selected_mode}")
 
         if items_df:
             totals_by_curr = {}
@@ -510,8 +510,8 @@ def _create_form(user: Dict[str, Any]):
             pod=_s(cust_info.get("default_pod")),
             customer_name=cust_info.get("company_name") or cust_info.get("display_name") or ""
         )
-        subject = st.text_input("Quotation Subject (หัวข้อ - ปรับอัตโนมัติตามงาน)", value=default_auto_subj, key="qv2_new_subj")
-        terms = st.text_area("Terms & Conditions (ข้อกำหนดและเงื่อนไข)", value=MODE_TERMS.get(selected_mode, MODE_TERMS["SEA"]), height=140, key="qv2_new_terms")
+        subject = st.text_input("Quotation Subject (หัวข้อ - ปรับอัตโนมัติตามงาน)", value=default_auto_subj, key=f"qv2_new_subj_{selected_mode}_{selected_cust_id}")
+        terms = st.text_area("Terms & Conditions (ข้อกำหนดและเงื่อนไข)", value=MODE_TERMS.get(selected_mode, MODE_TERMS["SEA"]), height=140, key=f"qv2_new_terms_{selected_mode}_{selected_cust_id}")
 
         submitted = st.form_submit_button("💾 Save Quotation as Draft", type="primary", width="stretch")
 
