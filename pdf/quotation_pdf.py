@@ -240,7 +240,7 @@ def _build_items_table(items: List[Dict[str, Any]], styles) -> Table:
         qty = float(item.get("quantity") if item.get("quantity") is not None else 1.0)
         curr = str(item.get("currency") or "USD").upper()
         
-        desc = _clean_text(item.get("description", "")) or "Freight / Service Charge"
+        desc = _clean_text(item.get("description", "")) or ""
         unit = _clean_text(item.get("unit") or item.get("basis") or "")
         
         currency_totals[curr] = currency_totals.get(curr, 0) + amount

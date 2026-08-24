@@ -92,6 +92,42 @@ MODE_CONFIG = {
     }
 }
 
+MODE_TERMS = {
+    "SEA": """1. Rates are subject to standard carrier surcharges (BAF, CAF, EBS, LSS, CIC) prevailing at time of shipment.
+2. Rates exclude origin/destination customs clearance, duty, taxes, THC, storage, demurrage, and detention unless specified.
+3. Subject to equipment and space availability at the time of booking.
+4. Standard combined Demurrage & Detention free time at destination: 7 days unless otherwise agreed in writing.
+5. Rates quoted are for general, non-hazardous cargo properly packed for ocean carriage.
+6. All business is transacted under the Standard Trading Conditions of the Freight Forwarder.""",
+
+    "AIR": """1. Rates are based on Chargeable Weight calculated at 1 CBM = 167 KGS (or 1:6 ratio) in accordance with IATA standards.
+2. Rates are subject to FSC (Fuel Surcharge) and SSC (Security Surcharge) effective on the flight departure date.
+3. Rates exclude airport terminal handling, customs clearance, duty/taxes, physical inspection fees, and airline storage at destination.
+4. Subject to flight availability, airline schedule, and carrier confirmation.
+5. Applicable to general, non-DG, non-perishable, and stackable cargo only.
+6. All business is transacted under the Standard Air Freight Forwarding Trading Conditions.""",
+
+    "ROAD": """1. Rates include standard transport from origin loading point to destination delivery point.
+2. Excludes border customs clearance, duty/taxes, border inspection fees, and border transshipment fees unless specified.
+3. Free loading/unloading time: 3 hours per truck; detention thereafter charged at THB 2,500 / day / truck.
+4. Cargo weight and dimensions must strictly comply with highway weight limits and road transport regulations.
+5. Forklift, crane, and manual labor for loading/unloading are not included unless specified.
+6. Subject to truck availability and border customs gate operating hours.""",
+
+    "RAIL": """1. Rates apply to station-to-station (ICD / Rail Terminal) rail freight.
+2. Excludes terminal handling charges (THC), container lift-on/lift-off (LOLO), customs clearance, and border transit fees unless specified.
+3. Subject to rail wagon/container allocation and railway timetable.
+4. Transit times are estimated and subject to railway operating conditions and border customs clearance.
+5. Free time at rail terminal: 3 days; storage/demurrage thereafter applied per terminal tariff.
+6. Rates quoted are for general non-hazardous cargo only.""",
+
+    "MULTIMODAL": """1. Multimodal through rates cover origin to destination routing as specified.
+2. Subject to individual transport mode surcharges (BAF/FSC), currency exchange fluctuations, and terminal handling charges.
+3. Excludes customs duties, taxes, quarantine, physical inspection, and destination storage unless specified.
+4. Subject to space, equipment, and carrier scheduling across all connecting transit legs.
+5. All transactions are conducted under standard Multimodal Transport Operator (MTO) / FIATA trading conditions.""",
+}
+
 
 def _s(value: Any, default: str = "") -> str:
     if value is None:
@@ -205,8 +241,8 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
     for item in (existing or []):
         desc = _s(item.get("description"))
         code = _s(item.get("charge_code")).upper()
-        if not desc and code:
-            desc = charge_map.get(code, {}).get("description") or code
+        if not desc and code and code != "CHG":
+            desc = charge_map.get(code, {}).get("description") or ""
         
         qty = float(item.get("quantity") if item.get("quantity") is not None else 1.0)
         rate = float(item.get("unit_rate") if item.get("unit_rate") is not None else (item.get("price") or 0.0))
@@ -214,7 +250,7 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
         currency = _s(item.get("currency"), "USD").upper()
         
         rows.append({
-            "description": desc or default_d,
+            "description": desc,
             "unit": unit,
             "currency": currency,
             "quantity": qty,
@@ -263,31 +299,32 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
         # If description is empty BUT user entered rate, qty, unit, or curr
         if not desc:
             if rate > 0 or qty > 0 or row.get("unit") or row.get("currency") or row.get("remark"):
-                desc = default_d
+                desc = ""
             else:
                 continue
 
         # Auto-derive charge_code behind the scenes
         code = "CHG"
-        desc_upper = desc.upper()
-        if "OCEAN" in desc_upper or "SEA" in desc_upper or "OFR" in desc_upper:
-            code = "OFR"
-        elif "AIR" in desc_upper or "AFR" in desc_upper:
-            code = "AIR"
-        elif "TERMINAL" in desc_upper or "THC" in desc_upper:
-            code = "THC"
-        elif "DOC" in desc_upper or "DOCUMENT" in desc_upper:
-            code = "DOC"
-        elif "CUSTOM" in desc_upper or "CLEARANCE" in desc_upper or "DUTY" in desc_upper:
-            code = "CUS"
-        elif "TRUCK" in desc_upper or "HAULAGE" in desc_upper or "TRANSPORT" in desc_upper:
-            code = "TRK"
-        elif "STORAGE" in desc_upper or "WAREHOUSE" in desc_upper:
-            code = "STG"
-        elif "DEMURRAGE" in desc_upper or "DETENTION" in desc_upper:
-            code = "DEM"
-        elif len(desc.split()[0]) <= 5 and desc.split()[0].isalnum():
-            code = desc.split()[0].upper()
+        if desc:
+            desc_upper = desc.upper()
+            if "OCEAN" in desc_upper or "SEA" in desc_upper or "OFR" in desc_upper:
+                code = "OFR"
+            elif "AIR" in desc_upper or "AFR" in desc_upper:
+                code = "AIR"
+            elif "TERMINAL" in desc_upper or "THC" in desc_upper:
+                code = "THC"
+            elif "DOC" in desc_upper or "DOCUMENT" in desc_upper:
+                code = "DOC"
+            elif "CUSTOM" in desc_upper or "CLEARANCE" in desc_upper or "DUTY" in desc_upper:
+                code = "CUS"
+            elif "TRUCK" in desc_upper or "HAULAGE" in desc_upper or "TRANSPORT" in desc_upper:
+                code = "TRK"
+            elif "STORAGE" in desc_upper or "WAREHOUSE" in desc_upper:
+                code = "STG"
+            elif "DEMURRAGE" in desc_upper or "DETENTION" in desc_upper:
+                code = "DEM"
+            elif len(desc.split()[0]) <= 5 and desc.split()[0].isalnum():
+                code = desc.split()[0].upper()
 
         output.append({
             "charge_code": code,
@@ -420,7 +457,7 @@ def _create_form(user: Dict[str, Any]):
 
         section("5. Terms & Remarks (เงื่อนไขและหมายเหตุ)")
         subject = st.text_input("Quotation Subject (หัวข้อ)", value=f"{selected_mode} Freight Quotation - {cust_info.get('company_name', '')}", key="qv2_new_subj")
-        terms = st.text_area("Terms & Conditions (ข้อกำหนดและเงื่อนไข)", value=DEFAULT_TERMS, height=100, key="qv2_new_terms")
+        terms = st.text_area("Terms & Conditions (ข้อกำหนดและเงื่อนไข)", value=MODE_TERMS.get(selected_mode, MODE_TERMS["SEA"]), height=140, key="qv2_new_terms")
 
         submitted = st.form_submit_button("💾 Save Quotation as Draft", type="primary", width="stretch")
 
@@ -480,7 +517,7 @@ def _create_form(user: Dict[str, Any]):
         try:
             qno = create_quotation_ssot(payload, items_df)
             st.session_state.pop("qv2_create", None)
-            st.session_state["qv2_selected"] = qno
+            st.session_state["qv2_selected_target"] = qno
             st.success(f"🎉 Quotation {qno} created successfully!")
             st.rerun()
         except Exception as exc:
@@ -605,7 +642,7 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
 
         section("5. Terms & Remarks")
         subject = st.text_input("Subject", value=_s(selected.get("subject")), key=f"edit_subj_{qno}")
-        terms = st.text_area("Terms & Conditions", value=_s(selected.get("terms_conditions"), DEFAULT_TERMS), height=100, key=f"edit_terms_{qno}")
+        terms = st.text_area("Terms & Conditions", value=_s(selected.get("terms_conditions")) or MODE_TERMS.get(mode, MODE_TERMS["SEA"]), height=140, key=f"edit_terms_{qno}")
 
         submitted = st.form_submit_button("💾 Save Changes", type="primary", width="stretch")
 
@@ -719,11 +756,15 @@ def render():
         return
 
     qnos = [r["quotation_no"] for r in records if r.get("quotation_no")]
+    target_qno = st.session_state.get("qv2_selected_target")
     default_qno_idx = 0
-    if st.session_state.get("qv2_selected") in qnos:
-        default_qno_idx = qnos.index(st.session_state["qv2_selected"])
+    if target_qno in qnos:
+        default_qno_idx = qnos.index(target_qno)
+    elif qnos:
+        default_qno_idx = 0
     
-    selected_no = st.selectbox("Select Quotation to Manage", qnos, index=default_qno_idx, key="qv2_selected")
+    selected_no = st.selectbox("Select Quotation to Manage", qnos, index=default_qno_idx, key="qv2_selected_box")
+    st.session_state["qv2_selected_target"] = selected_no
     selected = get_quotation_by_no(selected_no)
     if not selected:
         st.warning("Quotation not found.")
@@ -769,7 +810,7 @@ def render():
                 try:
                     new_q = duplicate_quotation(selected_no)
                     st.success(f"Created duplicate {new_q} as Draft.")
-                    st.session_state["qv2_selected"] = new_q
+                    st.session_state["qv2_selected_target"] = new_q
                     st.rerun()
                 except Exception as exc:
                     st.error(str(exc))
@@ -795,7 +836,7 @@ def render():
                     if st.button("Yes, Delete", key=f"qv2_del_yes_{selected_no}", type="primary", width="stretch"):
                         delete_quotation_ssot(selected_no)
                         st.session_state.pop(delete_key, None)
-                        st.session_state.pop("qv2_selected", None)
+                        st.session_state.pop("qv2_selected_target", None)
                         st.success(f"Quotation {selected_no} deleted.")
                         st.rerun()
                 with c_del_no:

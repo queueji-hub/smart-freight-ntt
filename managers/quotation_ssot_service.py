@@ -43,8 +43,8 @@ def _normalize_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 item["unit"] = item.get("basis") or "CONTAINER"
             if not item.get("currency"):
                 item["currency"] = "USD"
-            if not item.get("description"):
-                item["description"] = code or "Freight / Service Charge"
+            if "description" not in item or item["description"] is None:
+                item["description"] = ""
         normalized.append(item)
     return normalized
 
