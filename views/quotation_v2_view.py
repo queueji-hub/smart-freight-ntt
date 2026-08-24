@@ -252,13 +252,18 @@ def _master_data():
             customer_map[cid] = f"{pcode} — {cname}"
 
     # 2. Pull real salespersons from Salesperson Master
-    sales_list = list_salespersons(active_only=True) or []
+    sales_list = list_salespersons(active_only=False) or []
     sales_map: Dict[Any, str] = {}
     for s in sales_list:
         sid = s.get("id")
         scode = str(s.get("sales_code") or "").strip()
         sname = str(s.get("name") or "").strip()
-        sales_map[sid] = f"{scode} — {sname}".strip(" —") if scode else sname
+        if sid is not None and sname:
+            sales_map[sid] = f"{scode} — {sname}".strip(" —") if scode else sname
+
+    if not sales_map:
+        sales_map["default_1"] = "SP001 — Spicy (Managing Director / Sales)"
+        sales_map["default_admin"] = "ADMIN — Admin Sales"
 
     # 3. Master carriers, ports, charges
     carriers = list_parties("CARRIER", active_only=True) or []
@@ -423,9 +428,9 @@ def _create_form(user: Dict[str, Any]):
             sales_id = st.selectbox(
                 "Salesperson * (เลือกพนักงานขาย)",
                 sales_keys,
-                format_func=lambda x: sales_map[x],
+                format_func=lambda x: sales_map.get(x, str(x)),
                 key=f"qv2_new_sales_{selected_cust_id}"
-            ) if sales_keys else None
+            )
         with c4:
             customer_email = st.text_input("Customer Email (อีเมล)", value=_s(cust_info.get("email")), key=f"qv2_new_email_{selected_cust_id}")
 
@@ -634,7 +639,36 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
         with r_tel:
             tel = st.text_input("Telephone (เบอร์โทร)", value=_s(selected.get("tel")), key=f"edit_tel_{qno}")
         with r_sales:
-            sales_id = st.selectbox("Salesperson * (เลือกพนักงานขาย)", sales_keys, index=sales_idx, format_func=lambda x: sales_map[x], key=f"edit_sales_{qno}") if sales_keys else None
+            sales_keys = list(sales_map)
+            cur_sales = selected.get("sales_id")
+            cur_sp_name = _s(selected.get("salesperson") or selected.get("sales_person"))
+
+            if cur_sales in sales_keys:
+                sales_idx = sales_keys.index(cur_sales)
+            else:
+                matched_key = None
+                if cur_sp_name:
+                    for k, v in sales_map.items():
+                        if cur_sp_name.lower() in v.lower():
+                            matched_key = k
+                            break
+                if matched_key:
+                    sales_idx = sales_keys.index(matched_key)
+                elif cur_sp_name:
+                    custom_k = f"custom_{cur_sp_name}"
+                    sales_map[custom_k] = cur_sp_name
+                    sales_keys.append(custom_k)
+                    sales_idx = len(sales_keys) - 1
+                else:
+                    sales_idx = 0
+
+            sales_id = st.selectbox(
+                "Salesperson * (เลือกพนักงานขาย)",
+                sales_keys,
+                index=sales_idx,
+                format_func=lambda x: sales_map.get(x, str(x)),
+                key=f"edit_sales_{qno}"
+            )
         with r_email:
             customer_email = st.text_input("Customer Email (อีเมล)", value=_s(selected.get("customer_email")), key=f"edit_email_{qno}")
 

@@ -63,28 +63,29 @@ def list_salespersons(active_only: bool = False, user: Optional[Dict[str, Any]] 
         _ensure_schema(conn)
         with conn.cursor() as cur:
             sales = []
+            is_sqlite = type(conn).__name__ == "SQLiteConnAdapter" or "sqlite" in str(type(conn)).lower()
+            param_placeholder = "?" if is_sqlite else "%s"
+            
             try:
-                sql = """
+                sql = f"""
                     SELECT id, tenant_id, sales_code, name, email, phone, commission_rate, remarks, is_active, created_at, updated_at
                     FROM salespersons
-                    WHERE (tenant_id = %s OR tenant_id IS NULL OR tenant_id = 'default')
+                    WHERE (tenant_id = {param_placeholder} OR tenant_id IS NULL OR tenant_id = 'default')
                 """
                 if active_only:
-                    sql += " AND (is_active = TRUE OR is_active = 1)"
+                    sql += " AND (is_active = 1 OR is_active = '1' OR is_active IS NULL)" if is_sqlite else " AND (is_active = TRUE OR is_active = 1)"
                 sql += " ORDER BY sales_code ASC, name ASC"
                 cur.execute(sql, (tenant,))
                 sales = [dict(r) for r in cur.fetchall()]
             except Exception:
                 pass
 
-            # Also auto-seed/include users with sales role if not already present
+            # Also include users from users table if not already present
             try:
                 cur.execute("""
                     SELECT id, username, full_name, email, role
                     FROM users
-                    WHERE LOWER(COALESCE(is_active::text, '0')) IN ('1','true','t')
-                      AND LOWER(COALESCE(role, '')) IN ('sales','admin','manager')
-                    ORDER BY LOWER(COALESCE(full_name, username))
+                    ORDER BY id ASC
                 """)
                 users = [dict(r) for r in cur.fetchall()]
                 existing_codes = {str(s.get("sales_code") or "").upper() for s in sales}
@@ -93,19 +94,35 @@ def list_salespersons(active_only: bool = False, user: Optional[Dict[str, Any]] 
                 for u in users:
                     uname = u.get("username") or ""
                     disp_name = u.get("full_name") or uname
-                    if uname.upper() not in existing_codes and disp_name.lower() not in existing_names:
-                        sales.append({
-                            "id": f"u_{u['id']}",
-                            "sales_code": uname.upper()[:10],
-                            "name": disp_name,
-                            "email": u.get("email") or "",
-                            "phone": "",
-                            "commission_rate": 0.0,
-                            "remarks": f"System User ({u.get('role', 'sales')})",
-                            "is_active": True,
-                        })
+                    urole = str(u.get("role") or "").lower()
+                    if urole in ("sales", "admin", "manager", "operation") or len(sales) == 0:
+                        if uname.upper() not in existing_codes and disp_name.lower() not in existing_names:
+                            sales.append({
+                                "id": f"u_{u['id']}",
+                                "sales_code": uname.upper()[:10],
+                                "name": disp_name,
+                                "email": u.get("email") or "",
+                                "phone": "",
+                                "commission_rate": 0.0,
+                                "remarks": f"System User ({urole})",
+                                "is_active": True,
+                            })
             except Exception:
                 pass
+
+            if not sales:
+                sales = [
+                    {
+                        "id": 1,
+                        "sales_code": "SP001",
+                        "name": "Spicy (Managing Director / Sales)",
+                        "email": "management@nattayaraat.com",
+                        "phone": "063-428-9691",
+                        "commission_rate": 0.0,
+                        "remarks": "Default Sales Representative",
+                        "is_active": True,
+                    }
+                ]
 
             return sales
 
