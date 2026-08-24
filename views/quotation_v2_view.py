@@ -93,40 +93,85 @@ MODE_CONFIG = {
 }
 
 MODE_TERMS = {
-    "SEA": """1. Rates are subject to standard carrier surcharges (BAF, CAF, EBS, LSS, CIC) prevailing at time of shipment.
-2. Rates exclude origin/destination customs clearance, duty, taxes, THC, storage, demurrage, and detention unless specified.
-3. Subject to equipment and space availability at the time of booking.
-4. Standard combined Demurrage & Detention free time at destination: 7 days unless otherwise agreed in writing.
-5. Rates quoted are for general, non-hazardous cargo properly packed for ocean carriage.
-6. All business is transacted under the Standard Trading Conditions of the Freight Forwarder.""",
+    "SEA": """Rates are subject to standard carrier surcharges (BAF, CAF, EBS, LSS, CIC) prevailing at time of shipment.
+Rates exclude origin/destination customs clearance, duty, taxes, THC, storage, demurrage, and detention unless specified.
+Subject to equipment and space availability at the time of booking.
+Standard combined Demurrage & Detention free time at destination: 7 days unless otherwise agreed in writing.
+Rates quoted are for general, non-hazardous cargo properly packed for ocean carriage.
+All business is transacted under the Standard Trading Conditions of the Freight Forwarder.""",
 
-    "AIR": """1. Rates are based on Chargeable Weight calculated at 1 CBM = 167 KGS (or 1:6 ratio) in accordance with IATA standards.
-2. Rates are subject to FSC (Fuel Surcharge) and SSC (Security Surcharge) effective on the flight departure date.
-3. Rates exclude airport terminal handling, customs clearance, duty/taxes, physical inspection fees, and airline storage at destination.
-4. Subject to flight availability, airline schedule, and carrier confirmation.
-5. Applicable to general, non-DG, non-perishable, and stackable cargo only.
-6. All business is transacted under the Standard Air Freight Forwarding Trading Conditions.""",
+    "AIR": """Rates are based on Chargeable Weight calculated at 1 CBM = 167 KGS (or 1:6 ratio) in accordance with IATA standards.
+Rates are subject to FSC (Fuel Surcharge) and SSC (Security Surcharge) effective on the flight departure date.
+Rates exclude airport terminal handling, customs clearance, duty/taxes, physical inspection fees, and airline storage at destination.
+Subject to flight availability, airline schedule, and carrier confirmation.
+Applicable to general, non-DG, non-perishable, and stackable cargo only.
+All business is transacted under the Standard Air Freight Forwarding Trading Conditions.""",
 
-    "ROAD": """1. Rates include standard transport from origin loading point to destination delivery point.
-2. Excludes border customs clearance, duty/taxes, border inspection fees, and border transshipment fees unless specified.
-3. Free loading/unloading time: 3 hours per truck; detention thereafter charged at THB 2,500 / day / truck.
-4. Cargo weight and dimensions must strictly comply with highway weight limits and road transport regulations.
-5. Forklift, crane, and manual labor for loading/unloading are not included unless specified.
-6. Subject to truck availability and border customs gate operating hours.""",
+    "ROAD": """Rates include standard transport from origin loading point to destination delivery point.
+Excludes border customs clearance, duty/taxes, border inspection fees, and border transshipment fees unless specified.
+Free loading/unloading time: 3 hours per truck; detention thereafter charged at THB 3,500 / day / truck.
+Cargo weight and dimensions must strictly comply with highway weight limits and road transport regulations.
+Forklift, crane, and manual labor for loading/unloading are not included unless specified.
+Subject to truck availability and border customs gate operating hours.""",
 
-    "RAIL": """1. Rates apply to station-to-station (ICD / Rail Terminal) rail freight.
-2. Excludes terminal handling charges (THC), container lift-on/lift-off (LOLO), customs clearance, and border transit fees unless specified.
-3. Subject to rail wagon/container allocation and railway timetable.
-4. Transit times are estimated and subject to railway operating conditions and border customs clearance.
-5. Free time at rail terminal: 3 days; storage/demurrage thereafter applied per terminal tariff.
-6. Rates quoted are for general non-hazardous cargo only.""",
+    "RAIL": """Rates apply to station-to-station (ICD / Rail Terminal) rail freight.
+Excludes terminal handling charges (THC), container lift-on/lift-off (LOLO), customs clearance, and border transit fees unless specified.
+Subject to rail wagon/container allocation and railway timetable.
+Transit times are estimated and subject to railway operating conditions and border customs clearance.
+Free time at rail terminal: 3 days; storage/demurrage thereafter applied per terminal tariff.
+Rates quoted are for general non-hazardous cargo only.""",
 
-    "MULTIMODAL": """1. Multimodal through rates cover origin to destination routing as specified.
-2. Subject to individual transport mode surcharges (BAF/FSC), currency exchange fluctuations, and terminal handling charges.
-3. Excludes customs duties, taxes, quarantine, physical inspection, and destination storage unless specified.
-4. Subject to space, equipment, and carrier scheduling across all connecting transit legs.
-5. All transactions are conducted under standard Multimodal Transport Operator (MTO) / FIATA trading conditions.""",
+    "MULTIMODAL": """Multimodal through rates cover origin to destination routing as specified.
+Subject to individual transport mode surcharges (BAF/FSC), currency exchange fluctuations, and terminal handling charges.
+Excludes customs duties, taxes, quarantine, physical inspection, and destination storage unless specified.
+Subject to space, equipment, and carrier scheduling across all connecting transit legs.
+All transactions are conducted under standard Multimodal Transport Operator (MTO) / FIATA trading conditions.""",
 }
+
+
+def _clean_text(val: Any) -> str:
+    """Strips internal codes (e.g. 'BP001 — ', 'C0001 — ') for display."""
+    if val is None:
+        return ""
+    text = str(val).strip()
+    if not text or text.lower() in {"none", "nan", "nat"}:
+        return ""
+    if " — " in text:
+        parts = text.split(" — ", 1)
+        if len(parts[0]) <= 8 and (parts[0].isalnum() or parts[0].startswith(("BP", "C", "SP", "P", "CHG", "USR"))):
+            return parts[1].strip()
+    elif " - " in text:
+        parts = text.split(" - ", 1)
+        if len(parts[0]) <= 8 and (parts[0].isalnum() or parts[0].startswith(("BP", "C", "SP", "P", "CHG", "USR"))):
+            return parts[1].strip()
+    return text
+
+
+def _generate_quotation_subject(mode: str, pol: str = "", pod: str = "", customer_name: str = "", service_type: str = "", commodity: str = "") -> str:
+    """Dynamically generates an appropriate quotation subject based on mode, route, service, and customer."""
+    mode_name = {
+        "SEA": "Ocean Freight",
+        "AIR": "Air Freight",
+        "ROAD": "Cross-Border / Road Freight",
+        "RAIL": "Rail Freight",
+        "MULTIMODAL": "Multimodal Freight",
+    }.get(mode.upper() if mode else "SEA", "Freight")
+    
+    route_part = ""
+    pol_clean = _clean_text(pol).strip()
+    pod_clean = _clean_text(pod).strip()
+    if pol_clean and pod_clean:
+        route_part = f": {pol_clean} ➔ {pod_clean}"
+    elif pol_clean:
+        route_part = f" ex {pol_clean}"
+    elif pod_clean:
+        route_part = f" to {pod_clean}"
+        
+    srv_part = f" ({service_type})" if service_type and service_type not in mode_name else ""
+    cust_clean = _clean_text(customer_name).strip()
+    cust_part = f" - {cust_clean}" if cust_clean else ""
+    
+    return f"{mode_name}{srv_part} Quotation{route_part}{cust_part}".strip()
 
 
 def _s(value: Any, default: str = "") -> str:
@@ -368,11 +413,12 @@ def _create_form(user: Dict[str, Any]):
     cust_info = customer_dict.get(selected_cust_id, {}) if selected_cust_id else {}
 
     with st.form("quotation_v2_create_form"):
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         with c1:
             attention = st.text_input("Attention (ผู้ติดต่อ)", value=_s(cust_info.get("contact_person")), key="qv2_new_att")
-            tel = st.text_input("Telephone (เบอร์โทร)", value=_s(cust_info.get("tel") or cust_info.get("phone")), key="qv2_new_tel")
         with c2:
+            tel = st.text_input("Telephone (เบอร์โทร)", value=_s(cust_info.get("tel") or cust_info.get("phone")), key="qv2_new_tel")
+        with c3:
             sales_keys = list(sales_map)
             sales_id = st.selectbox(
                 "Salesperson * (เลือกพนักงานขาย)",
@@ -380,15 +426,17 @@ def _create_form(user: Dict[str, Any]):
                 format_func=lambda x: sales_map[x],
                 key="qv2_new_sales"
             ) if sales_keys else None
+        with c4:
             customer_email = st.text_input("Customer Email (อีเมล)", value=_s(cust_info.get("email")), key="qv2_new_email")
-        with c3:
-            job_type = st.selectbox("Job Type * (ประเภทงาน)", list(JOB_TYPES.keys()), format_func=lambda x: JOB_TYPES.get(x, x), key="qv2_new_job")
-            payment_term = st.text_input("Payment Terms (เงื่อนไขการชำระ)", value=_s(cust_info.get("payment_term_code") or "Net 30"), key="qv2_new_pay")
 
-        d1, d2 = st.columns(2)
+        d1, d2, d3, d4 = st.columns(4)
         with d1:
-            issue_date = st.date_input("Issue Date (วันที่ออก)", today, key="qv2_new_issue")
+            job_type = st.selectbox("Job Type * (ประเภทงาน)", list(JOB_TYPES.keys()), format_func=lambda x: JOB_TYPES.get(x, x), key="qv2_new_job")
         with d2:
+            payment_term = st.text_input("Payment Terms (เงื่อนไขการชำระ)", value=_s(cust_info.get("payment_term_code") or "Net 30"), key="qv2_new_pay")
+        with d3:
+            issue_date = st.date_input("Issue Date (วันที่ออก)", today, key="qv2_new_issue")
+        with d4:
             valid_until = st.date_input("Valid Until (ใช้ได้ถึง)", today + timedelta(days=30), key="qv2_new_valid")
 
         # Auto-populated Customer Billing Address
@@ -456,7 +504,13 @@ def _create_form(user: Dict[str, Any]):
             st.write("**Total Summary:** " + " | ".join([f"**{tot:,.2f} {curr}**" for curr, tot in totals_by_curr.items()]))
 
         section("5. Terms & Remarks (เงื่อนไขและหมายเหตุ)")
-        subject = st.text_input("Quotation Subject (หัวข้อ)", value=f"{selected_mode} Freight Quotation - {cust_info.get('company_name', '')}", key="qv2_new_subj")
+        default_auto_subj = _generate_quotation_subject(
+            mode=selected_mode,
+            pol=_s(cust_info.get("default_pol")),
+            pod=_s(cust_info.get("default_pod")),
+            customer_name=cust_info.get("company_name") or cust_info.get("display_name") or ""
+        )
+        subject = st.text_input("Quotation Subject (หัวข้อ - ปรับอัตโนมัติตามงาน)", value=default_auto_subj, key="qv2_new_subj")
         terms = st.text_area("Terms & Conditions (ข้อกำหนดและเงื่อนไข)", value=MODE_TERMS.get(selected_mode, MODE_TERMS["SEA"]), height=140, key="qv2_new_terms")
 
         submitted = st.form_submit_button("💾 Save Quotation as Draft", type="primary", width="stretch")
@@ -568,18 +622,28 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
 
     with st.form(f"quotation_v2_edit_{qno}"):
         section("1. Quotation Details")
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns([2, 1])
         with c1:
             customer_id = st.selectbox("Customer * (ลูกค้า)", cust_keys, index=cust_idx, format_func=lambda x: customer_map[x], key=f"edit_cust_{qno}") if cust_keys else None
-            attention = st.text_input("Attention (ผู้ติดต่อ)", value=_s(selected.get("attention")), key=f"edit_att_{qno}")
-            tel = st.text_input("Telephone (เบอร์โทร)", value=_s(selected.get("tel")), key=f"edit_tel_{qno}")
         with c2:
-            sales_id = st.selectbox("Salesperson * (เลือกพนักงานขาย)", sales_keys, index=sales_idx, format_func=lambda x: sales_map[x], key=f"edit_sales_{qno}") if sales_keys else None
-            customer_email = st.text_input("Customer Email (อีเมล)", value=_s(selected.get("customer_email")), key=f"edit_email_{qno}")
-            payment_term = st.text_input("Payment Terms", value=_s(selected.get("payment_term"), "Net 30"), key=f"edit_pay_{qno}")
-        with c3:
             job_type = st.selectbox("Job Type *", job_keys, index=job_idx, format_func=lambda x: JOB_TYPES.get(x, x), key=f"edit_job_{qno}")
+
+        r_att, r_tel, r_sales, r_email = st.columns(4)
+        with r_att:
+            attention = st.text_input("Attention (ผู้ติดต่อ)", value=_s(selected.get("attention")), key=f"edit_att_{qno}")
+        with r_tel:
+            tel = st.text_input("Telephone (เบอร์โทร)", value=_s(selected.get("tel")), key=f"edit_tel_{qno}")
+        with r_sales:
+            sales_id = st.selectbox("Salesperson * (เลือกพนักงานขาย)", sales_keys, index=sales_idx, format_func=lambda x: sales_map[x], key=f"edit_sales_{qno}") if sales_keys else None
+        with r_email:
+            customer_email = st.text_input("Customer Email (อีเมล)", value=_s(selected.get("customer_email")), key=f"edit_email_{qno}")
+
+        d1, d2, d3 = st.columns(3)
+        with d1:
+            payment_term = st.text_input("Payment Terms", value=_s(selected.get("payment_term"), "Net 30"), key=f"edit_pay_{qno}")
+        with d2:
             issue_date = st.date_input("Issue Date", issue_date_val, key=f"edit_issue_{qno}")
+        with d3:
             valid_until = st.date_input("Valid Until", valid_until_val, key=f"edit_valid_{qno}")
 
         customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า)", value=curr_addr, height=70, key=f"edit_addr_{qno}")

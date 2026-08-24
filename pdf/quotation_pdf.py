@@ -309,7 +309,7 @@ def _build_terms(terms_text: str, styles) -> List:
     if not terms_text:
         return flowables
     for line in terms_text.strip().split("\n"):
-        line = line.strip().lstrip("- ").strip()
+        line = re.sub(r"^(\d+[\.\)]\s*|-\s*|\*\s*)", "", line.strip()).strip()
         if not line:
             continue
         flowables.append(Paragraph(
