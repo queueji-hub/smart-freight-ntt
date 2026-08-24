@@ -17,7 +17,7 @@ apply_theme()
 ERP_MODULES = {
     "EXECUTIVE": [("dashboard", "Home", "dashboard"), ("reports", "Reports", "reports")],
     "DATA": [("data", "Master Data", "settings")],
-    "SALES": [("crm", "Customers", "crm"), ("quotation", "Quotations", "quotation"), ("handover", "Job Handover", "shipment")],
+    "SALES": [("quotation", "Quotations", "quotation")],
     "OPERATIONS": [("booking", "Bookings", "booking"), ("job_control", "Jobs", "shipment"), ("bl", "Bills of Lading", "bl")],
     "DOCUMENTS": [("document", "Documents", "document")],
     "FINANCE": [("billing", "Billing & AR", "billing"), ("ap", "Payables (AP)", "ap"), ("profit", "Profitability", "profit")],

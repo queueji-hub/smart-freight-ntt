@@ -87,58 +87,13 @@ def _master_data():
     return customer_map, customer_dict, sales_map, carrier_map, port_map, charge_map
 
 
-def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | None = None, key: str = "qv2_items") -> list[dict]:
-    # Default standard charge dictionary to ensure all standard freight charges exist
-    default_charges = {
-        "OF": "Ocean Freight",
-        "OFR": "Ocean Freight",
-        "THC": "Terminal Handling Charge",
-        "DOC": "Documentation Fee",
-        "CUS": "Customs Clearance",
-        "TRK": "Trucking / Transport",
-        "CFS": "CFS Handling",
-        "AIR": "Air Freight",
-        "INS": "Insurance",
-        "FRT": "Freight Charge",
-        "LCL": "LCL Ocean Freight",
-        "FCL": "FCL Ocean Freight",
-        "MISC": "Miscellaneous / Custom Charge",
-    }
-    # Build comprehensive charge labels including master codes + defaults + existing
-    charge_labels = {code: f"{code} — {c.get('description', '')}" for code, c in charge_map.items()}
-    for def_code, def_desc in default_charges.items():
-        if def_code not in charge_labels:
-            charge_labels[def_code] = f"{def_code} — {def_desc}"
-
+def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = None, key: str = "qv2_items_editor") -> List[Dict[str, Any]]:
     rows = []
-    for raw in existing or []:
-        item = dict(raw or {})
-        code = _s(item.get("charge_code")).upper()
+    for item in (existing or []):
         desc = _s(item.get("description"))
-        
-        if not code and desc:
-            # 1. Exact match with charge master description
-            match = next((c for c in charge_map.values() if _s(c.get("description")).lower() == desc.lower()), None)
-            if match:
-                code = _s(match.get("charge_code")).upper()
-            else:
-                # 2. Check if description starts with any code prefix (e.g. "THC — ..." or "DOC: ...")
-                for k in list(charge_labels.keys()):
-                    if desc.upper().startswith(k + " ") or desc.upper().startswith(k + "—") or desc.upper().startswith(k + "-") or desc.upper().startswith(k + ":"):
-                        code = k
-                        break
-                if not code:
-                    # 3. Partial keyword matching against master descriptions
-                    for c in charge_map.values():
-                        cd = _s(c.get("description")).lower()
-                        if cd and (cd in desc.lower() or desc.lower() in cd):
-                            code = _s(c.get("charge_code")).upper()
-                            break
-
-        if not code:
-            code = "MISC"
-        if code not in charge_labels:
-            charge_labels[code] = f"{code} — {desc or code}"
+        code = _s(item.get("charge_code")).upper()
+        if not desc and code:
+            desc = charge_map.get(code, {}).get("description") or code
         
         qty = float(item.get("quantity") or 1.0)
         rate = float(item.get("unit_rate") or item.get("price") or 0.0)
@@ -149,8 +104,7 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
             currency = "USD"
         
         rows.append({
-            "charge_code": code,
-            "description": desc or (charge_map.get(code, {}).get("description") or default_charges.get(code) or code),
+            "description": desc or "Ocean Freight",
             "unit": matched_unit,
             "currency": currency,
             "quantity": qty,
@@ -160,13 +114,10 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
         })
 
     if not rows:
-        default_code = "OFR" if "OFR" in charge_labels else ("OF" if "OF" in charge_labels else next(iter(charge_labels), "FRT"))
-        master_def = charge_map.get(default_code, {})
         rows = [{
-            "charge_code": default_code,
-            "description": master_def.get("description") or default_charges.get(default_code) or "Ocean Freight",
-            "unit": master_def.get("default_unit") or "CONTAINER",
-            "currency": master_def.get("default_currency") or "USD",
+            "description": "Ocean Freight",
+            "unit": "CONTAINER",
+            "currency": "USD",
             "quantity": 1.0,
             "unit_rate": 0.0,
             "price": 0.0,
@@ -180,8 +131,7 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
         hide_index=True,
         width="stretch",
         column_config={
-            "charge_code": st.column_config.TextColumn("Charge Code (รหัสค่าบริการ เช่น OFR, THC, DOC, TRK)", required=True, width="medium"),
-            "description": st.column_config.TextColumn("Description * (ระบุ/แก้ไขรายละเอียดได้อิสระ)", required=True, width="large"),
+            "description": st.column_config.TextColumn("Description * (รายการค่าบริการ / ค่าระวาง)", required=True, width="large"),
             "unit": st.column_config.SelectboxColumn("Unit (หน่วย)", options=UNIT_OPTIONS, required=True, width="small"),
             "currency": st.column_config.SelectboxColumn("Curr", options=CURRENCY_OPTIONS, required=True, width="small"),
             "quantity": st.column_config.NumberColumn("Qty", min_value=0.0, step=1.0, width="small"),
@@ -194,12 +144,29 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
 
     output = []
     for row in edited.to_dict("records"):
-        code = _s(row.get("charge_code")).upper()
-        if not code and not _s(row.get("description")):
-            continue
         desc = _s(row.get("description"))
         if not desc:
-            desc = charge_map.get(code, {}).get("description") or default_charges.get(code) or code
+            continue
+        
+        # Auto-derive charge_code behind the scenes
+        code = "CHG"
+        desc_upper = desc.upper()
+        if "OCEAN" in desc_upper or "FREIGHT" in desc_upper or "AIR" in desc_upper:
+            code = "OFR"
+        elif "TERMINAL" in desc_upper or "THC" in desc_upper:
+            code = "THC"
+        elif "DOC" in desc_upper:
+            code = "DOC"
+        elif "CUSTOM" in desc_upper or "CLEARANCE" in desc_upper:
+            code = "CUS"
+        elif "TRUCK" in desc_upper or "HAULAGE" in desc_upper or "TRANSPORT" in desc_upper:
+            code = "TRK"
+        elif "STORAGE" in desc_upper or "WAREHOUSE" in desc_upper:
+            code = "STG"
+        elif "DEMURRAGE" in desc_upper or "DETENTION" in desc_upper:
+            code = "DEM"
+        elif len(desc.split()[0]) <= 5 and desc.split()[0].isalnum():
+            code = desc.split()[0].upper()
         
         qty = float(row.get("quantity") or 1.0)
         rate = float(row.get("unit_rate") or 0.0)
@@ -207,8 +174,8 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
         currency = _s(row.get("currency"), "USD").upper()
         
         output.append({
-            "charge_code": code or "MISC",
-            "description": desc or code or "Charge Item",
+            "charge_code": code,
+            "description": desc,
             "basis": unit,
             "quantity": qty,
             "unit": unit,
@@ -248,6 +215,13 @@ def _create_form(user: Dict[str, Any]):
             c_info = customer_dict[customer_id]
             default_addr = _s(c_info.get("address") or c_info.get("billing_address"))
         customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า - ดึงจากฐานข้อมูลลูกค้าอัตโนมัติ)", value=default_addr, height=70)
+
+        # Non-mandatory Shipper & Consignee
+        sh1, sh2 = st.columns(2)
+        with sh1:
+            shipper = st.text_area("Shipper (ผู้ส่งสินค้า - ไม่บังคับ)", height=68, placeholder="ระบุชื่อบริษัท / ที่อยู่ของ Shipper (ถ้ามี)")
+        with sh2:
+            consignee = st.text_area("Consignee (ผู้รับสินค้า - ไม่บังคับ)", height=68, placeholder="ระบุชื่อบริษัท / ที่อยู่ของ Consignee (ถ้ามี)")
 
         section("2. Routing & Incoterms (เส้นทางและการส่งมอบ - ระบุ/พิมพ์ได้อิสระ)")
         r1, r2, r3, r4 = st.columns(4)
@@ -293,7 +267,7 @@ def _create_form(user: Dict[str, Any]):
             is_dg = st.checkbox("Dangerous Goods (สินค้าอันตราย / DG)", value=False)
 
         section("4. Pricing & Selling Charges (รายการค่าใช้จ่ายและราคาขาย)")
-        st.caption("💡 ระบุรหัสค่าบริการ เช่น OFR, THC, DOC, TRK หรือพิมพ์ Description และราคาได้อิสระตามความต้องการ")
+        st.caption("💡 พิมพ์ Description และราคาได้อิสระ โดยไม่ต้องระบุ Charge Code")
         items_df = _item_editor(charge_map, key="qv2_items_create")
 
         # Summary Metrics
@@ -335,6 +309,8 @@ def _create_form(user: Dict[str, Any]):
             "customer_id": customer_id,
             "customer_name": customer_map[customer_id],
             "customer_address": final_addr,
+            "shipper": shipper.strip() or None,
+            "consignee": consignee.strip() or None,
             "sales_id": sales_id,
             "salesperson": sales_map.get(sales_id, "") if sales_id else "",
             "attention": attention.strip(),
@@ -342,11 +318,29 @@ def _create_form(user: Dict[str, Any]):
             "customer_email": customer_email.strip(),
             "quotation_date": issue_date.isoformat(),
             "validity_date": valid_until.isoformat(),
+            "payment_term": payment_term.strip(),
             "carrier": carrier.strip() or None,
             "pol": pol.strip() or None,
             "pod": pod.strip() or None,
             "origin": origin.strip(),
             "destination": destination.strip(),
+            "mode": mode,
+            "service_type": service_type,
+            "incoterm": incoterm,
+            "freight_term": freight_term,
+            "commodity": commodity.strip() or None,
+            "hs_code": hs_code.strip() or None,
+            "container_type": container_type,
+            "container_quantity": container_qty,
+            "package_type": package_type,
+            "quantity": package_qty,
+            "weight_kg": weight_kg,
+            "volume_cbm": volume_cbm,
+            "is_dg": is_dg,
+            "subject": subject.strip() or None,
+            "terms_conditions": terms.strip(),
+            "status": "Draft",
+        }
             "mode": mode,
             "service_type": service_type,
             "incoterm": incoterm,
@@ -395,54 +389,35 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
     sales_idx = sales_keys.index(cur_sales) if cur_sales in sales_keys else 0
 
     job_keys = list(JOB_TYPES.keys())
-    raw_job = _s(selected.get("job_type"), "SE").upper()
-    job_aliases = {"SEA_EXP": "SE", "SEA_IMP": "SI", "AIR_EXP": "AE", "AIR_IMP": "AI", "TRK_EXP": "TE", "TRK_IMP": "TI", "SEA_EXPORT": "SE", "SEA_IMPORT": "SI", "AIR_EXPORT": "AE", "AIR_IMPORT": "AI"}
-    cur_job = job_aliases.get(raw_job, raw_job)
-    if cur_job not in job_keys and job_keys:
-        cur_job = job_keys[0]
+    cur_carr = selected.get("carrier_id")
+    carrier_keys = list(carrier_map)
+    carrier_idx = carrier_keys.index(cur_carr) if cur_carr in carrier_keys else 0
+
+    cur_pol = selected.get("pol_id")
+    cur_pod = selected.get("pod_id")
+    port_keys = list(port_map)
+    pol_idx = port_keys.index(cur_pol) if cur_pol in port_keys else 0
+    pod_idx = port_keys.index(cur_pod) if cur_pod in port_keys else (1 if len(port_keys) > 1 else 0)
+
+    cur_job = selected.get("job_type")
+    job_keys = list(JOB_TYPES.keys())
     job_idx = job_keys.index(cur_job) if cur_job in job_keys else 0
 
-    carrier_keys = list(carrier_map)
-    cur_carrier = selected.get("carrier_id")
-    if cur_carrier not in carrier_map:
-        c_txt = _s(selected.get("carrier")).lower()
-        cur_carrier = next((cid for cid, label in carrier_map.items() if c_txt and (c_txt in label.lower() or label.lower() in c_txt)), carrier_keys[0] if carrier_keys else None)
-    carrier_idx = carrier_keys.index(cur_carrier) if cur_carrier in carrier_keys else 0
-
-    port_keys = list(port_map)
-    cur_pol = selected.get("pol_id")
-    if cur_pol not in port_map:
-        pol_txt = _s(selected.get("pol")).lower()
-        cur_pol = next((pid for pid, label in port_map.items() if pol_txt and (pol_txt in label.lower() or label.lower().startswith(pol_txt[:5]))), port_keys[0] if port_keys else None)
-    pol_idx = port_keys.index(cur_pol) if cur_pol in port_keys else 0
-
-    cur_pod = selected.get("pod_id")
-    if cur_pod not in port_map:
-        pod_txt = _s(selected.get("pod")).lower()
-        cur_pod = next((pid for pid, label in port_map.items() if pod_txt and (pod_txt in label.lower() or label.lower().startswith(pod_txt[:5]))), port_keys[0] if port_keys else None)
-    pod_idx = port_keys.index(cur_pod) if cur_pod in port_keys else 0
-
-    raw_mode = _s(selected.get("mode"), "SEA").upper()
-    cur_mode = next((m for m in MODE_OPTIONS if m in raw_mode or raw_mode in m), "SEA")
+    cur_mode = selected.get("mode")
     mode_idx = MODE_OPTIONS.index(cur_mode) if cur_mode in MODE_OPTIONS else 0
 
-    raw_serv = _s(selected.get("service_type")).upper()
-    cur_serv = next((s for s in SERVICE_OPTIONS if s.upper() == raw_serv), "")
+    cur_serv = selected.get("service_type")
     serv_idx = SERVICE_OPTIONS.index(cur_serv) if cur_serv in SERVICE_OPTIONS else 0
 
-    raw_inco = _s(selected.get("incoterm")).upper()
-    cur_inco = next((i for i in INCOTERM_OPTIONS if i.upper() == raw_inco), "")
+    cur_inco = selected.get("incoterm")
     inco_idx = INCOTERM_OPTIONS.index(cur_inco) if cur_inco in INCOTERM_OPTIONS else 0
 
-    raw_cont = _s(selected.get("container_type"))
-    cur_cont_type = next((c for c in CONTAINER_TYPE_OPTIONS if c.lower() == raw_cont.lower()), "")
-    cont_type_idx = CONTAINER_TYPE_OPTIONS.index(cur_cont_type) if cur_cont_type in CONTAINER_TYPE_OPTIONS else 0
+    cur_cont = selected.get("container_type")
+    cont_type_idx = CONTAINER_TYPE_OPTIONS.index(cur_cont) if cur_cont in CONTAINER_TYPE_OPTIONS else 0
 
-    raw_pkg = _s(selected.get("package_type"))
-    cur_pkg_type = next((p for p in PACKAGE_TYPE_OPTIONS if p.lower() == raw_pkg.lower()), "")
-    pkg_type_idx = PACKAGE_TYPE_OPTIONS.index(cur_pkg_type) if cur_pkg_type in PACKAGE_TYPE_OPTIONS else 0
+    cur_pkg = selected.get("package_type")
+    pkg_type_idx = PACKAGE_TYPE_OPTIONS.index(cur_pkg) if cur_pkg in PACKAGE_TYPE_OPTIONS else 0
 
-    # Address fallback from customer database if empty
     curr_addr = _s(selected.get("customer_address"))
     if not curr_addr and cur_cust in customer_dict:
         c_item = customer_dict[cur_cust]
@@ -469,6 +444,13 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
 
         # Customer Address field in Edit form
         customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า)", value=curr_addr, height=70, key=f"edit_addr_{qno}")
+
+        # Non-mandatory Shipper & Consignee in Edit form
+        sh1, sh2 = st.columns(2)
+        with sh1:
+            shipper = st.text_area("Shipper (ผู้ส่งสินค้า - ไม่บังคับ)", value=_s(selected.get("shipper")), height=68, key=f"edit_shp_{qno}", placeholder="Shipper name / address")
+        with sh2:
+            consignee = st.text_area("Consignee (ผู้รับสินค้า - ไม่บังคับ)", value=_s(selected.get("consignee")), height=68, key=f"edit_csg_{qno}", placeholder="Consignee name / address")
 
         section("2. Routing & Incoterms (เส้นทางและการส่งมอบ - ระบุ/พิมพ์ได้อิสระ)")
         r1, r2, r3, r4 = st.columns(4)
@@ -517,6 +499,7 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             is_dg = st.checkbox("Dangerous Goods (DG)", value=bool(selected.get("is_dg")), key=f"edit_dg_{qno}")
 
         section("4. Pricing & Line Items")
+        st.caption("💡 พิมพ์ Description และราคาได้อิสระ โดยไม่ต้องระบุ Charge Code")
         items_df = _item_editor(charge_map, existing=selected.get("items", []), key=f"qv2_edit_items_{qno}")
 
         section("5. Terms & Remarks")
@@ -549,6 +532,8 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             "customer_id": customer_id,
             "customer_name": customer_map[customer_id],
             "customer_address": final_edit_addr,
+            "shipper": shipper.strip() or None,
+            "consignee": consignee.strip() or None,
             "sales_id": sales_id,
             "salesperson": sales_map.get(sales_id, "") if sales_id else "",
             "attention": attention.strip(),

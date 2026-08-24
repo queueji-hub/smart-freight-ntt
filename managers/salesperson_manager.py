@@ -91,23 +91,29 @@ def get_salesperson(sales_id: Any, user: Optional[Dict[str, Any]] = None) -> Opt
 
 def save_salesperson(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> int:
     tenant = get_current_tenant_id()
-    code = str(data.get("sales_code") or "").strip().upper()
     name = str(data.get("name") or "").strip()
-    if not code or not name:
-        raise ValueError("Sales Code and Salesperson Name are required.")
+    if not name:
+        raise ValueError("Salesperson Name is required.")
 
-    sid = data.get("id")
-    # If editing a virtual user entry, create a real salespersons record
-    if str(sid).startswith("u_"):
-        sid = None
-
-    email = str(data.get("email") or "").strip()
-    phone = str(data.get("phone") or "").strip()
-    comm = float(data.get("commission_rate") or 0.0)
-    remarks = str(data.get("remarks") or "").strip()
-    active = bool(data.get("is_active", True))
-
+    code = str(data.get("sales_code") or "").strip().upper()
     with get_connection() as conn, conn.cursor() as cur:
+        if not code:
+            cur.execute("SELECT MAX(id) FROM salespersons WHERE tenant_id=%s OR tenant_id IS NULL OR tenant_id = 'default'", (tenant,))
+            max_r = cur.fetchone()
+            max_id = (max_r[0] if max_r and max_r[0] else 0) + 1
+            code = f"SP{max_id:03d}"
+
+        sid = data.get("id")
+        # If editing a virtual user entry, create a real salespersons record
+        if str(sid).startswith("u_"):
+            sid = None
+
+        email = str(data.get("email") or "").strip()
+        phone = str(data.get("phone") or "").strip()
+        comm = float(data.get("commission_rate") or 0.0)
+        remarks = str(data.get("remarks") or "").strip()
+        active = bool(data.get("is_active", True))
+
         if sid:
             cur.execute("""
                 UPDATE salespersons

@@ -12,7 +12,7 @@ def _form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
     record = record or {}
     section("Customer Profile")
     a, b, c, d = st.columns(4)
-    code = a.text_input("Customer Code *", value=str(record.get("customer_code") or ""), max_chars=5).upper()
+    code = a.text_input("Customer Code", value=str(record.get("customer_code") or ""), placeholder="Auto (ระบบ gen ให้อัตโนมัติ)", max_chars=10).upper()
     company = b.text_input("Company Name *", value=str(record.get("company_name") or ""))
     display = c.text_input("Display Name", value=str(record.get("display_name") or ""))
     tax_id = d.text_input("Tax ID", value=str(record.get("tax_id") or ""))
@@ -37,8 +37,8 @@ def _form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
 
     save = st.button("Update Customer" if record.get("id") else "Save Customer", type="primary", width="stretch", key=f"customer_save_{record.get('id','new')}")
     if save:
-        if len(code) != 5 or not company.strip():
-            st.error("Customer Code must be exactly 5 characters and Company Name is required.")
+        if not company.strip():
+            st.error("Company Name is required.")
             return
         save_customer({
             "id": record.get("id"), "customer_code": code, "company_name": company, "display_name": display,

@@ -22,11 +22,18 @@ def list_ports(active_only: bool = True) -> List[Dict[str, Any]]:
 
 def upsert_port(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> int:
     tenant = _tenant(user)
-    code = str(data.get("port_code") or "").strip().upper()
     name = str(data.get("port_name") or "").strip()
-    if len(code) != 5 or not name:
-        raise ValueError("Port code must be exactly 5 characters and port name is required.")
+    if not name:
+        raise ValueError("Port name is required.")
+
+    code = str(data.get("port_code") or "").strip().upper()
     with get_connection() as conn, conn.cursor() as cur:
+        if not code or len(code) != 5:
+            cur.execute("SELECT MAX(id) FROM ports WHERE tenant_id=%s", (tenant,))
+            max_r = cur.fetchone()
+            max_id = (max_r[0] if max_r and max_r[0] else 0) + 1
+            code = f"P{max_id:04d}"
+
         port_id = data.get("id")
         if not port_id:
             cur.execute("SELECT id FROM ports WHERE tenant_id=%s AND port_code=%s LIMIT 1", (tenant, code))
@@ -38,7 +45,7 @@ def upsert_port(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> 
             cur.execute("""UPDATE ports SET port_code=%s, unlocode=%s, port_name=%s, city=%s,
                 country_code=%s, country_name=%s, timezone=%s, port_type=%s, is_active=%s, remarks=%s,
                 updated_at=CURRENT_TIMESTAMP WHERE id=%s AND tenant_id=%s""",
-                (code, data.get("unlocode"), name, data.get("city"), data.get("country_code"), data.get("country_name"),
+                (code, data.get("unlocode") or code, name, data.get("city"), data.get("country_code"), data.get("country_name"),
                  data.get("timezone"), data.get("port_type") or "PORT", bool(data.get("is_active", True)), data.get("remarks"), port_id, tenant))
             port_id = int(port_id)
         else:
@@ -89,11 +96,18 @@ def list_parties(role_type: Optional[str] = None, active_only: bool = True) -> L
 
 def upsert_party(data: Dict[str, Any], roles: List[str], finance: Optional[Dict[str, Any]] = None, user: Optional[Dict[str, Any]] = None) -> int:
     tenant = _tenant(user)
-    code = str(data.get("party_code") or "").strip().upper()
     legal_name = str(data.get("legal_name") or "").strip()
-    if len(code) != 5 or not legal_name:
-        raise ValueError("Party code must be exactly 5 characters and legal name is required.")
+    if not legal_name:
+        raise ValueError("Legal Name is required.")
+
+    code = str(data.get("party_code") or "").strip().upper()
     with get_connection() as conn, conn.cursor() as cur:
+        if not code or len(code) != 5:
+            cur.execute("SELECT MAX(id) FROM business_parties WHERE tenant_id=%s", (tenant,))
+            max_r = cur.fetchone()
+            max_id = (max_r[0] if max_r and max_r[0] else 0) + 1
+            code = f"BP{max_id:03d}"
+
         party_id = data.get("id")
         if not party_id:
             cur.execute("SELECT id FROM business_parties WHERE tenant_id=%s AND party_code=%s LIMIT 1", (tenant, code))
@@ -119,8 +133,29 @@ def upsert_party(data: Dict[str, Any], roles: List[str], finance: Optional[Dict[
                  bool(data.get("is_active", True))))
             row = cur.fetchone()
             party_id = int(row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0])
-        for role in sorted({str(r).strip().upper() for r in roles if r}):
+
+        clean_roles = sorted({str(r).strip().upper() for r in roles if r})
+        for role in clean_roles:
             cur.execute("INSERT INTO party_roles (tenant_id, party_id, role_type, is_active) VALUES (%s,%s,%s,TRUE) ON CONFLICT DO NOTHING", (tenant, party_id, role))
+        
+        # If CUSTOMER role is assigned, sync to customers table
+        if "CUSTOMER" in clean_roles:
+            try:
+                cur.execute("SELECT id FROM customers WHERE tenant_id=%s AND customer_code=%s LIMIT 1", (tenant, code))
+                c_row = cur.fetchone()
+                cid = c_row["id"] if c_row and (isinstance(c_row, dict) or hasattr(c_row, "keys")) else (c_row[0] if c_row else None)
+                if cid:
+                    cur.execute("""
+                        UPDATE customers SET company_name=%s, display_name=%s, billing_name=%s, tax_id=%s, tel=%s, email=%s, address=%s, billing_address=%s, is_active=%s, updated_at=CURRENT_TIMESTAMP
+                        WHERE id=%s AND tenant_id=%s
+                    """, (legal_name, data.get("display_name") or legal_name, legal_name, data.get("tax_id"), data.get("phone"), data.get("email"), data.get("billing_address"), data.get("billing_address"), 1 if data.get("is_active", True) else 0, cid, tenant))
+                else:
+                    cur.execute("""
+                        INSERT INTO customers (tenant_id, customer_code, company_name, display_name, billing_name, tax_id, tel, email, address, billing_address, is_active)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (tenant, code, legal_name, data.get("display_name") or legal_name, legal_name, data.get("tax_id"), data.get("phone"), data.get("email"), data.get("billing_address"), data.get("billing_address"), 1 if data.get("is_active", True) else 0))
+            except Exception:
+                pass
         if finance is not None:
             cur.execute("""INSERT INTO party_finance_profiles
                 (tenant_id, party_id, credit_limit, credit_currency, credit_days, payment_term_code, tax_id, vat_registered, withholding_tax, bank_name, bank_account_name, bank_account_no, swift_code)

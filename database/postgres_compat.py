@@ -53,6 +53,8 @@ def ensure_phase30_quotation_schema(conn) -> None:
             "is_dg": "BOOLEAN DEFAULT FALSE",
             "subject": "TEXT",
             "terms_conditions": "TEXT",
+            "shipper": "TEXT",
+            "consignee": "TEXT",
             "created_by": "TEXT",
             "updated_by": "TEXT",
         }

@@ -42,7 +42,7 @@ def ensure_phase30_local_schema() -> None:
 
         with conn.cursor() as cur:
             table_columns = {
-                "quotations": {"sales_id": "INTEGER", "approval_status": "TEXT DEFAULT 'Draft'"},
+                "quotations": {"sales_id": "INTEGER", "approval_status": "TEXT DEFAULT 'Draft'", "shipper": "TEXT", "consignee": "TEXT"},
                 "quotation_items": {"charge_code": "TEXT", "basis": "TEXT", "quantity": "REAL DEFAULT 1", "unit_rate": "REAL DEFAULT 0", "amount": "REAL DEFAULT 0"},
                 "bookings": {"sales_id": "INTEGER", "approval_status": "TEXT DEFAULT 'Draft'", "carrier_booking_no": "TEXT", "mother_vessel": "TEXT", "m_vessel": "TEXT", "mother_voyage": "TEXT", "m_voyage": "TEXT", "feeder_vessel": "TEXT", "feeder_voyage": "TEXT", "booking_date": "TEXT"},
                 "shipments": {"service_type": "TEXT", "mother_vessel": "TEXT", "mother_voyage": "TEXT", "feeder_vessel": "TEXT", "feeder_voyage": "TEXT", "financial_locked": "INTEGER DEFAULT 0", "handover_to_accounting_at": "TEXT", "handover_by": "TEXT", "mbl_no": "TEXT", "hbl_no": "TEXT"},

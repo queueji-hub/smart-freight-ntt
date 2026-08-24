@@ -1,4 +1,4 @@
-"""Tenant-safe Customer Master CRUD and credit-control helpers."""
+"""Tenant-safe Customer Master CRUD and credit-control helpers with Business Party unification."""
 from __future__ import annotations
 from datetime import date
 from typing import Any, Dict, List, Optional
@@ -18,18 +18,68 @@ def list_customers(active_only: bool = False, user: Optional[Dict[str, Any]] = N
         where += " AND LOWER(COALESCE(is_active::text, '0')) IN ('1','true','t')"
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(f"SELECT * FROM customers {where} ORDER BY customer_code, company_name", params)
-        return [dict(r) for r in cur.fetchall()]
+        cust_rows = [dict(r) for r in cur.fetchall()]
+
+        # Unify with business_parties where role is CUSTOMER
+        try:
+            cur.execute("""
+                SELECT p.*, pf.credit_limit, pf.credit_currency, pf.credit_days, pf.payment_term_code
+                FROM business_parties p
+                JOIN party_roles pr ON pr.party_id=p.id AND pr.tenant_id=p.tenant_id
+                LEFT JOIN party_finance pf ON pf.party_id=p.id AND pf.tenant_id=p.tenant_id
+                WHERE p.tenant_id=%s AND pr.role_type='CUSTOMER'
+            """, (tenant,))
+            party_rows = [dict(r) for r in cur.fetchall()]
+            existing_codes = {str(c.get("customer_code") or "").upper() for c in cust_rows}
+            existing_names = {str(c.get("company_name") or "").lower() for c in cust_rows}
+
+            for p in party_rows:
+                p_code = str(p.get("party_code") or "").upper()
+                p_name = str(p.get("legal_name") or p.get("display_name") or "").strip()
+                if p_code not in existing_codes and p_name.lower() not in existing_names:
+                    cust_rows.append({
+                        "id": p.get("id"),
+                        "tenant_id": tenant,
+                        "customer_code": p_code,
+                        "company_name": p_name,
+                        "display_name": p.get("display_name") or p_name,
+                        "billing_name": p_name,
+                        "contact_person": "",
+                        "tel": p.get("phone") or "",
+                        "email": p.get("email") or "",
+                        "address": p.get("billing_address") or "",
+                        "billing_address": p.get("billing_address") or "",
+                        "tax_id": p.get("tax_id") or "",
+                        "credit_limit": p.get("credit_limit") or 0.0,
+                        "credit_currency": p.get("credit_currency") or "THB",
+                        "credit_days": p.get("credit_days") or 30,
+                        "payment_term_code": p.get("payment_term_code") or "Net 30",
+                        "credit_status": "NORMAL",
+                        "credit_hold": False,
+                        "is_active": bool(p.get("is_active", True)),
+                    })
+        except Exception:
+            pass
+
+        return cust_rows
 
 
 def save_customer(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> int:
     tenant = _tenant(user)
-    code = str(data.get("customer_code") or "").strip().upper()
     company = str(data.get("company_name") or "").strip()
-    if len(code) != 5:
-        raise ValueError("Customer Code must be exactly 5 characters.")
     if not company:
         raise ValueError("Company Name is required.")
+
+    code = str(data.get("customer_code") or "").strip().upper()
+
     with get_connection() as conn, conn.cursor() as cur:
+        # Auto-generate customer code if blank or invalid length
+        if not code or len(code) != 5:
+            cur.execute("SELECT MAX(id) FROM customers WHERE tenant_id=%s", (tenant,))
+            max_r = cur.fetchone()
+            max_id = (max_r[0] if max_r and max_r[0] else 0) + 1
+            code = f"C{max_id:04d}"
+
         values = (
             code, company, data.get("display_name") or company, data.get("billing_name") or company,
             data.get("contact_person"), data.get("tel"), data.get("email"), data.get("address"),
@@ -63,6 +113,31 @@ def save_customer(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
                 (tenant,) + values)
             row = cur.fetchone()
             customer_id = int(row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0])
+
+        # Mirror/unify into business_parties with role 'CUSTOMER'
+        try:
+            cur.execute("SELECT id FROM business_parties WHERE tenant_id=%s AND party_code=%s LIMIT 1", (tenant, code))
+            bp = cur.fetchone()
+            bp_id = bp["id"] if bp and (isinstance(bp, dict) or hasattr(bp, "keys")) else (bp[0] if bp else None)
+            if bp_id:
+                cur.execute("""
+                    UPDATE business_parties
+                    SET legal_name=%s, display_name=%s, tax_id=%s, phone=%s, email=%s, billing_address=%s, is_active=%s, updated_at=CURRENT_TIMESTAMP
+                    WHERE id=%s AND tenant_id=%s
+                """, (company, data.get("display_name") or company, data.get("tax_id"), data.get("tel"), data.get("email"), data.get("billing_address") or data.get("address"), 1 if data.get("is_active", True) else 0, bp_id, tenant))
+            else:
+                cur.execute("""
+                    INSERT INTO business_parties (tenant_id, party_code, legal_name, display_name, tax_id, phone, email, billing_address, is_active)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                """, (tenant, code, company, data.get("display_name") or company, data.get("tax_id"), data.get("tel"), data.get("email"), data.get("billing_address") or data.get("address"), 1 if data.get("is_active", True) else 0))
+                bp_row = cur.fetchone()
+                bp_id = bp_row["id"] if isinstance(bp_row, dict) or hasattr(bp_row, "keys") else bp_row[0]
+
+            # Ensure role CUSTOMER
+            cur.execute("INSERT INTO party_roles (tenant_id, party_id, role_type, is_active) VALUES (%s, %s, 'CUSTOMER', 1) ON CONFLICT DO NOTHING", (tenant, bp_id))
+        except Exception:
+            pass
+
         conn.commit()
         return customer_id
 

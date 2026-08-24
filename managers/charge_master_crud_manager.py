@@ -44,13 +44,20 @@ def list_charges(active_only: bool = False, user: Optional[Dict[str, Any]] = Non
 
 def upsert_charge(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> int:
     tenant = _tenant(user)
-    code = str(data.get("charge_code") or "").strip().upper()
     description = str(data.get("description") or "").strip()
-    if not code or not description:
-        raise ValueError("Charge Code and Description are required.")
+    if not description:
+        raise ValueError("Description is required.")
+
+    code = str(data.get("charge_code") or "").strip().upper()
     with get_connection() as conn:
         _ensure(conn)
         with conn.cursor() as cur:
+            if not code:
+                cur.execute("SELECT MAX(id) FROM charge_master WHERE tenant_id=%s", (tenant,))
+                max_r = cur.fetchone()
+                max_id = (max_r[0] if max_r and max_r[0] else 0) + 1
+                code = f"CHG{max_id:03d}"
+
             params = (
                 code,
                 description,

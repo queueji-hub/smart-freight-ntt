@@ -20,7 +20,7 @@ def _party_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> N
     roles = st.multiselect("Roles", ROLE_OPTIONS, default=existing_roles or ["CUSTOMER"], key=f"party_roles_{record.get('id','new')}")
     c1, c2, c3 = st.columns(3)
     with c1:
-        code = st.text_input("Code *", value=str(record.get("party_code") or ""), max_chars=5).upper()
+        code = st.text_input("Party Code", value=str(record.get("party_code") or ""), placeholder="Auto (ระบบ gen ให้อัตโนมัติ)", max_chars=10).upper()
         legal = st.text_input("Legal Name *", value=str(record.get("legal_name") or ""))
         display = st.text_input("Display Name", value=str(record.get("display_name") or ""))
     with c2:
@@ -62,8 +62,8 @@ def _party_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> N
                 st.rerun()
 
     if save:
-        if len(code) != 5 or not legal.strip():
-            st.error("Code must be exactly 5 characters and Legal Name is required.")
+        if not legal.strip():
+            st.error("Legal Name is required.")
             return
         upsert_party(
             {
@@ -101,7 +101,7 @@ def _port_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> No
     record = record or {}
     section("Port / Place")
     c1, c2, c3 = st.columns(3)
-    code = c1.text_input("Port Code *", value=str(record.get("port_code") or ""), max_chars=5).upper()
+    code = c1.text_input("Port Code", value=str(record.get("port_code") or ""), placeholder="Auto (ระบบ gen ให้อัตโนมัติ)", max_chars=10).upper()
     unlocode = c2.text_input("UN/LOCODE", value=str(record.get("unlocode") or ""), max_chars=5).upper()
     name = c3.text_input("Port Name *", value=str(record.get("port_name") or ""))
     d1, d2, d3 = st.columns(3)
@@ -124,8 +124,8 @@ def _port_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> No
                 st.rerun()
 
     if save:
-        if len(code) != 5 or not name.strip():
-            st.error("Port Code must be exactly 5 characters and Port Name is required.")
+        if not name.strip():
+            st.error("Port Name is required.")
             return
         upsert_port(
             {
@@ -150,7 +150,7 @@ def _charge_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> 
     record = record or {}
     section("Charge Master")
     c1, c2, c3 = st.columns(3)
-    code = c1.text_input("Charge Code *", value=str(record.get("charge_code") or "")).strip().upper()
+    code = c1.text_input("Charge Code", value=str(record.get("charge_code") or ""), placeholder="Auto (ระบบ gen ให้อัตโนมัติ)").strip().upper()
     description = c2.text_input("Description *", value=str(record.get("description") or ""))
     category = c3.text_input("Category", value=str(record.get("category") or ""))
     d1, d2, d3, d4 = st.columns(4)
@@ -172,8 +172,8 @@ def _charge_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> 
                 st.rerun()
 
     if save:
-        if not code or not description.strip():
-            st.error("Charge Code and Description are required.")
+        if not description.strip():
+            st.error("Description is required.")
             return
         upsert_charge(
             {
@@ -203,7 +203,7 @@ def _salesperson_form(user: Dict[str, Any], record: Dict[str, Any] | None = None
     section("Sales Person Profile")
     c1, c2, c3 = st.columns(3)
     with c1:
-        code = st.text_input("Sales Code *", value=str(record.get("sales_code") or ""), max_chars=10, key=f"sp_code_{record.get('id','new')}").upper()
+        code = st.text_input("Sales Code", value=str(record.get("sales_code") or ""), placeholder="Auto (ระบบ gen ให้อัตโนมัติ)", max_chars=10, key=f"sp_code_{record.get('id','new')}").upper()
         name = st.text_input("Salesperson Name *", value=str(record.get("name") or ""), key=f"sp_name_{record.get('id','new')}")
     with c2:
         email = st.text_input("Email", value=str(record.get("email") or ""), key=f"sp_email_{record.get('id','new')}")
@@ -227,8 +227,8 @@ def _salesperson_form(user: Dict[str, Any], record: Dict[str, Any] | None = None
                 st.rerun()
 
     if save:
-        if not code.strip() or not name.strip():
-            st.error("Sales Code and Salesperson Name are required.")
+        if not name.strip():
+            st.error("Salesperson Name is required.")
             return
         save_salesperson({
             "id": record.get("id"),
