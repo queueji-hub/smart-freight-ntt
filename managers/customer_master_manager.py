@@ -64,6 +64,17 @@ def list_customers(active_only: bool = False, user: Optional[Dict[str, Any]] = N
         return cust_rows
 
 
+def _scalar(row: Any) -> Any:
+    if not row:
+        return None
+    if isinstance(row, dict) or hasattr(row, "values"):
+        vals = list(row.values())
+        return vals[0] if vals else None
+    if isinstance(row, (list, tuple)):
+        return row[0]
+    return row
+
+
 def save_customer(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> int:
     tenant = _tenant(user)
     company = str(data.get("company_name") or "").strip()
@@ -76,8 +87,8 @@ def save_customer(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
         # Auto-generate customer code if blank or invalid length
         if not code or len(code) != 5:
             cur.execute("SELECT MAX(id) FROM customers WHERE tenant_id=%s", (tenant,))
-            max_r = cur.fetchone()
-            max_id = (max_r[0] if max_r and max_r[0] else 0) + 1
+            max_v = _scalar(cur.fetchone())
+            max_id = (int(max_v) if max_v is not None else 0) + 1
             code = f"C{max_id:04d}"
 
         values = (

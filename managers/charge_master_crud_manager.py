@@ -42,6 +42,17 @@ def list_charges(active_only: bool = False, user: Optional[Dict[str, Any]] = Non
             return [dict(row) for row in cur.fetchall()]
 
 
+def _scalar(row: Any) -> Any:
+    if not row:
+        return None
+    if isinstance(row, dict) or hasattr(row, "values"):
+        vals = list(row.values())
+        return vals[0] if vals else None
+    if isinstance(row, (list, tuple)):
+        return row[0]
+    return row
+
+
 def upsert_charge(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> int:
     tenant = _tenant(user)
     description = str(data.get("description") or "").strip()
@@ -54,8 +65,8 @@ def upsert_charge(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
         with conn.cursor() as cur:
             if not code:
                 cur.execute("SELECT MAX(id) FROM charge_master WHERE tenant_id=%s", (tenant,))
-                max_r = cur.fetchone()
-                max_id = (max_r[0] if max_r and max_r[0] else 0) + 1
+                max_v = _scalar(cur.fetchone())
+                max_id = (int(max_v) if max_v is not None else 0) + 1
                 code = f"CHG{max_id:03d}"
 
             params = (

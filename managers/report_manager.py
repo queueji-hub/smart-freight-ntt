@@ -88,10 +88,19 @@ def get_sales_performance_report(
                 d = dict(row)
                 
                 # Calculations
-                actual_rev = float(d['actual_revenue'] or 0)
-                actual_cost = float(d['actual_cost'] or 0)
-                actual_gp = float(d['actual_gp'] or 0)
+                actual_rev = float(d.get('actual_revenue') or 0)
+                actual_cost = float(d.get('actual_cost') or 0)
+                actual_gp = float(d.get('actual_gp') or 0)
+                d['actual_revenue'] = actual_rev
+                d['actual_cost'] = actual_cost
+                d['actual_gp'] = actual_gp
                 d['gross_margin_pct'] = round((actual_gp / actual_rev * 100), 2) if actual_rev > 0 else 0.0
+                
+                # Clean up sales_person
+                sp = str(d.get('sales_person') or '').strip()
+                if not sp or sp.lower() in ('none', 'nan', 'null'):
+                    sp = 'Unassigned'
+                d['sales_person'] = sp
                 
                 # Clean up None
                 for k, v in d.items():

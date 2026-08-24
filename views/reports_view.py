@@ -58,7 +58,13 @@ def render():
             st.markdown("##### Salesperson Performance Breakdown")
             if perf.get("sales"):
                 df_sp = pd.DataFrame(perf["sales"])
-                st.dataframe(df_sp[["sales_person", "total_jobs", "export_jobs", "import_jobs", "actual_revenue", "actual_cost", "actual_gp", "gross_margin_pct"]], use_container_width=True)
+                if "sales_person" in df_sp.columns:
+                    df_sp["sales_person"] = df_sp["sales_person"].fillna("Unassigned").astype(str)
+                for col in ["actual_revenue", "actual_cost", "actual_gp", "gross_margin_pct"]:
+                    if col in df_sp.columns:
+                        df_sp[col] = pd.to_numeric(df_sp[col], errors="coerce").fillna(0.0)
+                disp_cols = [c for c in ["sales_person", "total_jobs", "export_jobs", "import_jobs", "actual_revenue", "actual_cost", "actual_gp", "gross_margin_pct"] if c in df_sp.columns]
+                st.dataframe(df_sp[disp_cols], width="stretch")
             else:
                 st.info("No sales performance data recorded for this month.")
                 

@@ -9,6 +9,17 @@ def _tenant(user: Optional[Dict[str, Any]] = None) -> str:
     return str((user or {}).get("tenant_id") or get_current_tenant_id() or "default")
 
 
+def _scalar(row: Any) -> Any:
+    if not row:
+        return None
+    if isinstance(row, dict) or hasattr(row, "values"):
+        vals = list(row.values())
+        return vals[0] if vals else None
+    if isinstance(row, (list, tuple)):
+        return row[0]
+    return row
+
+
 def list_ports(active_only: bool = True) -> List[Dict[str, Any]]:
     tenant = _tenant()
     where = "WHERE tenant_id=%s"
@@ -30,8 +41,8 @@ def upsert_port(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> 
     with get_connection() as conn, conn.cursor() as cur:
         if not code or len(code) != 5:
             cur.execute("SELECT MAX(id) FROM ports WHERE tenant_id=%s", (tenant,))
-            max_r = cur.fetchone()
-            max_id = (max_r[0] if max_r and max_r[0] else 0) + 1
+            max_v = _scalar(cur.fetchone())
+            max_id = (int(max_v) if max_v is not None else 0) + 1
             code = f"P{max_id:04d}"
 
         port_id = data.get("id")
@@ -104,8 +115,8 @@ def upsert_party(data: Dict[str, Any], roles: List[str], finance: Optional[Dict[
     with get_connection() as conn, conn.cursor() as cur:
         if not code or len(code) != 5:
             cur.execute("SELECT MAX(id) FROM business_parties WHERE tenant_id=%s", (tenant,))
-            max_r = cur.fetchone()
-            max_id = (max_r[0] if max_r and max_r[0] else 0) + 1
+            max_v = _scalar(cur.fetchone())
+            max_id = (int(max_v) if max_v is not None else 0) + 1
             code = f"BP{max_id:03d}"
 
         party_id = data.get("id")

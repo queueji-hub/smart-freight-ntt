@@ -61,6 +61,8 @@ def render():
         st.markdown("**Salesperson Performance (GP)**")
         if perf["sales"]:
             df_sp = pd.DataFrame(perf["sales"])
+            df_sp["sales_person"] = df_sp["sales_person"].fillna("Unassigned").astype(str)
+            df_sp["actual_gp"] = pd.to_numeric(df_sp["actual_gp"], errors="coerce").fillna(0.0)
             st.bar_chart(df_sp, x="sales_person", y="actual_gp", color="#38bdf8")
         else:
             st.info("No data")
