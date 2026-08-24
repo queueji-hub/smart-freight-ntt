@@ -81,7 +81,12 @@ def render():
         return
 
     a, b = st.columns([5, 1])
-    selected = a.selectbox("Job", [j["job_no"] for j in jobs], key="job_control_selector", label_visibility="collapsed")
+    job_nos = [j["job_no"] for j in jobs]
+    target_job = st.session_state.get("target_job_no")
+    default_job_idx = 0
+    if target_job and target_job in job_nos:
+        default_job_idx = job_nos.index(target_job)
+    selected = a.selectbox("Job", job_nos, index=default_job_idx, key="job_view_selector", label_visibility="collapsed")
     if b.button("＋ New Job", use_container_width=True):
         st.session_state["job_control_new"] = True
         st.rerun()
@@ -326,7 +331,7 @@ def _financial(j):
     
     with e:
         if st.button("🚀 Open AP/AR & P&L Center", key=f"open_full_profit_{j['id']}", type="primary", use_container_width=True):
-            st.session_state["job_control_selector"] = j["job_no"]
+            st.session_state["target_job_no"] = j["job_no"]
             st.session_state["current_navigation"] = "profit"
             st.query_params["page"] = "profit"
             st.rerun()
@@ -645,7 +650,7 @@ def _new_job():
             })
             st.success(f"Job {no} created")
             st.session_state.pop("job_control_new", None)
-            st.session_state["job_control_selector"] = no
+            st.session_state["target_job_no"] = no
             st.rerun()
         except Exception as exc:
             st.error(f"Create failed: {exc}")

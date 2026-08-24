@@ -614,7 +614,7 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
     with act[1]:
         if linked_job:
             if st.button(f"📂 View Job {linked_job}", key=f"view_job_{booking_no}", type="primary", width="stretch", help="เปิดดู Job 360 ที่เชื่อมโยง"):
-                st.session_state["job_control_selector"] = linked_job
+                st.session_state["target_job_no"] = linked_job
                 st.session_state["current_navigation"] = "job_control"
                 st.query_params["page"] = "job_control"
                 st.rerun()
@@ -623,7 +623,7 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
                 try:
                     job_no = convert_booking_to_job(booking_no, user)
                     st.success(f"🎉 Job {job_no} created successfully from Booking {booking_no}.")
-                    st.session_state["job_control_selector"] = job_no
+                    st.session_state["target_job_no"] = job_no
                     st.session_state["current_navigation"] = "job_control"
                     st.query_params["page"] = "job_control"
                     st.rerun()

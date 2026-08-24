@@ -144,7 +144,7 @@ def render():
 
     job_options = {f"🚢 {s['job_no']} — {_s(s.get('customer_name'))} ({_s(s.get('pol'))} ➔ {_s(s.get('pod'))})": s for s in ships}
     
-    pre_sel = st.session_state.get("job_control_selector")
+    pre_sel = st.session_state.get("target_job_no") or st.session_state.get("job_control_selector")
     default_idx = 0
     if pre_sel:
         for idx, (lbl, s_obj) in enumerate(job_options.items()):

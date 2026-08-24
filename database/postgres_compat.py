@@ -534,6 +534,7 @@ def ensure_phase30_profitability_schema(conn) -> None:
         try:
             cur.execute("ALTER TABLE ap_vouchers ALTER COLUMN vendor_id DROP NOT NULL")
             cur.execute("ALTER TABLE ap_vouchers ALTER COLUMN invoice_no DROP NOT NULL")
+            cur.execute("ALTER TABLE ap_vouchers DROP CONSTRAINT IF EXISTS ap_vouchers_tenant_id_vendor_id_invoice_no_key")
         except Exception:
             pass
         _add_columns(cur, "shipments", {

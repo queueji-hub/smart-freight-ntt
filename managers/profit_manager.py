@@ -658,7 +658,7 @@ def create_batch_payment_voucher(
             # Collect and deduplicate vendor invoice numbers
             v_invoices = [str(l.get("vendor_invoice_no")).strip() for l in selected_lines if l.get("vendor_invoice_no") and str(l.get("vendor_invoice_no")).strip() not in ("None", "—", "")]
             vendor_invoice_refs = ", ".join(dict.fromkeys(v_invoices)) if v_invoices else None
-            inv_no_val = vendor_invoice_refs or voucher_no
+            inv_no_val = voucher_no
 
             # 3. Insert into ap_vouchers
             cur.execute(
