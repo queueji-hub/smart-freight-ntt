@@ -641,6 +641,55 @@ def ensure_phase30_profitability_schema(conn) -> None:
             "feeder_vessel": "TEXT",
             "feeder_voyage": "TEXT",
         })
+        _add_columns(cur, "invoices", {
+            "customer_address": "TEXT",
+            "customer_tax_id": "TEXT",
+            "customer_branch": "TEXT DEFAULT '00000'",
+            "master_job_no": "TEXT",
+            "shipment_no": "TEXT",
+            "service_type": "TEXT DEFAULT 'Seafreight Export'",
+            "feeder_vessel": "TEXT",
+            "vessel_voyage": "TEXT",
+            "pol": "TEXT",
+            "pod": "TEXT",
+            "delivery_port": "TEXT",
+            "mbl_mawb_no": "TEXT",
+            "hbl_hawb_no": "TEXT",
+            "tax_receipt_no": "TEXT",
+            "csr_report_no": "TEXT",
+            "total_advance": "NUMERIC(15,2) DEFAULT 0",
+            "less_vat_sub": "NUMERIC(15,2) DEFAULT 0",
+            "plus_wht_diff": "NUMERIC(15,2) DEFAULT 0",
+            "amount_no_vat": "NUMERIC(15,2) DEFAULT 0",
+            "amount_vat": "NUMERIC(15,2) DEFAULT 0",
+            "vat_7_amount": "NUMERIC(15,2) DEFAULT 0",
+            "wht_1_amount": "NUMERIC(15,2) DEFAULT 0",
+            "wht_3_amount": "NUMERIC(15,2) DEFAULT 0",
+            "diff_amount": "NUMERIC(15,2) DEFAULT 0",
+            "grand_total": "NUMERIC(15,2) DEFAULT 0",
+            "net_payable": "NUMERIC(15,2) DEFAULT 0",
+        })
+        _add_columns(cur, "invoice_items", {
+            "charge_id": "TEXT",
+            "pc_type": "TEXT DEFAULT 'PP-E'",
+            "price": "NUMERIC(15,2) DEFAULT 0",
+            "curr": "TEXT DEFAULT 'THB'",
+            "exch_rate": "NUMERIC(10,5) DEFAULT 1",
+            "unit": "TEXT DEFAULT 'M3'",
+            "vat_rate": "NUMERIC(5,2) DEFAULT 7",
+            "wht_rate": "NUMERIC(5,2) DEFAULT 0",
+        })
+        _add_columns(cur, "invoice_payments", {
+            "pay_by": "TEXT DEFAULT 'Bank Transfer'",
+            "chq_no": "TEXT",
+            "chq_date": "DATE",
+            "bank_name": "TEXT",
+            "branch_name": "TEXT",
+            "account_type": "TEXT",
+            "wht_cert_no": "TEXT",
+            "wht_cert_date": "DATE",
+            "wht_amount": "NUMERIC(15,2) DEFAULT 0",
+        })
         cur.execute("UPDATE job_costs SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''")
         cur.execute("UPDATE job_costs SET cost_status='ESTIMATED' WHERE cost_status IS NULL OR btrim(cost_status)=''")
 
