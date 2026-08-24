@@ -19,7 +19,6 @@ from managers.quotation_ssot_service import create_quotation_ssot, update_quotat
 from managers.job_handover_service import handover_quotation_to_job
 from ui.design_system import page_header, section
 
-CURRENCY_OPTIONS = ["USD", "THB", "EUR", "CNY", "JPY", "SGD", "GBP"]
 MODE_OPTIONS = ["SEA", "AIR", "ROAD", "RAIL", "MULTIMODAL"]
 SERVICE_OPTIONS = ["", "FCL", "LCL", "AIR", "FTL", "LTL", "DOOR-TO-DOOR", "PORT-TO-PORT"]
 INCOTERM_OPTIONS = ["", "EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DPU", "DDP", "DDU"]
@@ -36,7 +35,6 @@ MODE_CONFIG = {
         "carrier_placeholder": "e.g. ONE, Evergreen, Maersk, Cosco, MSC, CMA CGM, Yang Ming",
         "container_types": ["", "20'GP", "40'GP", "40'HC", "45'HC", "20'RF", "40'RF", "20'OT", "40'OT", "20'FR", "40'FR", "LCL"],
         "default_container": "20'GP",
-        "unit_options": ["CONTAINER", "20'GP", "40'GP", "40'HC", "CBM", "TON", "KGS", "BL", "SHPMT", "DOC", "ITEM", "SET"],
         "default_desc": "Ocean Freight",
         "default_unit": "CONTAINER",
     },
@@ -50,7 +48,6 @@ MODE_CONFIG = {
         "carrier_placeholder": "e.g. TG — Thai Airways, SQ — Singapore Airlines, EK — Emirates, CX — Cathay Pacific",
         "container_types": ["", "Loose Cargo / Air Freight", "ULD — PMC Pallet", "ULD — PAG Pallet", "ULD — AKE Container", "Courier Box"],
         "default_container": "Loose Cargo / Air Freight",
-        "unit_options": ["KG", "KGS", "CBM", "AWB", "SHPMT", "DOC", "ITEM", "LOT", "PACKAGE"],
         "default_desc": "Air Freight",
         "default_unit": "KG",
     },
@@ -64,7 +61,6 @@ MODE_CONFIG = {
         "carrier_placeholder": "e.g. SCG Logistics, Flash, Kerry Express, Local Haulier",
         "container_types": ["", "4-Wheeler Truck (4 ล้อ)", "6-Wheeler Truck (6 ล้อ)", "10-Wheeler Truck (10 ล้อ)", "Trailer 20ft (หางลาก)", "Trailer 40ft (หางลาก)", "Lowbed Trailer", "Flatbed", "LTL (Less Truckload)"],
         "default_container": "Trailer 40ft (หางลาก)",
-        "unit_options": ["TRIP", "TRUCK", "CBM", "TON", "KG", "SHPMT", "DOC", "PALLET"],
         "default_desc": "Trucking / Transport",
         "default_unit": "TRIP",
     },
@@ -78,7 +74,6 @@ MODE_CONFIG = {
         "carrier_placeholder": "e.g. State Railway of Thailand (SRT), Lao-China Railway",
         "container_types": ["", "20'GP Rail Container", "40'GP Rail Container", "40'HC Rail Container", "Wagon"],
         "default_container": "40'HC Rail Container",
-        "unit_options": ["CONTAINER", "WAGON", "CBM", "TON", "SHPMT", "DOC"],
         "default_desc": "Rail Freight",
         "default_unit": "CONTAINER",
     },
@@ -92,7 +87,6 @@ MODE_CONFIG = {
         "carrier_placeholder": "e.g. Multimodal Freight Operator",
         "container_types": ["", "20'GP", "40'GP", "40'HC", "45'HC", "Trailer", "LCL", "Air / Sea Combo"],
         "default_container": "40'HC",
-        "unit_options": ["CONTAINER", "CBM", "TON", "KG", "SHPMT", "BL", "SET", "TRIP"],
         "default_desc": "Multimodal Freight",
         "default_unit": "CONTAINER",
     }
@@ -204,7 +198,8 @@ def _master_data():
 
 def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = None, mode: str = "SEA", key: str = "qv2_items_editor") -> List[Dict[str, Any]]:
     mcfg = MODE_CONFIG.get(mode, MODE_CONFIG["SEA"])
-    unit_opts = mcfg.get("unit_options", ["CONTAINER", "CBM", "TON", "KG", "SHPMT", "DOC"])
+    default_u = mcfg.get("default_unit", "CONTAINER")
+    default_d = mcfg.get("default_desc", "Freight / Service Charge")
     
     rows = []
     for item in (existing or []):
@@ -213,17 +208,14 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
         if not desc and code:
             desc = charge_map.get(code, {}).get("description") or code
         
-        qty = float(item.get("quantity") or 1.0)
-        rate = float(item.get("unit_rate") or item.get("price") or 0.0)
-        unit = _s(item.get("unit"), mcfg.get("default_unit", "CONTAINER")).upper()
-        matched_unit = next((u for u in unit_opts if u.upper() == unit), unit_opts[0])
+        qty = float(item.get("quantity") if item.get("quantity") is not None else 1.0)
+        rate = float(item.get("unit_rate") if item.get("unit_rate") is not None else (item.get("price") or 0.0))
+        unit = _s(item.get("unit") or item.get("basis"), default_u).upper()
         currency = _s(item.get("currency"), "USD").upper()
-        if currency not in CURRENCY_OPTIONS:
-            currency = "USD"
         
         rows.append({
-            "description": desc or mcfg.get("default_desc", "Freight Charge"),
-            "unit": matched_unit,
+            "description": desc or default_d,
+            "unit": unit,
             "currency": currency,
             "quantity": qty,
             "unit_rate": rate,
@@ -233,8 +225,8 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
 
     if not rows:
         rows = [{
-            "description": mcfg.get("default_desc", "Ocean Freight"),
-            "unit": mcfg.get("default_unit", "CONTAINER"),
+            "description": default_d,
+            "unit": default_u,
             "currency": "USD",
             "quantity": 1.0,
             "unit_rate": 0.0,
@@ -249,11 +241,11 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
         hide_index=True,
         width="stretch",
         column_config={
-            "description": st.column_config.TextColumn("Description * (รายการค่าบริการ / ค่าระวาง)", required=True, width="large"),
-            "unit": st.column_config.SelectboxColumn("Unit (หน่วย)", options=unit_opts, required=True, width="small"),
-            "currency": st.column_config.SelectboxColumn("Curr", options=CURRENCY_OPTIONS, required=True, width="small"),
-            "quantity": st.column_config.NumberColumn("Qty", min_value=0.0, step=1.0, width="small"),
-            "unit_rate": st.column_config.NumberColumn("Unit Rate", min_value=0.0, step=10.0, format="%.2f", width="small"),
+            "description": st.column_config.TextColumn("Description (รายการค่าบริการ / ค่าระวาง - เว้นว่างได้)", required=False, width="large"),
+            "unit": st.column_config.TextColumn("Unit (หน่วย เช่น CONTAINER, CBM, TRIP, KG, PALLET)", default=default_u, required=False, width="small"),
+            "currency": st.column_config.TextColumn("Curr (สกุลเงิน เช่น USD, THB, EUR, CNY)", default="USD", required=False, width="small"),
+            "quantity": st.column_config.NumberColumn("Qty (จำนวน)", min_value=0.0, step=0.01, format="%.2f", width="small"),
+            "unit_rate": st.column_config.NumberColumn("Unit Rate (ราคา/หน่วย)", min_value=0.0, step=0.01, format="%.2f", width="small"),
             "price": st.column_config.NumberColumn("Total Amount", disabled=True, format="%.2f", width="medium"),
             "remark": st.column_config.TextColumn("Remark (หมายเหตุ)", width="medium"),
         },
@@ -263,9 +255,18 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
     output = []
     for row in edited.to_dict("records"):
         desc = _s(row.get("description"))
+        qty = float(row.get("quantity") if row.get("quantity") is not None else 0.0)
+        rate = float(row.get("unit_rate") if row.get("unit_rate") is not None else 0.0)
+        unit = _s(row.get("unit"), default_u).upper()
+        currency = _s(row.get("currency"), "USD").upper()
+
+        # If description is empty BUT user entered rate, qty, unit, or curr
         if not desc:
-            continue
-        
+            if rate > 0 or qty > 0 or row.get("unit") or row.get("currency") or row.get("remark"):
+                desc = default_d
+            else:
+                continue
+
         # Auto-derive charge_code behind the scenes
         code = "CHG"
         desc_upper = desc.upper()
@@ -287,12 +288,7 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
             code = "DEM"
         elif len(desc.split()[0]) <= 5 and desc.split()[0].isalnum():
             code = desc.split()[0].upper()
-        
-        qty = float(row.get("quantity") or 1.0)
-        rate = float(row.get("unit_rate") or 0.0)
-        unit = _s(row.get("unit"), unit_opts[0])
-        currency = _s(row.get("currency"), "USD").upper()
-        
+
         output.append({
             "charge_code": code,
             "description": desc,
@@ -340,7 +336,13 @@ def _create_form(user: Dict[str, Any]):
             attention = st.text_input("Attention (ผู้ติดต่อ)", value=_s(cust_info.get("contact_person")), key="qv2_new_att")
             tel = st.text_input("Telephone (เบอร์โทร)", value=_s(cust_info.get("tel") or cust_info.get("phone")), key="qv2_new_tel")
         with c2:
-            sales_id = st.selectbox("Salesperson (ผู้ขาย)", list(sales_map), format_func=lambda x: sales_map[x], key="qv2_new_sales") if sales_map else None
+            sales_keys = list(sales_map)
+            sales_id = st.selectbox(
+                "Salesperson * (เลือกพนักงานขาย)",
+                sales_keys,
+                format_func=lambda x: sales_map[x],
+                key="qv2_new_sales"
+            ) if sales_keys else None
             customer_email = st.text_input("Customer Email (อีเมล)", value=_s(cust_info.get("email")), key="qv2_new_email")
         with c3:
             job_type = st.selectbox("Job Type * (ประเภทงาน)", list(JOB_TYPES.keys()), format_func=lambda x: JOB_TYPES.get(x, x), key="qv2_new_job")
@@ -392,21 +394,21 @@ def _create_form(user: Dict[str, Any]):
         with g2:
             cont_opts = mcfg.get("container_types", [""])
             container_type = st.selectbox("Equipment / Container / Vehicle (ประเภทตู้/รถ)", cont_opts, key="qv2_new_cont_type")
-            container_qty = st.number_input("Equipment Qty (จำนวนตู้/คัน)", min_value=0, step=1, value=1 if container_type and container_type != "LCL" else 0, key="qv2_new_cont_qty")
+            container_qty = st.number_input("Equipment Qty (จำนวนตู้/คัน)", min_value=0.0, step=1.0, value=1.0 if container_type and container_type != "LCL" else 0.0, format="%.2f", key="qv2_new_cont_qty")
         with g3:
             package_type = st.selectbox("Package Type (บรรจุภัณฑ์)", PACKAGE_TYPE_OPTIONS, key="qv2_new_pkg_type")
-            package_qty = st.number_input("Package Qty (จำนวนหีบห่อ)", min_value=0.0, step=1.0, value=0.0, key="qv2_new_pkg_qty")
+            package_qty = st.number_input("Package Qty (จำนวนหีบห่อ)", min_value=0.0, step=0.01, value=0.0, format="%.2f", key="qv2_new_pkg_qty")
 
         w1, w2, w3 = st.columns(3)
         with w1:
-            weight_kg = st.number_input("Gross Weight (KG)", min_value=0.0, step=10.0, format="%.2f", key="qv2_new_wt")
+            weight_kg = st.number_input("Gross Weight (KG)", min_value=0.0, step=0.01, format="%.2f", key="qv2_new_wt")
         with w2:
-            volume_cbm = st.number_input("Volume (CBM)", min_value=0.0, step=0.1, format="%.3f", key="qv2_new_cbm")
+            volume_cbm = st.number_input("Volume (CBM)", min_value=0.0, step=0.001, format="%.3f", key="qv2_new_cbm")
         with w3:
             is_dg = st.checkbox("Dangerous Goods (สินค้าอันตราย / DG)", value=False, key="qv2_new_dg")
 
         section("4. Pricing & Selling Charges (รายการค่าใช้จ่ายและราคาขาย)")
-        st.caption(f"💡 รายการเสนอราคาสำหรับ {selected_mode} Freight (พิมพ์รายละเอียดและราคาได้อิสระ)")
+        st.caption(f"💡 รายการเสนอราคาสำหรับ {selected_mode} Freight (ใส่ Unit, Curr, Qty, Unit Rate ได้อย่างอิสระ Description เว้นว่างได้)")
         items_df = _item_editor(charge_map, mode=selected_mode, key="qv2_items_create_table")
 
         if items_df:
@@ -535,7 +537,7 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             attention = st.text_input("Attention (ผู้ติดต่อ)", value=_s(selected.get("attention")), key=f"edit_att_{qno}")
             tel = st.text_input("Telephone (เบอร์โทร)", value=_s(selected.get("tel")), key=f"edit_tel_{qno}")
         with c2:
-            sales_id = st.selectbox("Salesperson (ผู้ขาย)", sales_keys, index=sales_idx, format_func=lambda x: sales_map[x], key=f"edit_sales_{qno}") if sales_keys else None
+            sales_id = st.selectbox("Salesperson * (เลือกพนักงานขาย)", sales_keys, index=sales_idx, format_func=lambda x: sales_map[x], key=f"edit_sales_{qno}") if sales_keys else None
             customer_email = st.text_input("Customer Email (อีเมล)", value=_s(selected.get("customer_email")), key=f"edit_email_{qno}")
             payment_term = st.text_input("Payment Terms", value=_s(selected.get("payment_term"), "Net 30"), key=f"edit_pay_{qno}")
         with c3:
@@ -584,21 +586,21 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             hs_code = st.text_input("HS Code", value=_s(selected.get("hs_code")), key=f"edit_hs_{qno}")
         with g2:
             container_type = st.selectbox("Equipment / Container / Vehicle", cont_opts, index=cont_type_idx, key=f"edit_cont_type_{qno}")
-            container_qty = st.number_input("Container / Vehicle Qty", min_value=0, step=1, value=int(selected.get("container_quantity") or 0), key=f"edit_cont_qty_{qno}")
+            container_qty = st.number_input("Container / Vehicle Qty", min_value=0.0, step=1.0, value=float(selected.get("container_quantity") or 0.0), format="%.2f", key=f"edit_cont_qty_{qno}")
         with g3:
             package_type = st.selectbox("Package Type", PACKAGE_TYPE_OPTIONS, index=pkg_type_idx, key=f"edit_pkg_type_{qno}")
-            package_qty = st.number_input("Package Qty", min_value=0.0, step=1.0, value=float(selected.get("quantity") or 0), key=f"edit_pkg_qty_{qno}")
+            package_qty = st.number_input("Package Qty", min_value=0.0, step=0.01, value=float(selected.get("quantity") or 0.0), format="%.2f", key=f"edit_pkg_qty_{qno}")
 
         w1, w2, w3 = st.columns(3)
         with w1:
-            weight_kg = st.number_input("Gross Weight (KG)", min_value=0.0, step=10.0, format="%.2f", value=float(selected.get("weight_kg") or 0), key=f"edit_wt_{qno}")
+            weight_kg = st.number_input("Gross Weight (KG)", min_value=0.0, step=0.01, format="%.2f", value=float(selected.get("weight_kg") or 0.0), key=f"edit_wt_{qno}")
         with w2:
-            volume_cbm = st.number_input("Volume (CBM)", min_value=0.0, step=0.1, format="%.3f", value=float(selected.get("volume_cbm") or 0), key=f"edit_cbm_{qno}")
+            volume_cbm = st.number_input("Volume (CBM)", min_value=0.0, step=0.001, format="%.3f", value=float(selected.get("volume_cbm") or 0.0), key=f"edit_cbm_{qno}")
         with w3:
             is_dg = st.checkbox("Dangerous Goods (DG)", value=bool(selected.get("is_dg")), key=f"edit_dg_{qno}")
 
         section("4. Pricing & Line Items")
-        st.caption("💡 พิมพ์ Description และราคาได้อิสระ โดยไม่ต้องระบุ Charge Code")
+        st.caption("💡 พิมพ์ Description, Unit, Curr, Qty, Rate ได้อิสระ โดยไม่ต้องระบุ Charge Code")
         items_df = _item_editor(charge_map, existing=selected.get("items", []), mode=mode, key=f"qv2_edit_items_{qno}")
 
         section("5. Terms & Remarks")

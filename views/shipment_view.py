@@ -416,9 +416,9 @@ def _financial(j):
                     supplier = c3.text_input("Vendor / Carrier / Transporter", value=_s(j.get("carrier"), ""))
 
                     c4, c5, c6, c7 = st.columns(4)
-                    qty = c4.number_input("Quantity", min_value=0.01, value=1.0, step=1.0)
-                    price = c5.number_input("Unit Price", min_value=0.0, value=0.0, step=100.0)
-                    curr = c6.selectbox("Currency", ["THB", "USD", "EUR", "CNY"], index=0)
+                    qty = c4.number_input("Quantity", min_value=0.001, value=1.0, step=0.01, format="%.2f")
+                    price = c5.number_input("Unit Price", min_value=0.0, value=0.0, step=0.01, format="%.2f")
+                    curr = c6.selectbox("Currency", ["THB", "USD", "EUR", "CNY", "JPY", "SGD"], index=0)
                     billable = c7.selectbox("Billable to Customer?", ["Yes (เรียกเก็บลูกค้า)", "No (ต้นทุนภายในบริษัท)"], index=0)
 
                     remark = st.text_input("Remarks / Notes")
@@ -437,7 +437,7 @@ def _financial(j):
                             "shipment_id": j["id"],
                             "cost_type": "AP",
                             "category": cat,
-                            "description": final_desc,
+                            "description": final_desc or "Operational Cost",
                             "supplier": supplier.strip() or None,
                             "quantity": qty,
                             "unit_price": price,
@@ -493,9 +493,9 @@ def _financial(j):
                     s_cust = s3.text_input("Customer", value=_s(j.get("customer_name"), ""))
 
                     s4, s5, s6 = st.columns(3)
-                    s_qty = s4.number_input("Quantity", min_value=0.01, value=1.0, step=1.0, key=f"ar_qty_{j['id']}")
-                    s_price = s5.number_input("Unit Price", min_value=0.0, value=0.0, step=100.0, key=f"ar_prc_{j['id']}")
-                    s_curr = s6.selectbox("Currency", ["THB", "USD", "EUR", "CNY"], index=0, key=f"ar_curr_{j['id']}")
+                    s_qty = s4.number_input("Quantity", min_value=0.001, value=1.0, step=0.01, format="%.2f", key=f"ar_qty_{j['id']}")
+                    s_price = s5.number_input("Unit Price", min_value=0.0, value=0.0, step=0.01, format="%.2f", key=f"ar_prc_{j['id']}")
+                    s_curr = s6.selectbox("Currency", ["THB", "USD", "EUR", "CNY", "JPY", "SGD"], index=0, key=f"ar_curr_{j['id']}")
 
                     s_remark = st.text_input("Remarks / Notes", key=f"ar_rem_{j['id']}")
                     save_sell = st.form_submit_button("Save Customer Revenue Line", type="primary", use_container_width=True)
@@ -513,7 +513,7 @@ def _financial(j):
                             "shipment_id": j["id"],
                             "cost_type": "AR",
                             "category": s_cat,
-                            "description": final_s_desc,
+                            "description": final_s_desc or "Customer Revenue",
                             "supplier": s_cust.strip() or None,
                             "quantity": s_qty,
                             "unit_price": s_price,
@@ -525,7 +525,6 @@ def _financial(j):
                             "created_by": user.get("username", "operation"),
                         })
                         st.success("Customer revenue line added.")
-                        st.rerun()
                     except Exception as exc:
                         st.error(f"Failed to add revenue: {exc}")
 

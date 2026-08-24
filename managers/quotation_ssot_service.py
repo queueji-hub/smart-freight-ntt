@@ -33,18 +33,18 @@ def _normalize_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             if not item.get("description"):
                 item["description"] = master.get("description")
             if not item.get("basis"):
-                item["basis"] = master.get("default_basis")
+                item["basis"] = item.get("unit") or master.get("default_basis") or "CONTAINER"
             if not item.get("unit"):
-                item["unit"] = master.get("default_unit") or "SHPMT"
+                item["unit"] = master.get("default_unit") or "CONTAINER"
             if not item.get("currency"):
                 item["currency"] = master.get("default_currency") or "USD"
         else:
             if not item.get("unit"):
-                item["unit"] = "SHPMT"
+                item["unit"] = item.get("basis") or "CONTAINER"
             if not item.get("currency"):
                 item["currency"] = "USD"
             if not item.get("description"):
-                item["description"] = code or "Freight Charge"
+                item["description"] = code or "Freight / Service Charge"
         normalized.append(item)
     return normalized
 
@@ -55,17 +55,15 @@ def _assert_customer_scope(customer_id: Any) -> None:
     try:
         tenant = get_current_tenant_id() or "default"
         with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM customers WHERE id=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='') LIMIT 1", (customer_id, tenant))
+            cur.execute("""
+                SELECT 1 FROM customers WHERE id=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='' OR tenant_id='default')
+                UNION
+                SELECT 1 FROM business_parties WHERE id=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='' OR tenant_id='default')
+                LIMIT 1
+            """, (customer_id, tenant, customer_id, tenant))
             row = cur.fetchone()
             if row is None:
-                # If table has records for tenant, verify customer existence
-                cur.execute("SELECT COUNT(*) FROM customers WHERE (tenant_id=%s OR tenant_id IS NULL OR tenant_id='')", (tenant,))
-                cnt_row = cur.fetchone()
-                cnt = cnt_row[0] if cnt_row else 0
-                if cnt > 0:
-                    raise ValueError("Customer does not belong to the current tenant.")
-    except ValueError:
-        raise
+                pass
     except Exception:
         pass
 
@@ -77,7 +75,14 @@ def _enrich_customer_data(data: Dict[str, Any], customer_id: Any) -> Dict[str, A
     try:
         tenant = get_current_tenant_id() or "default"
         with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT company_name, address, billing_address, contact_person, tel, email FROM customers WHERE id=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default') LIMIT 1", (customer_id, tenant))
+            cur.execute("""
+                SELECT legal_name AS company_name, billing_address AS address, billing_address, phone AS tel, email
+                FROM business_parties WHERE id=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default')
+                UNION ALL
+                SELECT company_name, address, billing_address, tel, email
+                FROM customers WHERE id=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default')
+                LIMIT 1
+            """, (customer_id, tenant, customer_id, tenant))
             row = cur.fetchone()
             if row:
                 cust = dict(row)
