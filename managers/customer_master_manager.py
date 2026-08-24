@@ -26,7 +26,7 @@ def list_customers(active_only: bool = False, user: Optional[Dict[str, Any]] = N
                 SELECT p.*, pf.credit_limit, pf.credit_currency, pf.credit_days, pf.payment_term_code
                 FROM business_parties p
                 JOIN party_roles pr ON pr.party_id=p.id AND pr.tenant_id=p.tenant_id
-                LEFT JOIN party_finance pf ON pf.party_id=p.id AND pf.tenant_id=p.tenant_id
+                LEFT JOIN party_finance_profiles pf ON pf.party_id=p.id AND pf.tenant_id=p.tenant_id
                 WHERE p.tenant_id=%s AND pr.role_type='CUSTOMER'
             """, (tenant,))
             party_rows = [dict(r) for r in cur.fetchall()]
