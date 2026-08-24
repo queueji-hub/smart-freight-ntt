@@ -901,16 +901,8 @@ def render():
                 st.info("✅ Approved")
 
     with act_col3:
-        if can_edit and status.lower() in {"approved", "accepted"}:
-            if st.button("🚀 Create Job", key=f"qv2_handover_{selected_no}", type="primary", width="stretch", help="ส่งต่อให้ฝ่ายปฏิบัติการ (Operations/CS) เปิด Job"):
-                try:
-                    job_no = handover_quotation_to_job(selected_no, user)
-                    st.success(f"Job {job_no} created successfully!")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(str(exc))
-        elif can_edit:
-            if st.button("📑 Duplicate", key=f"qv2_dup_{selected_no}", width="stretch"):
+        if can_edit:
+            if st.button("📑 Duplicate", key=f"qv2_dup_{selected_no}", width="stretch", help="คัดลอกใบเสนอราคาเป็นฉบับร่างใหม่"):
                 try:
                     new_q = duplicate_quotation(selected_no)
                     st.success(f"Created duplicate {new_q} as Draft.")

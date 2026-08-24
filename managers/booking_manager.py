@@ -45,7 +45,14 @@ def create_booking(data: Dict[str, Any], user: Dict[str, Any] = None) -> str:
                 INSERT INTO bookings (
                     tenant_id,
                     booking_no,
+                    carrier_booking_no,
+                    quotation_no,
+                    sales_id,
+                    sales_person,
                     job_type,
+                    mode,
+                    service_term,
+                    service_type,
                     customer_id,
                     customer_name,
                     shipper,
@@ -66,15 +73,31 @@ def create_booking(data: Dict[str, Any], user: Dict[str, Any] = None) -> str:
                     eta,
                     carrier,
                     m_vessel,
+                    mother_vessel,
                     feeder,
+                    feeder_vessel,
+                    feeder_voyage,
+                    m_voyage,
+                    mother_voyage,
                     liner,
                     vessel,
                     voyage,
+                    flight_no,
+                    flight_date,
+                    mawb_no,
+                    hawb_no,
+                    truck_type,
+                    truck_plate,
+                    driver_name,
+                    driver_phone,
+                    loading_date,
+                    delivery_date,
                     closing_time,
                     cargo_type,
                     container_summary,
                     gross_weight,
                     measurement_cbm,
+                    chargeable_weight,
                     package_qty,
                     quantity,
                     package_unit,
@@ -89,12 +112,22 @@ def create_booking(data: Dict[str, Any], user: Dict[str, Any] = None) -> str:
                     %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                     %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                     %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s,'DRAFT',%s
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,'DRAFT',%s
                 )
             """, (
                 tenant_id,
                 booking_no,
+                data.get("carrier_booking_no"),
+                data.get("quotation_no"),
+                data.get("sales_id"),
+                data.get("sales_person"),
                 job_type,
+                data.get("mode") or ("AIR" if "AE" in job_type or "AI" in job_type else ("TRUCK" if "TE" in job_type or "TI" in job_type else "SEA")),
+                data.get("service_term") or data.get("service_type") or data.get("cargo_type"),
+                data.get("service_type") or data.get("service_term") or data.get("cargo_type"),
                 data.get("customer_id"),
                 data.get("customer_name"),
                 data.get("shipper"),
@@ -113,17 +146,33 @@ def create_booking(data: Dict[str, Any], user: Dict[str, Any] = None) -> str:
                 data.get("return_place"),
                 data.get("etd"),
                 data.get("eta"),
-                data.get("carrier"),
-                data.get("m_vessel"),
-                data.get("feeder"),
-                data.get("liner"),
+                data.get("carrier") or data.get("liner"),
+                data.get("m_vessel") or data.get("mother_vessel"),
+                data.get("mother_vessel") or data.get("m_vessel"),
+                data.get("feeder") or data.get("feeder_vessel"),
+                data.get("feeder_vessel") or data.get("feeder"),
+                data.get("feeder_voyage"),
+                data.get("m_voyage") or data.get("mother_voyage"),
+                data.get("mother_voyage") or data.get("m_voyage"),
+                data.get("liner") or data.get("carrier"),
                 data.get("vessel"),
                 data.get("voyage"),
+                data.get("flight_no"),
+                data.get("flight_date"),
+                data.get("mawb_no"),
+                data.get("hawb_no"),
+                data.get("truck_type"),
+                data.get("truck_plate"),
+                data.get("driver_name"),
+                data.get("driver_phone"),
+                data.get("loading_date"),
+                data.get("delivery_date"),
                 data.get("closing_time"),
                 data.get("cargo_type"),
                 data.get("container_summary"),
                 data.get("gross_weight"),
                 data.get("measurement_cbm"),
+                data.get("chargeable_weight"),
                 data.get("package_qty"),
                 data.get("quantity"),
                 data.get("package_unit"),
@@ -308,14 +357,17 @@ def update_booking(booking_no: str, data: Dict[str, Any], tenant_id: str = None)
         raise ValueError("Cannot modify fields on a CONFIRMED booking directly. Create a Controlled Revision first.")
 
     allowed_fields = {
-        "carrier_booking_no", "customer_id", "customer_name", "shipper", "consignee",
+        "carrier_booking_no", "quotation_no", "customer_id", "customer_name", "sales_id", "sales_person",
+        "job_type", "mode", "service_term", "service_type", "shipper", "consignee",
         "notify_party", "pol", "por", "pod", "final_destination",
         "transhipment_port", "cy_date", "cy_place", "cfs_date",
         "cfs_place", "customer_return_date", "return_place",
         "etd", "eta", "carrier", "m_vessel", "mother_vessel", "feeder",
         "feeder_vessel", "feeder_voyage", "m_voyage", "mother_voyage", "liner",
-        "vessel", "voyage", "closing_time", "cargo_type", "container_summary",
-        "gross_weight", "measurement_cbm", "package_qty", "quantity",
+        "vessel", "voyage", "flight_no", "flight_date", "mawb_no", "hawb_no",
+        "truck_type", "truck_plate", "driver_name", "driver_phone", "loading_date", "delivery_date",
+        "closing_time", "cargo_type", "container_summary",
+        "gross_weight", "measurement_cbm", "chargeable_weight", "package_qty", "quantity",
         "package_unit", "commodity", "freight_term", "remark", "status", "quotation_id"
     }
 
@@ -394,8 +446,9 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                     return ship_row["job_no"]
         return existing.get("job_no", "")
 
-    if str(existing.get("status", "")).upper() != "CONFIRMED":
-        raise ValueError("Only CONFIRMED bookings can be converted to a Job.")
+    cur_status = str(existing.get("status", "")).upper()
+    if cur_status not in ["CONFIRMED", "SUBMITTED"]:
+        raise ValueError(f"Booking status is {cur_status}. Please confirm or submit the booking before converting to a Job.")
 
     from managers.document_numbering_service import generate_document_number
     job_no = generate_document_number(
@@ -408,12 +461,9 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
             with conn.cursor() as cur:
                 # 2. Atomic Status Update
                 cur.execute(
-                    "UPDATE bookings SET status = %s, job_no = %s WHERE booking_no = %s AND tenant_id = %s AND status = 'CONFIRMED'",
+                    "UPDATE bookings SET status = %s, job_no = %s WHERE booking_no = %s AND tenant_id = %s",
                     ("CONVERTED TO JOB", job_no, booking_no, tenant_id)
                 )
-                
-                if cur.rowcount == 0:
-                    raise ValueError("Only CONFIRMED bookings can be converted to a Job.")
                 
                 # 3. Fetch full booking details
                 cur.execute("SELECT * FROM bookings WHERE booking_no = %s AND tenant_id = %s", (booking_no, tenant_id))
@@ -440,8 +490,11 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                 job_payload = {
                     "booking_no": booking_no,
                     "carrier_booking_no": booking.get("carrier_booking_no"),
+                    "customer_id": booking.get("customer_id"),
                     "quotation_no": str(booking.get("quotation_no") or booking.get("quotation_id") or "").strip() or None,
                     "job_type": booking.get("job_type"),
+                    "mode": booking.get("mode") or ("AIR" if "AE" in str(booking.get("job_type")) or "AI" in str(booking.get("job_type")) else ("TRUCK" if "TE" in str(booking.get("job_type")) or "TI" in str(booking.get("job_type")) else "SEA")),
+                    "service_type": booking.get("service_type") or booking.get("service_term") or booking.get("cargo_type"),
                     "customer_name": booking.get("customer_name"),
                     "notify_party": booking.get("notify_party"),
                     "sales_person": salesperson,
@@ -456,6 +509,8 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                     "final_destination": booking.get("final_destination"),
                     "etd": booking.get("etd"),
                     "eta": booking.get("eta"),
+                    "mbl_no": booking.get("mawb_no") or booking.get("carrier_booking_no"),
+                    "hbl_no": booking.get("hawb_no"),
                     "vessel": booking.get("vessel") or booking.get("feeder_vessel"),
                     "voyage": booking.get("voyage") or booking.get("feeder_voyage"),
                     "mother_vessel": booking.get("mother_vessel") or booking.get("m_vessel"),
@@ -466,6 +521,7 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                     "package_type": booking.get("package_unit"),
                     "gross_weight": booking.get("gross_weight"),
                     "cbm": booking.get("measurement_cbm"),
+                    "chargeable_weight": booking.get("chargeable_weight"),
                     "created_by": user.get("username", "system"),
                     "status": "Proceed",
                     "actual_departure": None,

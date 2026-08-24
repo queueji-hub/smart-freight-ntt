@@ -55,40 +55,6 @@ def _fmt(v):
         return _s(v)
 
 
-def _mode(booking: Dict[str, Any]) -> str:
-    return get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type')).transport
-
-
-def _cargo_type(booking: Dict[str, Any]) -> str:
-    return get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type')).cargo_type
-
-
-def _is_sea_fcl(booking: Dict[str, Any]) -> bool:
-    profile = get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type'))
-    return profile.volume_kind == 'CONTAINER' and profile.receiving_kind == 'CY'
-
-
-def _parse_equipment_summary(booking: Dict[str, Any]):
-    rows = []
-    ctype = _s(booking.get('container_type'), '').strip()
-    qty = booking.get('container_quantity') or booking.get('quantity')
-    if ctype and qty:
-        try:
-            rows.append((ctype, int(float(qty))))
-        except (TypeError, ValueError):
-            rows.append((ctype, _s(qty)))
-    summary = _s(booking.get('container_summary'), '').strip()
-    if summary and summary != '—':
-        for match in re.finditer(r'(\d+)\s*[xX×]\s*([0-9\'A-Za-z\-]+)', summary):
-            parsed_qty = int(match.group(1))
-            parsed_type = match.group(2).replace('HC', "'HC").replace('GP', "'GP")
-            if (parsed_type, parsed_qty) not in rows:
-                rows.append((parsed_type, parsed_qty))
-    if not rows and summary and summary != '—':
-        rows.append((summary, _s(qty, '')))
-    return rows
-
-
 def _styles():
     base = getSampleStyleSheet()
     return {
@@ -151,6 +117,22 @@ def _grid(rows, styles, header=None, color=LIGHT):
     return t
 
 
+def _parse_equipment_summary(booking: Dict[str, Any]):
+    rows = []
+    summary = _s(booking.get('container_summary'), '').strip()
+    if summary and summary != '—':
+        for part in summary.split('|'):
+            part = part.strip()
+            if 'x' in part:
+                ctype, _, qty = part.partition('x')
+                rows.append((ctype.strip(), qty.strip()))
+            else:
+                rows.append(('Equipment', part))
+    if not rows and booking.get('container_type'):
+        rows.append((_s(booking.get('container_type')), _s(booking.get('quantity') or '1')))
+    return rows
+
+
 def _watermark(canvas, doc, approval_status):
     canvas.saveState()
     canvas.setFont(THAI_FONT, 8)
@@ -174,62 +156,99 @@ def generate_booking_pdf(booking: Any, output_path: str = None, approval_status:
     stl = _styles()
     story = [_header(stl), Spacer(1, 4 * mm), Paragraph('BOOKING CONFIRMATION', stl['title'])]
 
+    mode = _s(booking.get('mode') or ('AIR' if 'AE' in str(booking.get('job_type')) or 'AI' in str(booking.get('job_type')) else ('TRUCK' if 'TE' in str(booking.get('job_type')) or 'TI' in str(booking.get('job_type')) else 'SEA'))).upper()
+    cargo_type = _s(booking.get('cargo_type'), 'FCL' if mode == 'SEA' else mode).upper()
+
+    # 1. Booking Details Header Grid
+    ref_col_name = 'Carrier Booking No.' if mode == 'SEA' and cargo_type == 'FCL' else (
+        'Co-loader Ref No.' if mode == 'SEA' and cargo_type == 'LCL' else (
+            'Airline Booking / MAWB' if mode == 'AIR' else 'Waybill / Truck Ref'
+        )
+    )
     story += [_grid([
-        ('Booking No.', booking.get('booking_no'), 'Carrier Booking No.', booking.get('carrier_booking_no')),
-        ('Booking Date', _fmt(booking.get('booking_date')), 'Customer', booking.get('customer_name')),
+        ('Booking No.', booking.get('booking_no'), ref_col_name, booking.get('carrier_booking_no') or booking.get('mawb_no')),
+        ('Booking Date', _fmt(booking.get('booking_date') or booking.get('created_at')), 'Customer', booking.get('customer_name')),
         ('Shipper', booking.get('shipper'), 'Consignee', booking.get('consignee')),
-        ('ETD', _fmt(booking.get('etd')), 'ETA', _fmt(booking.get('eta'))),
+        ('ETD / Departure', _fmt(booking.get('etd')), 'ETA / Arrival', _fmt(booking.get('eta'))),
     ], stl, header='Booking Details', color=BLUE), Spacer(1, 4 * mm)]
 
-    vessel_name = _s(booking.get('vessel') or booking.get('feeder_vessel') or booking.get('m_vessel') or booking.get('mother_vessel'))
-    vessel_voyage = vessel_name if vessel_name == '—' else f"{vessel_name} / {_s(booking.get('voyage') or booking.get('feeder_voyage'))}".strip(' /')
-    mv_name = _s(booking.get('mother_vessel') or booking.get('m_vessel'))
-    mv_voy = _s(booking.get('mother_voyage') or booking.get('m_voyage'))
-    mother_vessel = mv_name if mv_name == '—' else (f"{mv_name} / {mv_voy}".strip(' /') if mv_voy else mv_name)
-    story += [_grid([
-        ('POL', booking.get('pol'), 'POR', booking.get('por')),
-        ('Transshipment Port', booking.get('transhipment_port'), 'POD', booking.get('pod')),
-        ('Carrier', booking.get('carrier'), 'Vessel / Voyage', vessel_voyage),
-        ('Mother Vessel', mother_vessel, 'Final Destination', booking.get('final_destination')),
-    ], stl, header='Routing & Vessel', color=BLUE), Spacer(1, 4 * mm)]
+    # 2. Routing & Transport Mode Execution Grid
+    if mode == 'SEA':
+        vessel_name = _s(booking.get('vessel') or booking.get('feeder_vessel'))
+        vessel_voyage = vessel_name if vessel_name == '—' else f"{vessel_name} / {_s(booking.get('voyage') or booking.get('feeder_voyage'))}".strip(' /')
+        mv_name = _s(booking.get('mother_vessel') or booking.get('m_vessel'))
+        mv_voy = _s(booking.get('mother_voyage') or booking.get('m_voyage'))
+        mother_vessel = mv_name if mv_name == '—' else (f"{mv_name} / {mv_voy}".strip(' /') if mv_voy else mv_name)
 
-    profile = get_freight_profile(booking.get('mode') or booking.get('job_type'), booking.get('cargo_type'))
-    if profile.volume_kind == 'CONTAINER':
+        story += [_grid([
+            ('POL (Port of Loading)', booking.get('pol'), 'POD (Port of Discharge)', booking.get('pod')),
+            ('Transshipment Port', booking.get('transhipment_port'), 'Final Destination', booking.get('final_destination')),
+            ('Carrier / Liner', booking.get('liner') or booking.get('carrier'), 'Feeder Vessel / Voyage', vessel_voyage),
+            ('Mother Vessel / Voyage', mother_vessel, 'Freight Term', booking.get('freight_term') or 'Prepaid'),
+        ], stl, header='Routing & Vessel Details', color=BLUE), Spacer(1, 4 * mm)]
+    elif mode == 'AIR':
+        flight_info = f"{_s(booking.get('flight_no') or booking.get('vessel'))} {_s(booking.get('flight_date') or booking.get('voyage'))}".strip()
+        story += [_grid([
+            ('AOD (Airport of Departure)', booking.get('pol'), 'AOA (Airport of Arrival)', booking.get('pod')),
+            ('Transshipment Airport', booking.get('transhipment_port'), 'Final Destination', booking.get('final_destination')),
+            ('Airline / Carrier', booking.get('carrier') or booking.get('liner'), 'Flight No. / Date', flight_info or '—'),
+            ('MAWB / HAWB No.', f"{_s(booking.get('mawb_no'))} / {_s(booking.get('hawb_no'))}", 'Freight Term', booking.get('freight_term') or 'Prepaid'),
+        ], stl, header='Routing & Flight Details', color=BLUE), Spacer(1, 4 * mm)]
+    else:  # TRUCK
+        story += [_grid([
+            ('Place of Origin', booking.get('pol'), 'Place of Delivery', booking.get('pod')),
+            ('Border Customs Post', booking.get('transhipment_port'), 'Trucker / Transporter', booking.get('carrier') or booking.get('liner')),
+            ('Truck Plate No.', booking.get('truck_plate') or booking.get('voyage'), 'Driver Name & Phone', f"{_s(booking.get('driver_name'))} ({_s(booking.get('driver_phone'))})"),
+            ('Loading Date', _fmt(booking.get('loading_date') or booking.get('etd')), 'Delivery Target Date', _fmt(booking.get('delivery_date') or booking.get('eta'))),
+        ], stl, header='Routing & Truck Details', color=BLUE), Spacer(1, 4 * mm)]
+
+    # 3. Cargo & Equipment / Receiving Grid
+    if mode == 'SEA' and cargo_type == 'FCL':
         equipment_rows = _parse_equipment_summary(booking)
         cargo_rows = []
         if equipment_rows:
             for idx, (ctype, qty) in enumerate(equipment_rows):
-                cargo_rows.append(('Container Type' if idx == 0 else '', ctype, 'Quantity' if idx == 0 else '', qty))
+                cargo_rows.append(('Container Type' if idx == 0 else '', ctype, 'Quantity' if idx == 0 else '', str(qty)))
         else:
-            cargo_rows.append(('Equipment', booking.get('container_summary'), 'Quantity', booking.get('quantity') or booking.get('container_quantity')))
-        story += [_grid(cargo_rows, stl, header='Cargo & Equipment', color=BLUE), Spacer(1, 4 * mm)]
-    elif profile.volume_kind == 'KG':
+            cargo_rows.append(('Equipment', booking.get('container_summary') or '—', 'Quantity', '—'))
+        cargo_rows.append(('Gross Weight', f"{_s(booking.get('gross_weight'), '0')} KG", 'Commodity', booking.get('commodity') or 'General Cargo'))
+        story += [_grid(cargo_rows, stl, header='Equipment & Cargo', color=BLUE), Spacer(1, 4 * mm)]
+
+        # CY Schedule
+        story += [_grid([
+            ('CY Cut-off Date', _fmt(booking.get('cy_date')), 'CY Return Terminal', booking.get('cy_place')),
+            ('Empty Pickup Depot', booking.get('return_place'), 'Return Free Time', _fmt(booking.get('customer_return_date'))),
+        ], stl, header='CY / Container Terminal Schedule', color=GOLD), Spacer(1, 4 * mm)]
+    elif mode == 'SEA' and cargo_type == 'LCL':
         story += [_grid([
             ('Packages', f"{_s(booking.get('package_qty'), '0')} {_s(booking.get('package_unit'), 'PKGS')}", 'Gross Weight', f"{_s(booking.get('gross_weight'), '0')} KG"),
-            ('Chargeable Weight', f"{_s(booking.get('chargeable_weight'), '—')} KG", 'Commodity', booking.get('commodity')),
-        ], stl, header='Cargo Details', color=BLUE), Spacer(1, 4 * mm)]
-    elif profile.volume_kind == 'TRUCK':
-        story += [_grid([
-            ('Truck Type', booking.get('truck_type') or booking.get('container_summary'), 'Quantity', booking.get('quantity') or booking.get('truck_quantity')),
-            ('Commodity', booking.get('commodity'), 'Gross Weight', f"{_s(booking.get('gross_weight'), '0')} KG"),
-        ], stl, header='Transport Equipment', color=BLUE), Spacer(1, 4 * mm)]
-    else:
-        story += [_grid([
-            ('Packages', f"{_s(booking.get('package_qty'), '0')} {_s(booking.get('package_unit'), 'PKGS')}", 'Gross Weight', f"{_s(booking.get('gross_weight'), '0')} KG"),
-            ('Volume', f"{_s(booking.get('measurement_cbm'), '0')} CBM", 'Commodity', booking.get('commodity')),
+            ('Volume (CBM)', f"{_s(booking.get('measurement_cbm'), '0')} CBM", 'Commodity', booking.get('commodity') or 'General Cargo'),
         ], stl, header='Cargo Details', color=BLUE), Spacer(1, 4 * mm)]
 
-    if profile.show_cy:
+        # CFS Schedule
         story += [_grid([
-            ('CY Date', _fmt(booking.get('cy_date')), 'CY Place', booking.get('cy_place')),
-            ('Container Return Date', _fmt(booking.get('customer_return_date')), 'Return Place', booking.get('return_place')),
-        ], stl, header='CY / Container Schedule', color=GOLD), Spacer(1, 4 * mm)]
-    elif profile.show_cfs:
-        story += [_grid([('CFS Date', _fmt(booking.get('cfs_date')), 'CFS Place', booking.get('cfs_place'))], stl, header='CFS Receiving', color=GOLD), Spacer(1, 4 * mm)]
+            ('CFS Cut-off Date', _fmt(booking.get('cfs_date')), 'CFS Receiving Warehouse', booking.get('cfs_place')),
+        ], stl, header='CFS Receiving Schedule', color=GOLD), Spacer(1, 4 * mm)]
+    elif mode == 'AIR':
+        story += [_grid([
+            ('Packages', f"{_s(booking.get('package_qty'), '0')} {_s(booking.get('package_unit'), 'PKGS')}", 'Gross Weight', f"{_s(booking.get('gross_weight'), '0')} KG"),
+            ('Volume (CBM)', f"{_s(booking.get('measurement_cbm'), '0')} CBM", 'Chargeable Weight', f"{_s(booking.get('chargeable_weight'), '—')} KG"),
+        ], stl, header='Cargo Weight & Measurements', color=BLUE), Spacer(1, 4 * mm)]
+
+        # Airport Cargo Terminal
+        story += [_grid([
+            ('Airport Cut-off Date', _fmt(booking.get('cfs_date')), 'Airport Cargo Terminal', booking.get('cfs_place')),
+            ('Commodity', booking.get('commodity') or 'General Cargo', 'Handling Info', 'General Cargo'),
+        ], stl, header='Airport Cargo Terminal Schedule', color=GOLD), Spacer(1, 4 * mm)]
+    else:  # TRUCK
+        story += [_grid([
+            ('Packages', f"{_s(booking.get('package_qty'), '0')} {_s(booking.get('package_unit'), 'PKGS')}", 'Gross Weight', f"{_s(booking.get('gross_weight'), '0')} KG"),
+            ('Volume (CBM)', f"{_s(booking.get('measurement_cbm'), '0')} CBM", 'Commodity', booking.get('commodity') or 'General Cargo'),
+        ], stl, header='Cargo Details', color=BLUE), Spacer(1, 4 * mm)]
 
     remark = _s(booking.get('remark'), '')
     if remark:
-        story += [Paragraph('<b>Remarks</b>', stl['label']), Paragraph(remark.replace('\n', '<br/>'), stl['body']), Spacer(1, 4 * mm)]
+        story += [Paragraph('<b>Remarks & Operational Instructions</b>', stl['label']), Paragraph(remark.replace('\n', '<br/>'), stl['body']), Spacer(1, 4 * mm)]
 
     sig = Table([[Paragraph('Yours sincerely,', stl['body']), Paragraph('_' * 30, stl['body'])], [Spacer(1, 14 * mm), Paragraph(f"<b>{COMPANY['signer_name']}</b><br/>{COMPANY['signer_title']}", stl['body'])]], colWidths=[90 * mm, 90 * mm])
     sig.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('ALIGN', (0, 0), (-1, -1), 'CENTER')]))

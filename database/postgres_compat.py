@@ -77,6 +77,79 @@ def ensure_phase30_quotation_schema(conn) -> None:
     _safe_commit(conn)
 
 
+def ensure_phase30_booking_schema(conn) -> None:
+    """Ensure all required booking columns exist in PostgreSQL."""
+    with conn.cursor() as cur:
+        columns = {
+            "status": "TEXT DEFAULT 'Draft'",
+            "approval_status": "TEXT DEFAULT 'Draft'",
+            "job_type": "TEXT",
+            "mode": "TEXT",
+            "service_term": "TEXT",
+            "service_type": "TEXT",
+            "customer_id": "INTEGER",
+            "customer_name": "TEXT",
+            "sales_id": "INTEGER",
+            "sales_person": "TEXT",
+            "quotation_id": "INTEGER",
+            "quotation_no": "TEXT",
+            "carrier_booking_no": "TEXT",
+            "shipper": "TEXT",
+            "consignee": "TEXT",
+            "notify_party": "TEXT",
+            "pol": "TEXT",
+            "por": "TEXT",
+            "pod": "TEXT",
+            "final_destination": "TEXT",
+            "transhipment_port": "TEXT",
+            "carrier": "TEXT",
+            "liner": "TEXT",
+            "vessel": "TEXT",
+            "voyage": "TEXT",
+            "feeder": "TEXT",
+            "feeder_vessel": "TEXT",
+            "feeder_voyage": "TEXT",
+            "m_vessel": "TEXT",
+            "mother_vessel": "TEXT",
+            "m_voyage": "TEXT",
+            "mother_voyage": "TEXT",
+            "flight_no": "TEXT",
+            "flight_date": "DATE",
+            "mawb_no": "TEXT",
+            "hawb_no": "TEXT",
+            "truck_type": "TEXT",
+            "truck_plate": "TEXT",
+            "driver_name": "TEXT",
+            "driver_phone": "TEXT",
+            "loading_date": "DATE",
+            "delivery_date": "DATE",
+            "etd": "DATE",
+            "eta": "DATE",
+            "cy_date": "DATE",
+            "cy_place": "TEXT",
+            "cfs_date": "DATE",
+            "cfs_place": "TEXT",
+            "customer_return_date": "DATE",
+            "return_place": "TEXT",
+            "cargo_type": "TEXT",
+            "container_summary": "TEXT",
+            "gross_weight": "NUMERIC(15,2) DEFAULT 0",
+            "measurement_cbm": "NUMERIC(15,2) DEFAULT 0",
+            "chargeable_weight": "NUMERIC(15,2) DEFAULT 0",
+            "package_qty": "INTEGER DEFAULT 0",
+            "quantity": "INTEGER DEFAULT 0",
+            "package_unit": "TEXT",
+            "commodity": "TEXT",
+            "freight_term": "TEXT",
+            "remark": "TEXT",
+            "created_by": "TEXT",
+            "updated_by": "TEXT",
+            "tenant_id": "TEXT DEFAULT 'default'",
+        }
+        _add_columns(cur, "bookings", columns)
+    _safe_commit(conn)
+
+
 def ensure_phase30_shipment_schema(conn) -> None:
     """Ensure all required shipment columns exist in PostgreSQL."""
     with conn.cursor() as cur:
@@ -554,6 +627,10 @@ def ensure_phase30_bl_schema(conn) -> None:
 
 def ensure_phase30_approval_schema(conn) -> None:
     """Ensure approval_status and tenant column constraints are updated across all core document tables."""
+    try:
+        ensure_phase30_booking_schema(conn)
+    except Exception:
+        pass
     with conn.cursor() as cur:
         for table in ["quotations", "bookings", "invoices", "bills_of_lading"]:
             try:
