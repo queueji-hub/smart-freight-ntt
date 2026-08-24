@@ -16,6 +16,7 @@ from managers.master_data_crud_manager import list_parties, list_ports
 from managers.rate_lookup_service import find_applicable_rates
 from managers.quotation_manager import duplicate_quotation, get_quotation_by_no, list_quotations
 from managers.quotation_ssot_service import create_quotation_ssot, update_quotation_ssot, delete_quotation_ssot, set_quotation_status_ssot
+from managers.salesperson_manager import list_salespersons, resolve_salesperson_id
 from ui.design_system import page_header, section
 
 # Contract dependencies: list_ports, list_parties("CARRIER"), find_applicable_rates, Charge Master
@@ -687,7 +688,7 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             consignee = st.text_area("Consignee (ผู้รับสินค้า - ไม่บังคับ)", value=_s(selected.get("consignee")), height=68, key=f"edit_csg_{qno}", placeholder="Consignee name / address")
 
         section(f"2. Routing & Incoterms ({mcfg['label']})")
-        r1, r2, r3, r4 = st.columns(4)
+        r1, r2, r3, r4, r_inco = st.columns(5)
         with r1:
             mode = st.selectbox("Transport Mode", MODE_OPTIONS, index=mode_idx, key=f"edit_mode_{qno}")
         with r2:
@@ -696,6 +697,8 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             pol = st.text_input(mcfg["pol_label"], value=_s(selected.get("pol")), key=f"edit_pol_{qno}")
         with r4:
             pod = st.text_input(mcfg["pod_label"], value=_s(selected.get("pod")), key=f"edit_pod_{qno}")
+        with r_inco:
+            incoterm = st.selectbox("Incoterm", INCOTERM_OPTIONS, index=inco_idx, key=f"edit_inco_{qno}")
 
         r5, r6, r7, r8, r9 = st.columns([1.5, 1.5, 1.5, 1.5, 1.5])
         with r5:

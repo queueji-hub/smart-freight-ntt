@@ -16,8 +16,9 @@ def setup_tenant():
 
 def _get_or_create_test_job() -> str:
     jobs = list_shipments(limit=10)
-    if jobs:
-        return jobs[0]["job_no"]
+    for j in jobs:
+        if j.get("delivery_agent") and "AGENT" in str(j.get("delivery_agent")):
+            return j["job_no"]
     return create_shipment({
         "job_type": "EXPORT SEA",
         "mode": "SEA",

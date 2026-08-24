@@ -84,42 +84,134 @@ def create_bl_from_job(job_no: str, user: Dict[str, Any], overrides: Optional[Di
     if not job:
         raise ValueError(f"Job '{job_no}' not found.")
 
-    etd = _safe_date(job.get("etd"))
+    # 1. Fetch linked Booking for fallback party & routing context
+    booking_data: Dict[str, Any] = {}
+    booking_no = job.get("booking_no")
+    if booking_no:
+        try:
+            from managers.booking_manager import get_booking
+            booking_data = get_booking(booking_no) or {}
+        except Exception:
+            booking_data = {}
+
+    # 2. Fetch linked Containers for Marks & Numbers and accurate Cargo Metrics
+    containers: List[Dict[str, Any]] = []
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute(
+                    "SELECT * FROM containers WHERE (job_no = %s OR shipment_id = %s) AND tenant_id = %s ORDER BY container_no",
+                    (job_no, job.get("id"), tenant)
+                )
+                containers = [dict(r) for r in cur.fetchall()]
+            except Exception:
+                try:
+                    cur.execute(
+                        "SELECT * FROM containers WHERE (job_no = %s OR shipment_id = %s) ORDER BY container_no",
+                        (job_no, job.get("id"))
+                    )
+                    containers = [dict(r) for r in cur.fetchall()]
+                except Exception:
+                    containers = []
+
+    # 3. Assemble Marks & Numbers from Container + Seal details
+    if containers:
+        marks_lines = ["CONTAINER(S) & SEAL(S):"]
+        for c in containers:
+            c_no = str(c.get("container_no") or "").strip()
+            s_no = str(c.get("seal_no") or "NO SEAL").strip()
+            c_sz = str(c.get("container_size") or "").strip()
+            c_tp = str(c.get("container_type") or "").strip()
+            marks_lines.append(f"{c_no} / SEAL: {s_no} ({c_sz} {c_tp})".strip())
+        marks_numbers = "\n".join(marks_lines)
+    else:
+        marks_numbers = (
+            job.get("container_summary")
+            or booking_data.get("container_summary")
+            or "N/M (NO MARKS)"
+        )
+
+    # 4. Resolve Cargo Metrics with Container Fallbacks
+    container_gross = sum(float(c.get("gross_weight") or c.get("vgm_kg") or 0) for c in containers)
+    container_cbm = sum(float(c.get("volume_cbm") or 0) for c in containers)
+
+    gross_weight = float(job.get("gross_weight") or booking_data.get("gross_weight") or container_gross or 0)
+    measurement_cbm = float(job.get("cbm") or booking_data.get("measurement_cbm") or container_cbm or 0)
+    package_qty = int(job.get("package_quantity") or job.get("package_qty") or booking_data.get("package_qty") or len(containers) or 1)
+    package_type = (
+        job.get("package_type")
+        or booking_data.get("package_unit")
+        or ("CONTAINER(S)" if containers else "PACKAGES")
+    )
+
+    # 5. Resolve Routing and Transport
+    pol = job.get("pol") or job.get("port_of_loading") or booking_data.get("pol")
+    pod = job.get("pod") or job.get("port_of_discharge") or booking_data.get("pod")
+    vessel = (
+        job.get("mother_vessel")
+        or job.get("vessel")
+        or booking_data.get("mother_vessel")
+        or booking_data.get("vessel")
+        or job.get("carrier")
+    )
+    voyage = (
+        job.get("mother_voyage")
+        or job.get("voyage")
+        or booking_data.get("mother_voyage")
+        or booking_data.get("voyage")
+        or ""
+    )
+    etd = _safe_date(job.get("etd") or booking_data.get("etd"))
+    eta = _safe_date(job.get("eta") or booking_data.get("eta"))
     consol_seq = next_consol_sequence(job_no)
+
+    # 6. Resolve Parties & Freight Terms
+    shipper = job.get("shipper") or booking_data.get("shipper") or job.get("customer_name")
+    consignee = job.get("consignee") or booking_data.get("consignee") or "TO ORDER OF SHIPPER"
+    notify_party = job.get("notify_party") or booking_data.get("notify_party") or "SAME AS CONSIGNEE"
+    delivery_agent = (
+        job.get("delivery_agent")
+        or booking_data.get("delivery_agent")
+        or job.get("overseas_agent")
+        or ""
+    )
+    freight_term = str(job.get("freight_term") or booking_data.get("freight_term") or "FREIGHT PREPAID").upper()
+    freight_payable_at = job.get("freight_payable_at") or (pol if "PREPAID" in freight_term else pod) or "ORIGIN"
 
     data: Dict[str, Any] = {
         "job_no": job_no,
         "shipment_id": job.get("id"),
-        "booking_no": job.get("booking_no"),
+        "booking_no": booking_no,
         "bl_type": "BL",
         "status": "Draft",
         "approval_status": "Draft",
         "consol_no": job_no,
         "consol_seq": consol_seq,
-        "shipper": job.get("shipper"),
-        "consignee": job.get("consignee"),
-        "notify_party": job.get("notify_party"),
-        "delivery_agent": job.get("delivery_agent") or job.get("place_of_delivery"),
-        "pre_carriage_by": job.get("pre_carriage_by"),
-        "place_of_receipt": job.get("place_of_receipt"),
-        "port_of_loading": job.get("pol"),
-        "port_of_discharge": job.get("pod"),
-        "place_of_delivery": job.get("place_of_delivery"),
-        "final_destination": job.get("final_destination"),
-        "vessel": job.get("vessel") or job.get("mother_vessel"),
-        "voyage": job.get("voyage") or job.get("mother_voyage"),
-        "etd": job.get("etd"),
-        "eta": job.get("eta"),
-        "freight_term": job.get("freight_term"),
-        "freight_payable_at": job.get("freight_payable_at"),
+        "shipper": shipper,
+        "consignee": consignee,
+        "notify_party": notify_party,
+        "delivery_agent": delivery_agent,
+        "pre_carriage_by": job.get("pre_carriage_by") or booking_data.get("pre_carriage_by"),
+        "place_of_receipt": job.get("place_of_receipt") or job.get("por") or booking_data.get("por") or booking_data.get("cy_place") or pol,
+        "port_of_loading": pol,
+        "port_of_discharge": pod,
+        "place_of_delivery": job.get("place_of_delivery") or job.get("final_destination") or booking_data.get("final_destination") or pod,
+        "final_destination": job.get("final_destination") or job.get("place_of_delivery") or booking_data.get("final_destination") or pod,
+        "vessel": vessel,
+        "voyage": voyage,
+        "etd": etd,
+        "eta": eta,
+        "freight_term": freight_term,
+        "freight_payable_at": freight_payable_at,
         "place_of_issue": job.get("place_of_issue") or "THAILAND",
         "number_of_originals": job.get("number_of_originals") or 3,
-        "description_of_goods": job.get("commodity"),
-        "hs_code": job.get("hs_code"),
-        "package_qty": job.get("package_quantity") or 0,
-        "package_type": job.get("package_type"),
-        "gross_weight": job.get("gross_weight") or 0,
-        "measurement_cbm": job.get("cbm") or 0,
+        "marks_numbers": marks_numbers,
+        "description_of_goods": job.get("commodity") or job.get("combine_commodity") or booking_data.get("commodity") or "SAID TO CONTAIN GENERAL MERCHANDISE",
+        "hs_code": job.get("hs_code") or booking_data.get("hs_code"),
+        "package_qty": package_qty,
+        "package_type": package_type,
+        "gross_weight": gross_weight,
+        "measurement_cbm": measurement_cbm,
         "created_by": user.get("username", "system"),
         "tenant_id": tenant,
     }
@@ -128,8 +220,8 @@ def create_bl_from_job(job_no: str, user: Dict[str, Any], overrides: Optional[Di
 
     if not data.get("bl_no"):
         data["bl_no"] = generate_company_bl_no(
-            data.get("port_of_loading") or job.get("pol"),
-            data.get("port_of_discharge") or job.get("pod"),
+            data.get("port_of_loading") or pol,
+            data.get("port_of_discharge") or pod,
             data.get("etd") or etd,
         )
 
@@ -153,8 +245,22 @@ def create_bl_from_job(job_no: str, user: Dict[str, Any], overrides: Optional[Di
                 tuple(data[c] for c in cols),
             )
             row = cur.fetchone()
+            bl_id = row["id"] if isinstance(row, dict) else row[0]
+
+            # 7. Automatically associate containers into bl_containers junction
+            for c in containers:
+                c_id = c.get("id")
+                if c_id:
+                    try:
+                        cur.execute(
+                            "INSERT INTO bl_containers (bl_id, container_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                            (bl_id, c_id)
+                        )
+                    except Exception:
+                        pass
+
             conn.commit()
-            return row["id"] if isinstance(row, dict) else row[0]
+            return bl_id
 
 
 def update_bl(bl_id: int, patch: Dict[str, Any]) -> bool:

@@ -72,7 +72,7 @@ def assemble_si_payload(
     mode_label = "AGENT B/L (HBL MODE)" if is_hbl_mode else "DIRECT B/L"
 
     # 1. Resolve Parties
-    agent_info = _s(bl.get("delivery_agent") or job.get("delivery_agent") or "")
+    agent_info = _s(job.get("delivery_agent") or bl.get("delivery_agent") or "")
     
     if is_hbl_mode:
         # In HBL mode: Shipper on Ocean S/I is Nattayaarat, Consignee is the Destination Agent, Notify is SAME AS CONSIGNEE
