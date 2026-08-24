@@ -9,6 +9,7 @@ from database.connection import get_connection
 from database.postgres_compat import (
     ensure_phase30_quotation_schema,
     ensure_phase30_shipment_schema,
+    ensure_phase30_salesperson_schema,
     ensure_phase30_profitability_schema,
     ensure_phase30_master_data_schema,
     ensure_phase30_charge_master_schema,
@@ -31,6 +32,7 @@ def ensure_phase30_local_schema() -> None:
         if not _is_sqlite(conn):
             ensure_phase30_quotation_schema(conn)
             ensure_phase30_shipment_schema(conn)
+            ensure_phase30_salesperson_schema(conn)
             ensure_phase30_charge_master_schema(conn)
             ensure_phase30_master_data_schema(conn)
             ensure_phase30_profitability_schema(conn)
@@ -59,6 +61,7 @@ def ensure_phase30_local_schema() -> None:
                         cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
             for ddl in [
+                "CREATE TABLE IF NOT EXISTS salespersons (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT DEFAULT 'default', sales_code TEXT NOT NULL, name TEXT NOT NULL, email TEXT, phone TEXT, commission_rate REAL DEFAULT 0, remarks TEXT, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(tenant_id, sales_code))",
                 "CREATE TABLE IF NOT EXISTS ports (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT DEFAULT 'default', port_code TEXT NOT NULL, unlocode TEXT, port_name TEXT NOT NULL, city TEXT, country_code TEXT, country_name TEXT, timezone TEXT, port_type TEXT DEFAULT 'PORT', is_active INTEGER DEFAULT 1, remarks TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(tenant_id, port_code))",
                 "CREATE TABLE IF NOT EXISTS business_parties (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT DEFAULT 'default', party_code TEXT NOT NULL, legal_name TEXT NOT NULL, display_name TEXT, short_name TEXT, tax_id TEXT, branch_no TEXT, registration_no TEXT, billing_address TEXT, country_code TEXT, phone TEXT, email TEXT, website TEXT, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(tenant_id, party_code))",
                 "CREATE TABLE IF NOT EXISTS party_roles (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT DEFAULT 'default', party_id INTEGER NOT NULL, role_type TEXT NOT NULL, is_active INTEGER DEFAULT 1, UNIQUE(tenant_id, party_id, role_type))",

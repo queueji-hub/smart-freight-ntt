@@ -58,7 +58,24 @@ def _existing_columns(cur, table: str) -> Set[str]:
 
 
 def list_sales_users() -> List[Dict[str, Any]]:
-    """Return active sales-capable users across boolean/integer legacy schemas."""
+    """Return active salespersons and sales-capable users."""
+    try:
+        from managers.salesperson_manager import list_salespersons
+        sales_records = list_salespersons(active_only=True)
+        if sales_records:
+            return [
+                {
+                    "id": r["id"],
+                    "username": r.get("sales_code") or str(r["id"]),
+                    "full_name": r.get("name") or r.get("sales_code"),
+                    "email": r.get("email"),
+                    "role": "sales",
+                }
+                for r in sales_records
+            ]
+    except Exception:
+        pass
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""

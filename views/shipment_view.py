@@ -139,14 +139,14 @@ def _operations(j):
         sales_person = c2.selectbox("Sales", sales_options or [""], index=_idx(sales_options, j.get("sales_person")))
         status = c3.selectbox("Status", STATUS_FLOW, index=_idx(STATUS_FLOW, j.get("status")))
         c4, c5, c6 = st.columns(3)
-        pol = c4.selectbox("POL", _opts("pol"), index=_idx(_opts("pol"), j.get("pol")))
-        pod = c5.selectbox("POD", _opts("pod"), index=_idx(_opts("pod"), j.get("pod")))
-        carrier = c6.selectbox("Carrier", _opts("carrier"), index=_idx(_opts("carrier"), j.get("carrier")))
+        pol = c4.text_input("POL (Port of Loading)", value=_s(j.get("pol")))
+        pod = c5.text_input("POD (Port of Discharge)", value=_s(j.get("pod")))
+        carrier = c6.text_input("Carrier / Liner", value=_s(j.get("carrier")))
 
         c7, c8, c9 = st.columns(3)
         vessel = c7.text_input("Vessel (Feeder / Ocean)", value=_s(j.get("vessel"), ""))
         voyage = c8.text_input("Voyage No.", value=_s(j.get("voyage"), ""))
-        trans = c9.selectbox("Transshipment", _opts("transshipment_port"), index=_idx(_opts("transshipment_port"), j.get("transshipment_port")))
+        trans = c9.text_input("Transshipment Port", value=_s(j.get("transshipment_port"), ""))
 
         mv1, mv2 = st.columns(2)
         mother_vessel = mv1.text_input("Mother Vessel", value=_s(j.get("mother_vessel"), ""))
@@ -557,9 +557,12 @@ def _new_job():
         etd = e.date_input("ETD", date.today())
         eta = f.date_input("ETA", date.today())
         g, h, i = st.columns(3)
-        mbl_input = g.text_input("Carrier MBL No. (Master B/L)")
-        booking_input = h.text_input("Booking No.")
-        carrier_input = i.selectbox("Carrier", _opts("carrier"))
+        pol_input = g.text_input("POL (Port of Loading)", placeholder="e.g. THBKK — Bangkok Port")
+        pod_input = h.text_input("POD (Port of Discharge)", placeholder="e.g. SGSIN — Singapore")
+        carrier_input = i.text_input("Carrier / Liner", placeholder="e.g. ONE, Evergreen, Maersk")
+        j1, j2 = st.columns(2)
+        mbl_input = j1.text_input("Carrier MBL No. (Master B/L)")
+        booking_input = j2.text_input("Booking No.")
         create = st.form_submit_button("Create Job", type="primary", use_container_width=True)
     if create:
         customer_id = next((x.get("id") for x in customers if x.get("company_name") == customer), None)
@@ -571,9 +574,11 @@ def _new_job():
                 "sales_person": sales_person,
                 "etd": etd.isoformat(),
                 "eta": eta.isoformat(),
+                "pol": pol_input.strip() or None,
+                "pod": pod_input.strip() or None,
+                "carrier": carrier_input.strip() or None,
                 "mbl_no": mbl_input.strip() or None,
                 "booking_no": booking_input.strip() or None,
-                "carrier": carrier_input or None,
                 "status": "Proceed"
             })
             st.success(f"Job {no} created")

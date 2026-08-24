@@ -193,6 +193,110 @@ def _charge_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> 
         st.rerun()
 
 
+from managers.salesperson_manager import list_salespersons, save_salesperson, delete_salesperson, get_salesperson
+from managers.customer_master_manager import list_customers, save_customer, get_credit_snapshot
+from managers.rate_card_crud_manager import list_rate_cards
+
+
+def _salesperson_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
+    record = record or {}
+    section("Sales Person Profile")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        code = st.text_input("Sales Code *", value=str(record.get("sales_code") or ""), max_chars=10, key=f"sp_code_{record.get('id','new')}").upper()
+        name = st.text_input("Salesperson Name *", value=str(record.get("name") or ""), key=f"sp_name_{record.get('id','new')}")
+    with c2:
+        email = st.text_input("Email", value=str(record.get("email") or ""), key=f"sp_email_{record.get('id','new')}")
+        phone = st.text_input("Phone", value=str(record.get("phone") or ""), key=f"sp_phone_{record.get('id','new')}")
+    with c3:
+        comm = st.number_input("Commission Rate (%)", min_value=0.0, max_value=100.0, step=0.5, value=float(record.get("commission_rate") or 0.0), key=f"sp_comm_{record.get('id','new')}")
+        active = st.checkbox("Active", value=bool(record.get("is_active", True)), key=f"sp_active_{record.get('id','new')}")
+
+    remarks = st.text_area("Remarks / Notes", value=str(record.get("remarks") or ""), key=f"sp_remarks_{record.get('id','new')}")
+
+    btn_cols = st.columns([3, 1] if record.get("id") else [1])
+    save_label = "Update Sales Person" if record.get("id") else "Save Sales Person"
+    with btn_cols[0]:
+        save = st.button(save_label, type="primary", width="stretch", key=f"sp_save_{record.get('id','new')}")
+    if record.get("id") and len(btn_cols) > 1:
+        with btn_cols[1]:
+            if st.button("🗑️ Delete Sales Person", type="secondary", width="stretch", key=f"sp_del_{record.get('id')}"):
+                delete_salesperson(record["id"], user)
+                st.success("Sales Person deleted successfully.")
+                st.session_state.pop("master_data_edit_sp", None)
+                st.rerun()
+
+    if save:
+        if not code.strip() or not name.strip():
+            st.error("Sales Code and Salesperson Name are required.")
+            return
+        save_salesperson({
+            "id": record.get("id"),
+            "sales_code": code.strip(),
+            "name": name.strip(),
+            "email": email.strip(),
+            "phone": phone.strip(),
+            "commission_rate": comm,
+            "remarks": remarks.strip(),
+            "is_active": active,
+        }, user)
+        st.success("Sales Person updated." if record.get("id") else "Sales Person saved.")
+        st.session_state.pop("master_data_edit_sp", None)
+        st.rerun()
+
+
+def _customer_section(user: Dict[str, Any]) -> None:
+    action = st.radio("Customer Action", ["Browse", "New Customer"], horizontal=True, key="md_customer_action")
+    rows = list_customers(active_only=False, user=user)
+    if action == "New Customer":
+        from views.customer_master_view import _form as _cust_form
+        _cust_form(user)
+        return
+
+    search_query = st.text_input("🔍 Search Customers", placeholder="Company name, code, tax ID, or contact person", key="md_cust_search")
+    if search_query.strip():
+        sq = search_query.strip().lower()
+        rows = [r for r in rows if sq in f"{r.get('customer_code','')} {r.get('company_name','')} {r.get('display_name','')} {r.get('tax_id','')} {r.get('contact_person','')}".lower()]
+
+    frame = pd.DataFrame([
+        {
+            "ID": r.get("id"),
+            "Code": r.get("customer_code"),
+            "Company Name": r.get("display_name") or r.get("company_name"),
+            "Contact": r.get("contact_person"),
+            "Tel": r.get("tel"),
+            "Email": r.get("email"),
+            "Tax ID": r.get("tax_id"),
+            "Credit Limit": f"{float(r.get('credit_limit') or 0):,.2f} {r.get('credit_currency','THB')}",
+            "Credit Days": r.get("credit_days"),
+            "Hold": "🚫 Yes" if r.get("credit_hold") else "No",
+            "Active": "✅ Active" if r.get("is_active") else "Inactive",
+        }
+        for r in rows
+    ])
+    st.dataframe(frame, hide_index=True, width="stretch")
+
+    options = [r for r in rows if r.get("id")]
+    if options:
+        col_sel, col_btn = st.columns([3, 1])
+        with col_sel:
+            selected = st.selectbox("Select Customer to Edit", options, format_func=lambda r: f"{r.get('customer_code')} — {r.get('display_name') or r.get('company_name')}", key="md_cust_edit_selector")
+        with col_btn:
+            st.write("")
+            if st.button("Edit Customer", key="md_cust_edit_button", width="stretch"):
+                st.session_state["master_data_edit_cust"] = int(selected["id"])
+
+    edit_id = st.session_state.get("master_data_edit_cust")
+    if edit_id:
+        record = next((r for r in rows if int(r.get("id")) == int(edit_id)), None)
+        if record:
+            from views.customer_master_view import _form as _cust_form
+            _cust_form(user, record)
+            if st.button("Close Customer Edit", key="md_cust_cancel_edit"):
+                st.session_state.pop("master_data_edit_cust", None)
+                st.rerun()
+
+
 def render() -> None:
     page_header("data", status_text="Online")
     user = st.session_state.get("user", {})
@@ -201,8 +305,61 @@ def render() -> None:
         st.warning("Master Data access is restricted to authorized users.")
         return
 
-    mode = st.radio("Master Data", ["Ports", "Business Parties", "Charges"], horizontal=True, key="master_data_mode")
-    if mode == "Ports":
+    mode = st.radio(
+        "Master Data Section",
+        [
+            "🏢 Customers (ลูกค้า)",
+            "👤 Sales Persons (พนักงานขาย)",
+            "⚓ Ports (ท่าเรือ)",
+            "🤝 Business Parties (คู่ค้า/สายเรือ)",
+            "💵 Charges (รหัสค่าบริการ)",
+            "📊 Rate Cards (ตารางค่าระวาง)"
+        ],
+        horizontal=True,
+        key="master_data_mode"
+    )
+
+    if "Customers" in mode:
+        _customer_section(user)
+    elif "Sales Persons" in mode:
+        rows = list_salespersons(active_only=False, user=user)
+        action = st.radio("Action", ["Browse", "New Sales Person"], horizontal=True, key="sp_action")
+        if action == "New Sales Person":
+            _salesperson_form(user)
+        else:
+            frame = pd.DataFrame([
+                {
+                    "ID": r.get("id"),
+                    "Code": r.get("sales_code"),
+                    "Name": r.get("name"),
+                    "Email": r.get("email"),
+                    "Phone": r.get("phone"),
+                    "Commission %": f"{float(r.get('commission_rate') or 0):.2f}%",
+                    "Remarks": r.get("remarks"),
+                    "Active": "✅ Active" if r.get("is_active") else "Inactive",
+                }
+                for r in rows
+            ])
+            st.dataframe(frame, hide_index=True, width="stretch")
+            options = [r for r in rows if r.get("id")]
+            if options:
+                col_sel, col_btn = st.columns([3, 1])
+                with col_sel:
+                    selected = st.selectbox("Select Sales Person to Edit", options, format_func=lambda r: f"{r.get('sales_code')} — {r.get('name')}", key="sp_edit_selector")
+                with col_btn:
+                    st.write("")
+                    if st.button("Edit Sales Person", key="sp_edit_button", width="stretch"):
+                        st.session_state["master_data_edit_sp"] = selected["id"]
+            edit_id = st.session_state.get("master_data_edit_sp")
+            if edit_id is not None:
+                record = next((r for r in rows if str(r.get("id")) == str(edit_id)), None)
+                if record:
+                    _salesperson_form(user, record)
+                    if st.button("Close Edit", key="sp_cancel_edit"):
+                        st.session_state.pop("master_data_edit_sp", None)
+                        st.rerun()
+
+    elif "Ports" in mode:
         rows = list_ports(active_only=False)
         action = st.radio("Action", ["Browse", "New"], horizontal=True, key="port_action")
         if action == "New":
@@ -230,7 +387,7 @@ def render() -> None:
                     if st.button("Close Edit", key="port_cancel_edit"):
                         st.session_state.pop("master_data_edit_port", None)
                         st.rerun()
-    elif mode == "Business Parties":
+    elif "Business Parties" in mode:
         role_type = st.selectbox("Party Role", ["ALL"] + ROLE_OPTIONS)
         rows = list_parties(None if role_type == "ALL" else role_type, active_only=False)
         action = st.radio("Action", ["Browse", "New"], horizontal=True, key="party_action")
@@ -259,7 +416,7 @@ def render() -> None:
                     if st.button("Close Edit", key="party_cancel_edit"):
                         st.session_state.pop("master_data_edit_party", None)
                         st.rerun()
-    else:
+    elif "Charges" in mode:
         rows = list_charges(active_only=False, user=user)
         action = st.radio("Action", ["Browse", "New"], horizontal=True, key="charge_action")
         if action == "New":
@@ -287,4 +444,7 @@ def render() -> None:
                     if st.button("Close Edit", key="charge_cancel_edit"):
                         st.session_state.pop("master_data_edit_charge", None)
                         st.rerun()
+    elif "Rate Cards" in mode:
+        from views.rate_master_view import render as render_rates
+        render_rates()
 

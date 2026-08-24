@@ -157,6 +157,46 @@ def ensure_phase30_shipment_schema(conn) -> None:
     _safe_commit(conn)
 
 
+def ensure_phase30_salesperson_schema(conn) -> None:
+    """Create/upgrade salespersons table."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS salespersons (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT DEFAULT 'default',
+                sales_code VARCHAR(20) NOT NULL,
+                name TEXT NOT NULL,
+                email TEXT,
+                phone TEXT,
+                commission_rate NUMERIC(5,2) DEFAULT 0,
+                remarks TEXT,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (tenant_id, sales_code)
+            )
+            """
+        )
+        _add_columns(cur, "salespersons", {
+            "tenant_id": "TEXT DEFAULT 'default'",
+            "sales_code": "VARCHAR(20)",
+            "name": "TEXT",
+            "email": "TEXT",
+            "phone": "TEXT",
+            "commission_rate": "NUMERIC(5,2) DEFAULT 0",
+            "remarks": "TEXT",
+            "is_active": "BOOLEAN DEFAULT TRUE",
+            "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        })
+        try:
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_salespersons_active ON salespersons(tenant_id, is_active)")
+        except Exception:
+            pass
+    _safe_commit(conn)
+
+
 def ensure_phase30_charge_master_schema(conn) -> None:
     """Create/upgrade charge_master table."""
     with conn.cursor() as cur:

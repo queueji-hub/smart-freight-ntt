@@ -180,8 +180,8 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
         hide_index=True,
         width="stretch",
         column_config={
-            "charge_code": st.column_config.SelectboxColumn("Charge Code", options=list(charge_labels.keys()), format_func=lambda x: charge_labels.get(x, str(x)), required=True, width="medium"),
-            "description": st.column_config.TextColumn("Description * (ระบุ/แก้ไขรายละเอียดได้)", required=True, width="large"),
+            "charge_code": st.column_config.TextColumn("Charge Code (รหัสค่าบริการ เช่น OFR, THC, DOC, TRK)", required=True, width="medium"),
+            "description": st.column_config.TextColumn("Description * (ระบุ/แก้ไขรายละเอียดได้อิสระ)", required=True, width="large"),
             "unit": st.column_config.SelectboxColumn("Unit (หน่วย)", options=UNIT_OPTIONS, required=True, width="small"),
             "currency": st.column_config.SelectboxColumn("Curr", options=CURRENCY_OPTIONS, required=True, width="small"),
             "quantity": st.column_config.NumberColumn("Qty", min_value=0.0, step=1.0, width="small"),
@@ -249,16 +249,16 @@ def _create_form(user: Dict[str, Any]):
             default_addr = _s(c_info.get("address") or c_info.get("billing_address"))
         customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า - ดึงจากฐานข้อมูลลูกค้าอัตโนมัติ)", value=default_addr, height=70)
 
-        section("2. Routing & Incoterms (เส้นทางและการส่งมอบ)")
+        section("2. Routing & Incoterms (เส้นทางและการส่งมอบ - ระบุ/พิมพ์ได้อิสระ)")
         r1, r2, r3, r4 = st.columns(4)
         with r1:
             mode = st.selectbox("Transport Mode (โหมดขนส่ง)", MODE_OPTIONS)
         with r2:
             service_type = st.selectbox("Service Type (บริการ)", SERVICE_OPTIONS)
         with r3:
-            pol_id = st.selectbox("POL (ท่าเรือต้นทาง) *", list(port_map), format_func=lambda x: port_map[x]) if port_map else None
+            pol = st.text_input("POL (ท่าเรือต้นทาง) *", placeholder="e.g. THBKK — Bangkok หรือ ICD Lat Krabang")
         with r4:
-            pod_id = st.selectbox("POD (ท่าเรือปลายทาง) *", list(port_map), format_func=lambda x: port_map[x]) if port_map else None
+            pod = st.text_input("POD (ท่าเรือปลายทาง) *", placeholder="e.g. SGSIN — Singapore หรือ USLAX — Los Angeles")
 
         r5, r6, r7, r8 = st.columns(4)
         with r5:
@@ -270,9 +270,7 @@ def _create_form(user: Dict[str, Any]):
         with r8:
             freight_term = st.selectbox("Freight Term", ["", "Prepaid", "Collect"])
 
-        carrier_id = st.selectbox("Preferred Carrier / Liner (สายเรือ / สายการบิน)", ["— None / TBA —"] + list(carrier_map), format_func=lambda x: carrier_map.get(x, x) if isinstance(x, int) else str(x)) if carrier_map else None
-        if isinstance(carrier_id, str):
-            carrier_id = None
+        carrier = st.text_input("Preferred Carrier / Liner (สายเรือ / สายการบิน)", placeholder="e.g. ONE, Evergreen, Maersk, Cosco, Thai Airways")
 
         section("3. Cargo Specifications (ข้อมูลสินค้า & ตู้สินค้า)")
         g1, g2, g3 = st.columns(3)
@@ -295,7 +293,7 @@ def _create_form(user: Dict[str, Any]):
             is_dg = st.checkbox("Dangerous Goods (สินค้าอันตราย / DG)", value=False)
 
         section("4. Pricing & Selling Charges (รายการค่าใช้จ่ายและราคาขาย)")
-        st.caption("💡 เลือกรายการค่าบริการ หรือพิมพ์ Description, เลือก Unit และ Currency ได้อิสระตามตกลงกับลูกค้า")
+        st.caption("💡 ระบุรหัสค่าบริการ เช่น OFR, THC, DOC, TRK หรือพิมพ์ Description และราคาได้อิสระตามความต้องการ")
         items_df = _item_editor(charge_map, key="qv2_items_create")
 
         # Summary Metrics
@@ -344,15 +342,11 @@ def _create_form(user: Dict[str, Any]):
             "customer_email": customer_email.strip(),
             "quotation_date": issue_date.isoformat(),
             "validity_date": valid_until.isoformat(),
-            "payment_term": payment_term.strip(),
-            "carrier_id": carrier_id,
-            "pol_id": pol_id,
-            "pod_id": pod_id,
-            "pol": port_map.get(pol_id) if pol_id else None,
-            "pod": port_map.get(pod_id) if pod_id else None,
+            "carrier": carrier.strip() or None,
+            "pol": pol.strip() or None,
+            "pod": pod.strip() or None,
             "origin": origin.strip(),
             "destination": destination.strip(),
-            "carrier": carrier_map.get(carrier_id) if carrier_id else None,
             "mode": mode,
             "service_type": service_type,
             "incoterm": incoterm,
@@ -476,16 +470,16 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
         # Customer Address field in Edit form
         customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า)", value=curr_addr, height=70, key=f"edit_addr_{qno}")
 
-        section("2. Routing & Incoterms")
+        section("2. Routing & Incoterms (เส้นทางและการส่งมอบ - ระบุ/พิมพ์ได้อิสระ)")
         r1, r2, r3, r4 = st.columns(4)
         with r1:
             mode = st.selectbox("Transport Mode", MODE_OPTIONS, index=mode_idx, key=f"edit_mode_{qno}")
         with r2:
             service_type = st.selectbox("Service Type", SERVICE_OPTIONS, index=serv_idx, key=f"edit_serv_{qno}")
         with r3:
-            pol_id = st.selectbox("POL", port_keys, index=pol_idx, format_func=lambda x: port_map[x], key=f"edit_pol_{qno}") if port_keys else None
+            pol = st.text_input("POL (ท่าเรือต้นทาง) *", value=_s(selected.get("pol")), key=f"edit_pol_{qno}")
         with r4:
-            pod_id = st.selectbox("POD", port_keys, index=pod_idx, format_func=lambda x: port_map[x], key=f"edit_pod_{qno}") if port_keys else None
+            pod = st.text_input("POD (ท่าเรือปลายทาง) *", value=_s(selected.get("pod")), key=f"edit_pod_{qno}")
 
         r5, r6, r7, r8 = st.columns(4)
         with r5:
@@ -500,7 +494,7 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             frt_idx = frt_opts.index(raw_frt) if raw_frt in frt_opts else (1 if raw_frt.lower() == "prepaid" else (2 if raw_frt.lower() == "collect" else 0))
             freight_term = st.selectbox("Freight Term", frt_opts, index=frt_idx, key=f"edit_frt_{qno}")
 
-        carrier_id = st.selectbox("Preferred Carrier", carrier_keys, index=carrier_idx, format_func=lambda x: carrier_map[x], key=f"edit_carr_{qno}") if carrier_keys else None
+        carrier = st.text_input("Preferred Carrier / Liner", value=_s(selected.get("carrier")), key=f"edit_carr_{qno}")
 
         section("3. Cargo Specifications")
         g1, g2, g3 = st.columns(3)
@@ -563,14 +557,11 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             "quotation_date": issue_date.isoformat(),
             "validity_date": valid_until.isoformat(),
             "payment_term": payment_term.strip(),
-            "carrier_id": carrier_id,
-            "pol_id": pol_id,
-            "pod_id": pod_id,
-            "pol": port_map.get(pol_id) if pol_id else None,
-            "pod": port_map.get(pod_id) if pod_id else None,
+            "carrier": carrier.strip() or None,
+            "pol": pol.strip() or None,
+            "pod": pod.strip() or None,
             "origin": origin.strip(),
             "destination": destination.strip(),
-            "carrier": carrier_map.get(carrier_id) if carrier_id else None,
             "mode": mode,
             "service_type": service_type,
             "incoterm": incoterm,
