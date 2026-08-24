@@ -216,50 +216,41 @@ def _build_info_block(quotation: Dict[str, Any], styles) -> Table:
 
 
 def _build_items_table(items: List[Dict[str, Any]], styles) -> Table:
-    """Items table with auto-pagination support (header repeats on each page)."""
+    """Items table without Qty/Amount for clean freight quotation presentation."""
     header = [
-        Paragraph('<b><font color="white">DESCRIPTION</font></b>', styles["body"]),
-        "", "", "", "", "", ""
+        Paragraph('<b><font color="white">PRICE / CHARGES SCHEDULE</font></b>', styles["body"]),
+        "", "", "", ""
     ]
     sub_header = [
-        Paragraph('<b><font color="#1F4E9E">ITEM</font></b>', styles["body"]),
-        Paragraph('<b><font color="#1F4E9E">QTY</font></b>', styles["body"]),
+        Paragraph('<b><font color="#1F4E9E">ITEM / DESCRIPTION</font></b>', styles["body"]),
         Paragraph('<b><font color="#1F4E9E">UNIT</font></b>', styles["body"]),
         Paragraph('<b><font color="#1F4E9E">CURR</font></b>', styles["body"]),
-        Paragraph('<b><font color="#1F4E9E">RATE</font></b>', styles["body"]),
-        Paragraph('<b><font color="#1F4E9E">AMOUNT</font></b>', styles["body"]),
+        Paragraph('<b><font color="#1F4E9E">UNIT RATE</font></b>', styles["body"]),
         Paragraph('<b><font color="#1F4E9E">REMARK</font></b>', styles["body"]),
     ]
     
     data = [header, sub_header]
-    currency_totals = {}
     
     for item in items:
         amount = float(item.get("amount") or item.get("price") or 0)
-        rate = float(item.get("unit_rate") or amount)
-        qty = float(item.get("quantity") if item.get("quantity") is not None else 1.0)
+        rate = float(item.get("unit_rate") if item.get("unit_rate") is not None else amount)
         curr = str(item.get("currency") or "USD").upper()
         
         desc = _clean_text(item.get("description", "")) or ""
         unit = _clean_text(item.get("unit") or item.get("basis") or "")
-        
-        currency_totals[curr] = currency_totals.get(curr, 0) + amount
-        
-        qty_display = f"{qty:,.3f}".rstrip('0').rstrip('.') if qty != int(qty) else str(int(qty))
+        remark = str(item.get("remark") or "")
         
         data.append([
             Paragraph(desc, styles["body"]),
-            Paragraph(qty_display, styles["body"]),
             Paragraph(unit, styles["body"]),
             Paragraph(curr, styles["body"]),
-            Paragraph(f"{rate:,.2f}", styles["body"]),
-            Paragraph(f"<b>{amount:,.2f}</b>", styles["body"]),
-            Paragraph(str(item.get("remark") or ""), styles["body"]),
+            Paragraph(f"<b>{rate:,.2f}</b>", styles["body"]),
+            Paragraph(remark, styles["body"]),
         ])
     
     tbl = Table(
         data,
-        colWidths=[55*mm, 15*mm, 15*mm, 15*mm, 20*mm, 25*mm, 35*mm],
+        colWidths=[75*mm, 25*mm, 20*mm, 28*mm, 32*mm],
         repeatRows=2,
     )
     tbl.setStyle(TableStyle([
@@ -272,10 +263,8 @@ def _build_items_table(items: List[Dict[str, Any]], styles) -> Table:
         ("ALIGN", (0,2), (0,-1), "LEFT"),
         ("ALIGN", (1,2), (1,-1), "CENTER"),
         ("ALIGN", (2,2), (2,-1), "CENTER"),
-        ("ALIGN", (3,2), (3,-1), "CENTER"),
-        ("ALIGN", (4,2), (4,-1), "RIGHT"),
-        ("ALIGN", (5,2), (5,-1), "RIGHT"),
-        ("ALIGN", (6,2), (6,-1), "LEFT"),
+        ("ALIGN", (3,2), (3,-1), "RIGHT"),
+        ("ALIGN", (4,2), (4,-1), "LEFT"),
         ("LEFTPADDING", (0,0), (-1,-1), 4),
         ("RIGHTPADDING", (0,0), (-1,-1), 4),
         ("TOPPADDING", (0,0), (-1,-1), 3),
