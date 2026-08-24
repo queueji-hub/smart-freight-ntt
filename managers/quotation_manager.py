@@ -145,10 +145,7 @@ def list_quotations() -> List[Dict[str, Any]]:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT 
-                    quotation_no, job_type, customer_name, subject,
-                    quotation_date, validity_date, status, pol, pod, salesperson,
-                    service_type, incoterm, approval_status, customer_id, sales_id, customer_address
+                SELECT *
                 FROM quotations 
                 WHERE (tenant_id = %s OR tenant_id IS NULL OR tenant_id = 'default')
                 ORDER BY id DESC;

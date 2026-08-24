@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from database.connection import get_connection
 from database.postgres_compat import (
+    ensure_phase30_quotation_schema,
     ensure_phase30_profitability_schema,
     ensure_phase30_master_data_schema,
     ensure_phase30_charge_master_schema,
@@ -27,6 +28,7 @@ def _columns(cur, table: str) -> set[str]:
 def ensure_phase30_local_schema() -> None:
     with get_connection() as conn:
         if not _is_sqlite(conn):
+            ensure_phase30_quotation_schema(conn)
             ensure_phase30_charge_master_schema(conn)
             ensure_phase30_master_data_schema(conn)
             ensure_phase30_profitability_schema(conn)

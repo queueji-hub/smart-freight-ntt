@@ -20,6 +20,52 @@ def _safe_commit(conn) -> None:
             pass
 
 
+def ensure_phase30_quotation_schema(conn) -> None:
+    """Ensure all quotation columns exist in PostgreSQL."""
+    with conn.cursor() as cur:
+        columns = {
+            "customer_id": "INTEGER",
+            "customer_name": "TEXT",
+            "customer_address": "TEXT",
+            "customer_email": "TEXT",
+            "sales_id": "INTEGER",
+            "salesperson": "TEXT",
+            "status": "TEXT DEFAULT 'Draft'",
+            "approval_status": "TEXT DEFAULT 'Draft'",
+            "tenant_id": "TEXT DEFAULT 'default'",
+            "job_type": "TEXT",
+            "service_type": "TEXT",
+            "incoterm": "TEXT",
+            "freight_term": "TEXT",
+            "carrier": "TEXT",
+            "pol": "TEXT",
+            "pod": "TEXT",
+            "origin": "TEXT",
+            "destination": "TEXT",
+            "commodity": "TEXT",
+            "hs_code": "TEXT",
+            "quantity": "NUMERIC(15,2) DEFAULT 0",
+            "package_type": "TEXT",
+            "weight_kg": "NUMERIC(15,2) DEFAULT 0",
+            "volume_cbm": "NUMERIC(15,2) DEFAULT 0",
+            "container_type": "TEXT",
+            "container_quantity": "INTEGER DEFAULT 0",
+            "is_dg": "BOOLEAN DEFAULT FALSE",
+            "subject": "TEXT",
+            "terms_conditions": "TEXT",
+            "created_by": "TEXT",
+            "updated_by": "TEXT",
+        }
+        _add_columns(cur, "quotations", columns)
+        try:
+            cur.execute("UPDATE quotations SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''")
+            cur.execute("UPDATE quotations SET status='Draft' WHERE status IS NULL OR btrim(status)=''")
+            cur.execute("UPDATE quotations SET approval_status='Draft' WHERE approval_status IS NULL OR btrim(approval_status)=''")
+        except Exception:
+            pass
+    _safe_commit(conn)
+
+
 def ensure_phase30_charge_master_schema(conn) -> None:
     """Create/upgrade charge_master table."""
     with conn.cursor() as cur:
