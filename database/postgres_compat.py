@@ -40,6 +40,7 @@ def ensure_phase30_quotation_schema(conn) -> None:
             "carrier": "TEXT",
             "pol": "TEXT",
             "pod": "TEXT",
+            "transhipment_port": "TEXT",
             "origin": "TEXT",
             "destination": "TEXT",
             "commodity": "TEXT",

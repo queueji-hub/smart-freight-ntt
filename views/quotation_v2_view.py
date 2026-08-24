@@ -16,7 +16,6 @@ from managers.charge_master_manager import list_charges
 from managers.master_data_crud_manager import list_parties, list_ports
 from managers.quotation_manager import duplicate_quotation, get_quotation_by_no, list_quotations
 from managers.quotation_ssot_service import create_quotation_ssot, update_quotation_ssot, delete_quotation_ssot, set_quotation_status_ssot
-from managers.job_handover_service import handover_quotation_to_job
 from ui.design_system import page_header, section
 
 MODE_OPTIONS = ["SEA", "AIR", "ROAD", "RAIL", "MULTIMODAL"]
@@ -466,14 +465,16 @@ def _create_form(user: Dict[str, Any]):
         with r4:
             incoterm = st.selectbox("Incoterm", INCOTERM_OPTIONS, key=f"qv2_new_inco_{selected_mode}")
 
-        r5, r6, r7, r8 = st.columns(4)
+        r5, r6, r7, r8, r9 = st.columns([1.5, 1.5, 1.5, 1.5, 1.5])
         with r5:
-            origin = st.text_input("Place of Origin / Receipt (ต้นทางรับของ)", key=f"qv2_new_orig_{selected_mode}")
+            origin = st.text_input("Place of Origin (ต้นทางรับของ)", key=f"qv2_new_orig_{selected_mode}")
         with r6:
-            destination = st.text_input("Place of Destination / Delivery (ปลายทางส่งของ)", key=f"qv2_new_dest_{selected_mode}")
+            destination = st.text_input("Place of Destination (ปลายทางส่งของ)", key=f"qv2_new_dest_{selected_mode}")
         with r7:
             carrier = st.text_input(mcfg["carrier_label"], placeholder=mcfg["carrier_placeholder"], key=f"qv2_new_carr_{selected_mode}")
         with r8:
+            transhipment_port = st.text_input("Transshipment Port (ท่าถ่ายลำ/VIA)", placeholder="e.g. Singapore, Busan...", key=f"qv2_new_ts_{selected_mode}")
+        with r9:
             freight_term = st.selectbox("Freight Term", ["", "Prepaid", "Collect"], key=f"qv2_new_frt_{selected_mode}")
 
         section("3. Cargo Specifications (ข้อมูลสินค้า & บรรจุภัณฑ์)")
@@ -548,6 +549,7 @@ def _create_form(user: Dict[str, Any]):
             "carrier": carrier.strip() or None,
             "pol": pol.strip() or None,
             "pod": pod.strip() or None,
+            "transhipment_port": transhipment_port.strip() or None,
             "origin": origin.strip(),
             "destination": destination.strip(),
             "mode": selected_mode,
@@ -693,20 +695,20 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
         with r4:
             pod = st.text_input(mcfg["pod_label"], value=_s(selected.get("pod")), key=f"edit_pod_{qno}")
 
-        r5, r6, r7, r8 = st.columns(4)
+        r5, r6, r7, r8, r9 = st.columns([1.5, 1.5, 1.5, 1.5, 1.5])
         with r5:
             origin = st.text_input("Place of Origin / Receipt", value=_s(selected.get("origin")), key=f"edit_orig_{qno}")
         with r6:
             destination = st.text_input("Place of Destination / Delivery", value=_s(selected.get("destination")), key=f"edit_dest_{qno}")
         with r7:
-            incoterm = st.selectbox("Incoterm", INCOTERM_OPTIONS, index=inco_idx, key=f"edit_inco_{qno}")
+            carrier = st.text_input(mcfg["carrier_label"], value=_s(selected.get("carrier")), key=f"edit_carr_{qno}")
         with r8:
+            transhipment_port = st.text_input("Transshipment Port (ท่าถ่ายลำ/VIA)", value=_s(selected.get("transhipment_port")), placeholder="e.g. Singapore, Busan...", key=f"edit_ts_{qno}")
+        with r9:
             raw_frt = _s(selected.get("freight_term")).title()
             frt_opts = ["", "Prepaid", "Collect"]
             frt_idx = frt_opts.index(raw_frt) if raw_frt in frt_opts else 0
             freight_term = st.selectbox("Freight Term", frt_opts, index=frt_idx, key=f"edit_frt_{qno}")
-
-        carrier = st.text_input(mcfg["carrier_label"], value=_s(selected.get("carrier")), key=f"edit_carr_{qno}")
 
         section("3. Cargo Specifications")
         g1, g2, g3 = st.columns(3)
@@ -777,6 +779,7 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             "carrier": carrier.strip() or None,
             "pol": pol.strip() or None,
             "pod": pod.strip() or None,
+            "transhipment_port": transhipment_port.strip() or None,
             "origin": origin.strip(),
             "destination": destination.strip(),
             "mode": mode,
@@ -823,51 +826,58 @@ def render():
 
     if new_quote:
         st.session_state["qv2_create"] = True
+
     if st.session_state.get("qv2_create") and can_edit:
         _create_form(user)
-        if st.button("✖️ Close Create Form", key="qv2_close"):
+        if st.button("❌ Close Form & Return to List", key="qv2_close_create", width="stretch"):
             st.session_state.pop("qv2_create", None)
             st.rerun()
         return
 
-    section("Quotation Ledger (รายการใบเสนอราคา)")
-    table = pd.DataFrame([
-        {
-            "Quotation No.": _s(r.get("quotation_no")),
+    section("Quotations Registry")
+    table_data = []
+    for r in records:
+        q_num = _s(r.get("quotation_no"))
+        st_val = _s(r.get("status"), "Draft").capitalize()
+        table_data.append({
+            "Quotation No.": q_num,
             "Customer": _s(r.get("customer_name"), "—"),
-            "Route": f"{_s(r.get('pol'),'—')} ➔ {_s(r.get('pod'),'—')}",
-            "Service": f"{_s(r.get('service_type'))} {_s(r.get('job_type'))}".strip(),
-            "Issue Date": _s(r.get("quotation_date"), "—"),
+            "Sales Person": _s(r.get("salesperson") or r.get("sales_person"), "—"),
+            "POL": _s(r.get("pol"), "—"),
+            "POD": _s(r.get("pod"), "—"),
             "Valid Until": _s(r.get("validity_date"), "—"),
-            "Sales": _s(r.get("salesperson"), "—"),
-            "Status": _s(r.get("status"), "Draft"),
-        }
-        for r in records
-    ])
-    st.dataframe(table, hide_index=True, width="stretch")
+            "Status": st_val,
+        })
+    df = pd.DataFrame(table_data)
+    st.dataframe(df, hide_index=True, width="stretch")
+
     if not records:
-        st.info("No quotations found.")
+        st.info("No quotation records found. Click '+ New Quotation' to create one.")
         return
 
-    qnos = [r["quotation_no"] for r in records if r.get("quotation_no")]
-    target_qno = st.session_state.get("qv2_selected_target")
-    default_qno_idx = 0
-    if target_qno in qnos:
-        default_qno_idx = qnos.index(target_qno)
-    elif qnos:
-        default_qno_idx = 0
+    q_options = [r["quotation_no"] for r in records if r.get("quotation_no")]
+    if not q_options:
+        return
+
+    # Handle external or programmatic selection
+    target_sel = st.session_state.get("qv2_selected_target")
+    sel_idx = 0
+    if target_sel and target_sel in q_options:
+        sel_idx = q_options.index(target_sel)
+
+    section("Quotation Control Center")
+    selected_no = st.selectbox("Select Quotation to Inspect / Edit / Print", q_options, index=sel_idx, key="qv2_selected")
     
-    selected_no = st.selectbox("Select Quotation to Manage", qnos, index=default_qno_idx, key="qv2_selected_box")
+    # Keep target synced
     st.session_state["qv2_selected_target"] = selected_no
+
     selected = get_quotation_by_no(selected_no)
     if not selected:
-        st.warning("Quotation not found.")
+        st.warning(f"Quotation {selected_no} not found.")
         return
 
-    # Quotation Control Center
-    status = _s(selected.get("status"), "Draft")
-    section(f"Control Center: {selected_no} ({status})")
-    
+    status = _s(selected.get("status"), "Draft").capitalize()
+
     # Status badges and quick actions
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Customer", _s(selected.get("customer_name"), "—"))
@@ -875,7 +885,7 @@ def render():
     m3.metric("Valid Until", _s(selected.get("validity_date"), "—"))
     m4.metric("Status", status)
 
-    # Action Toolbar
+    # Action Toolbar (Independent Quotation: Print, Approve, Duplicate, Reject, Delete)
     act_col1, act_col2, act_col3, act_col4, act_col5 = st.columns([2, 2, 2, 2, 2])
     with act_col1:
         _render_pdf(selected, selected.get("items", []))
@@ -883,7 +893,7 @@ def render():
     with act_col2:
         if can_edit:
             if status.lower() not in {"approved", "accepted"}:
-                if st.button("✅ Approve Quote", key=f"qv2_approve_{selected_no}", type="secondary", width="stretch", help="ลูกค้าตกลง / พร้อมส่งต่อให้ฝ่ายปฏิบัติการเปิด Job"):
+                if st.button("✅ Approve Quote", key=f"qv2_approve_{selected_no}", type="secondary", width="stretch", help="อนุมัติใบเสนอราคา"):
                     set_quotation_status_ssot(selected_no, "Approved")
                     st.success("Quotation marked as Approved!")
                     st.rerun()

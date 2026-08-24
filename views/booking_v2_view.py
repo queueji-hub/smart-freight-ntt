@@ -166,28 +166,28 @@ def _create_form(user: Dict[str, Any]):
         with b2:
             quotation_no = st.text_input("Quotation Ref (อ้างอิงใบเสนอราคา)", placeholder="Optional")
 
-        section("Routing & Vessel")
+        section("Routing & Transport")
         pol, transhipment_port, pod = st.columns(3)
         with pol:
-            pol_value = st.text_input("POL *")
+            pol_value = st.text_input("POL * (ท่าต้นทาง)", placeholder="e.g. Bangkok, Laem Chabang, Suvarnabhumi...")
         with transhipment_port:
-            trans_value = st.selectbox("Transshipment Port", port_options)
+            trans_value = st.text_input("Transshipment Port (ท่าถ่ายลำ/VIA - ถ้ามี)", placeholder="e.g. Singapore, Port Klang, Busan, Hong Kong...")
         with pod:
-            pod_value = st.text_input("POD *")
+            pod_value = st.text_input("POD * (ท่าปลายทาง)", placeholder="e.g. Tokyo, Shanghai, Los Angeles, Hamburg...")
 
-        l_col, v_col, voy_col = st.columns([1.2, 1.4, 1.4])
+        l_col, v_col, voy_col = st.columns(3)
         with l_col:
-            liner_value = st.selectbox("Liner", liner_options)
+            liner_value = st.text_input("Liner / Carrier (สายเรือ/สายการบิน/ผู้ให้บริการขนส่ง)", placeholder="e.g. ONE, MSC, COSCO, Maersk, Evergreen, TG, EK...")
         with v_col:
-            vessel_value = st.selectbox("Vessel (Feeder / Ocean)", vessel_options)
+            vessel_value = st.text_input("Vessel (Feeder / Ocean / Flight)", placeholder="e.g. EVER GIVEN / TG910")
         with voy_col:
-            voyage_value = st.text_input("Voyage No.")
+            voyage_value = st.text_input("Voyage No. / Flight No.", placeholder="e.g. 0123N / FL910")
 
         mv_col, mvoy_col = st.columns(2)
         with mv_col:
-            mother_value = st.text_input("Mother Vessel")
+            mother_value = st.text_input("Mother Vessel (เรือแม่ / ต่อเที่ยว)", placeholder="e.g. EVER GIVEN")
         with mvoy_col:
-            mother_voyage_value = st.text_input("Mother Voyage No.")
+            mother_voyage_value = st.text_input("Mother Voyage No. (เที่ยวเรือแม่)", placeholder="e.g. 0456W")
 
         etd_default = date.today()
         eta_default = etd_default + timedelta(days=14)
@@ -382,10 +382,12 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
             else:
                 st.error(reason)
     with act[3]:
-        if can_edit and st.button("Convert to Job", key=f"convert_{booking_no}", width="stretch") and current_status == "CONFIRMED":
+        if can_edit and st.button("🚀 Convert to Job", key=f"convert_{booking_no}", type="primary", width="stretch", help="เปิด Job จากข้อมูล Booking นี้") and current_status in {"CONFIRMED", "SUBMITTED"}:
             try:
-                convert_booking_to_job(booking_no, user)
-                st.success("Job created from booking.")
+                job_no = convert_booking_to_job(booking_no, user)
+                st.success(f"🎉 Job {job_no} created successfully from Booking {booking_no}.")
+                st.session_state["current_navigation"] = "job_control"
+                st.query_params["page"] = "job_control"
                 st.rerun()
             except Exception as exc:
                 st.error(str(exc))
@@ -393,27 +395,28 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
         st.write("")
 
     if can_edit:
-        with st.expander("Edit Booking", expanded=False):
+        with st.expander("✏️ Edit Booking Details", expanded=False):
             section("Routing & Transport")
             with st.form(f"edit_booking_{booking_no}"):
                 c_bno_col, _ = st.columns(2)
                 new_carrier_bno = c_bno_col.text_input("Carrier Booking No. (เลขที่บุ๊คกิ้งสายเรือ/สายการบิน)", value=_s(selected.get("carrier_booking_no")))
 
                 r1, r2, r3 = st.columns(3)
-                new_pol = r1.text_input("POL", value=_s(selected.get("pol")))
-                new_trans = r2.text_input("Transshipment Port", value=_s(selected.get("transhipment_port")))
-                new_pod = r3.text_input("POD", value=_s(selected.get("pod")))
+                new_pol = r1.text_input("POL (ท่าต้นทาง)", value=_s(selected.get("pol")))
+                new_trans = r2.text_input("Transshipment Port (ท่าถ่ายลำ/VIA)", value=_s(selected.get("transhipment_port")))
+                new_pod = r3.text_input("POD (ท่าปลายทาง)", value=_s(selected.get("pod")))
 
-                v1, v2 = st.columns(2)
-                new_vessel = v1.text_input("Vessel (Feeder / Ocean)", value=_s(selected.get("vessel")))
-                new_voyage = v2.text_input("Voyage No.", value=_s(selected.get("voyage")))
+                l1, v1, v2 = st.columns(3)
+                new_liner = l1.text_input("Liner / Carrier (สายเรือ/สายการบิน)", value=_s(selected.get("liner")), placeholder="e.g. ONE, MSC, TG...")
+                new_vessel = v1.text_input("Vessel (Feeder / Ocean / Flight)", value=_s(selected.get("vessel")))
+                new_voyage = v2.text_input("Voyage No. / Flight No.", value=_s(selected.get("voyage")))
 
                 mv1, mv2 = st.columns(2)
-                new_mother = mv1.text_input("Mother Vessel", value=_s(selected.get("mother_vessel") or selected.get("m_vessel")))
-                new_mother_voyage = mv2.text_input("Mother Voyage No.", value=_s(selected.get("mother_voyage") or selected.get("m_voyage")))
+                new_mother = mv1.text_input("Mother Vessel (เรือแม่)", value=_s(selected.get("mother_vessel") or selected.get("m_vessel")))
+                new_mother_voyage = mv2.text_input("Mother Voyage No. (เที่ยวเรือแม่)", value=_s(selected.get("mother_voyage") or selected.get("m_voyage")))
 
-                new_remark = st.text_area("Remarks", value=_s(selected.get("remark")))
-                save = st.form_submit_button("Save Changes", type="primary", width="stretch")
+                new_remark = st.text_area("Remarks (หมายเหตุ)", value=_s(selected.get("remark")))
+                save = st.form_submit_button("💾 Save Changes", type="primary", width="stretch")
             if save:
                 try:
                     update_booking(
@@ -422,6 +425,7 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
                             "carrier_booking_no": new_carrier_bno.strip() or None,
                             "pol": new_pol.strip(),
                             "pod": new_pod.strip(),
+                            "liner": new_liner.strip() or None,
                             "vessel": new_vessel.strip() or None,
                             "voyage": new_voyage.strip() or None,
                             "m_vessel": new_mother.strip() or None,

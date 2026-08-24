@@ -46,7 +46,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                 cur.execute("""
                     INSERT INTO quotations (
                         quotation_no, job_type, customer_name, attention, tel,
-                        carrier, pol, pod, quotation_date, validity_date,
+                        carrier, pol, pod, transhipment_port, quotation_date, validity_date,
                         payment_term, commodity, subject, terms_conditions,
                         status, created_at, tenant_id,
                         customer_address, customer_email, salesperson,
@@ -56,7 +56,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     )
                     VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     );
                 """, (
                     quotation_no,
@@ -67,6 +67,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     data.get("carrier", ""),
                     data.get("pol", ""),
                     data.get("pod", ""),
+                    data.get("transhipment_port", ""),
                     q_date_val,
                     v_date_val,
                     data.get("payment_term", "Net 30"),
@@ -270,7 +271,7 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                 cur.execute("""
                     UPDATE quotations SET
                         job_type = %s, customer_name = %s, attention = %s, tel = %s,
-                        carrier = %s, pol = %s, pod = %s, quotation_date = %s,
+                        carrier = %s, pol = %s, pod = %s, transhipment_port = %s, quotation_date = %s,
                         validity_date = %s, payment_term = %s, commodity = %s,
                         subject = %s, terms_conditions = %s,
                         customer_address = %s, customer_email = %s, salesperson = %s,
@@ -282,7 +283,8 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                     WHERE id = %s AND (tenant_id = %s OR tenant_id IS NULL OR tenant_id = 'default');
                 """, (
                     norm_job_type, data.get("customer_name"), data.get("attention"), data.get("tel"),
-                    data.get("carrier"), data.get("pol"), data.get("pod"), data.get("quotation_date"),
+                    data.get("carrier"), data.get("pol"), data.get("pod"), data.get("transhipment_port", ""),
+                    data.get("quotation_date"),
                     data.get("validity_date"), data.get("payment_term"), data.get("commodity"),
                     data.get("subject"), data.get("terms_conditions"),
                     data.get("customer_address", ""), data.get("customer_email", ""), data.get("salesperson", ""),

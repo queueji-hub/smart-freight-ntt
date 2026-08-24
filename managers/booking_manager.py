@@ -308,7 +308,7 @@ def update_booking(booking_no: str, data: Dict[str, Any], tenant_id: str = None)
         raise ValueError("Cannot modify fields on a CONFIRMED booking directly. Create a Controlled Revision first.")
 
     allowed_fields = {
-        "customer_id", "customer_name", "shipper", "consignee",
+        "carrier_booking_no", "customer_id", "customer_name", "shipper", "consignee",
         "notify_party", "pol", "por", "pod", "final_destination",
         "transhipment_port", "cy_date", "cy_place", "cfs_date",
         "cfs_place", "customer_return_date", "return_place",
@@ -439,7 +439,8 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                 
                 job_payload = {
                     "booking_no": booking_no,
-                    "quotation_no": str(booking.get("quotation_id")) if booking.get("quotation_id") else None,
+                    "carrier_booking_no": booking.get("carrier_booking_no"),
+                    "quotation_no": str(booking.get("quotation_no") or booking.get("quotation_id") or "").strip() or None,
                     "job_type": booking.get("job_type"),
                     "customer_name": booking.get("customer_name"),
                     "notify_party": booking.get("notify_party"),
@@ -447,7 +448,7 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                     "shipper": booking.get("shipper"),
                     "consignee": booking.get("consignee"),
                     "cargo_type": booking.get("cargo_type"),
-                    "carrier": booking.get("carrier"),
+                    "carrier": booking.get("carrier") or booking.get("liner"),
                     "place_of_receipt": booking.get("por"),
                     "pol": booking.get("pol"),
                     "transshipment_port": booking.get("transhipment_port"),
