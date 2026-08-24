@@ -195,7 +195,7 @@ def _charge_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> 
 
 from managers.salesperson_manager import list_salespersons, save_salesperson, delete_salesperson, get_salesperson
 from managers.customer_master_manager import list_customers, save_customer, get_credit_snapshot
-from managers.rate_card_crud_manager import list_rate_cards
+from managers.rate_master_manager import list_rate_cards
 
 
 def _salesperson_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
