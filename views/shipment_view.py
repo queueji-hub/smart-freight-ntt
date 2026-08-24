@@ -543,17 +543,35 @@ def _history(j):
 
 def _new_job():
     st.markdown('<div class="s-section">Create Job</div>', unsafe_allow_html=True)
-    customers = list_customers() or []
-    sales = list_sales_users() or []
-    customer_options = [x.get("company_name") for x in customers if x.get("company_name")]
-    sales_options = [_s(x.get("full_name"), x.get("username")) for x in sales]
+    from managers.master_data_crud_manager import list_parties
+    from managers.salesperson_manager import list_salespersons
+    
+    parties_cust = list_parties("CUSTOMER", active_only=True) or []
+    legacy_cust = list_customers() or []
+    customer_dict = {}
+    for r in parties_cust:
+        cid = int(r["id"])
+        cname = r.get("display_name") or r.get("legal_name") or str(cid)
+        customer_dict[cid] = f"{r.get('party_code')} — {cname}"
+    for r in legacy_cust:
+        cid = int(r["id"])
+        if cid not in customer_dict:
+            cname = r.get("display_name") or r.get("company_name") or str(cid)
+            customer_dict[cid] = f"{r.get('customer_code', '')} — {cname}".strip(" —")
+
+    sales_list = list_salespersons(active_only=True) or []
+    sales_options = [f"{s.get('sales_code')} — {s.get('name')}".strip(" —") for s in sales_list if s.get("name")]
+    if not sales_options:
+        sales_options = ["Unassigned"]
+
+    cust_ids = list(customer_dict)
     with st.form("new_job_form", clear_on_submit=True):
         a, b, c = st.columns(3)
         jt = a.selectbox("Job Type", ["EXPORT SEA", "IMPORT SEA", "EXPORT AIR", "IMPORT AIR", "CROSS BORDER"])
-        mode = b.selectbox("Mode", ["SEA", "AIR", "ROAD"])
-        customer = c.selectbox("Customer", customer_options or [""])
+        mode = b.selectbox("Mode", ["SEA", "AIR", "ROAD", "RAIL"])
+        customer_id = c.selectbox("Customer", cust_ids, format_func=lambda x: customer_dict[x]) if cust_ids else None
         d, e, f = st.columns(3)
-        sales_person = d.selectbox("Sales", sales_options or [""])
+        sales_person = d.selectbox("Sales", sales_options)
         etd = e.date_input("ETD", date.today())
         eta = f.date_input("ETA", date.today())
         g, h, i = st.columns(3)
@@ -565,12 +583,12 @@ def _new_job():
         booking_input = j2.text_input("Booking No.")
         create = st.form_submit_button("Create Job", type="primary", use_container_width=True)
     if create:
-        customer_id = next((x.get("id") for x in customers if x.get("company_name") == customer), None)
         try:
             no = create_shipment({
                 "job_type": jt,
                 "mode": mode,
                 "customer_id": customer_id,
+                "customer_name": customer_dict.get(customer_id, "") if customer_id else None,
                 "sales_person": sales_person,
                 "etd": etd.isoformat(),
                 "eta": eta.isoformat(),
@@ -583,6 +601,7 @@ def _new_job():
             })
             st.success(f"Job {no} created")
             st.session_state.pop("job_control_new", None)
+            st.session_state["job_control_selector"] = no
             st.rerun()
         except Exception as exc:
             st.error(f"Create failed: {exc}")

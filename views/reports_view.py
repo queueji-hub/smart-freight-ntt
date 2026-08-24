@@ -73,11 +73,22 @@ def render():
     # 3. Salesperson Performance & Commission View
     else:
         st.markdown("#### Salesperson Performance & Commission")
-        salesperson = st.text_input("Enter Salesperson Name")
+        from managers.salesperson_manager import list_salespersons
+        sales_list = list_salespersons(active_only=False)
+        sp_options = [s.get("name") for s in sales_list if s.get("name")]
+        if not sp_options:
+            sp_options = ["Unassigned"]
+        
+        salesperson = st.selectbox(
+            "Select Salesperson (เลือกพนักงานขาย)",
+            sp_options,
+            format_func=lambda name: next((f"{s.get('sales_code')} — {s.get('name')}" for s in sales_list if s.get("name") == name), name),
+            key="rep_salesperson_selector"
+        )
         
         c1, c2 = st.columns(2)
-        btn_search = c1.button("Search & Drill Down Jobs")
-        btn_com = c2.button("Calculate & Draft Commission")
+        btn_search = c1.button("🔍 Search & Drill Down Jobs", width="stretch")
+        btn_com = c2.button("💰 Calculate & Draft Commission", width="stretch")
         
         if btn_search:
             if not salesperson:

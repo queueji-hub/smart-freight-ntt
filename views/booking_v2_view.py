@@ -50,8 +50,26 @@ def _date(value: Any, default: date | None = None) -> date | None:
 
 
 def _load_master_data():
-    customers = list_customers() or []
-    sales = list_sales_users() or []
+    from managers.master_data_crud_manager import list_parties
+    from managers.salesperson_manager import list_salespersons
+    
+    parties_cust = list_parties("CUSTOMER", active_only=True) or []
+    legacy_cust = list_customers() or []
+    customer_dict = {}
+    for r in parties_cust:
+        cid = int(r["id"])
+        cname = r.get("display_name") or r.get("legal_name") or str(cid)
+        customer_dict[cid] = {"id": cid, "company_name": f"{r.get('party_code')} — {cname}"}
+    for r in legacy_cust:
+        cid = int(r["id"])
+        if cid not in customer_dict:
+            cname = r.get("display_name") or r.get("company_name") or str(cid)
+            customer_dict[cid] = {"id": cid, "company_name": f"{r.get('customer_code', '')} — {cname}".strip(" —")}
+    customers = list(customer_dict.values())
+
+    sales_list = list_salespersons(active_only=True) or []
+    sales = [{"id": s.get("id"), "username": s.get("name"), "full_name": f"{s.get('sales_code')} — {s.get('name')}".strip(" —")} for s in sales_list]
+
     liners = list_distinct_job_values("liner") if "liner" else []
     vessels = list_distinct_job_values("vessel") or []
     ports = list_distinct_job_values("transshipment_port") or []
@@ -291,6 +309,8 @@ def _create_form(user: Dict[str, Any]):
         }
         try:
             booking_no = create_booking(payload, user)
+            st.session_state.pop("booking_v2_create_mode", None)
+            st.session_state["booking_v2_selected"] = booking_no
             st.success(f"Booking {booking_no} created.")
             st.rerun()
         except Exception as exc:

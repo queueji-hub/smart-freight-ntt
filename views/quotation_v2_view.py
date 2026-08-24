@@ -3,15 +3,15 @@ from __future__ import annotations
 
 import os
 from datetime import date, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import streamlit as st
 
 from config import DEFAULT_TERMS, JOB_TYPES
 from managers.auth_manager import can_write
-from managers.customer_manager import list_customers
-from managers.master_data_manager import list_sales_users
+from managers.customer_master_manager import list_customers
+from managers.salesperson_manager import list_salespersons
 from managers.charge_master_manager import list_charges
 from managers.master_data_crud_manager import list_parties, list_ports
 from managers.quotation_manager import duplicate_quotation, get_quotation_by_no, list_quotations
@@ -20,12 +20,83 @@ from managers.job_handover_service import handover_quotation_to_job
 from ui.design_system import page_header, section
 
 CURRENCY_OPTIONS = ["USD", "THB", "EUR", "CNY", "JPY", "SGD", "GBP"]
-MODE_OPTIONS = ["SEA", "AIR", "TRUCK", "MULTIMODAL"]
-SERVICE_OPTIONS = ["", "FCL", "LCL", "AIR", "FTL", "LTL"]
-INCOTERM_OPTIONS = ["", "EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DDP", "DDU"]
-CONTAINER_TYPE_OPTIONS = ["", "20'GP", "40'GP", "40'HC", "45'HC", "20'RF", "40'RF", "20'OT", "40'OT", "20'FR", "40'FR", "LCL", "4W Truck", "6W Truck", "10W Truck", "Trailer"]
+MODE_OPTIONS = ["SEA", "AIR", "ROAD", "RAIL", "MULTIMODAL"]
+SERVICE_OPTIONS = ["", "FCL", "LCL", "AIR", "FTL", "LTL", "DOOR-TO-DOOR", "PORT-TO-PORT"]
+INCOTERM_OPTIONS = ["", "EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DPU", "DDP", "DDU"]
 PACKAGE_TYPE_OPTIONS = ["", "Cartons", "Pallets", "Wooden Cases", "Crates", "Bags", "Drums", "Rolls", "Boxes", "Packages", "Pieces", "Units"]
-UNIT_OPTIONS = ["CONTAINER", "20'GP", "40'GP", "40'HC", "CBM", "KGS", "TON", "SHPMT", "BL", "SET", "TRIP", "TRUCK", "LOT", "PACKAGE", "PALLET", "UNIT"]
+
+MODE_CONFIG = {
+    "SEA": {
+        "label": "Sea Freight (การขนส่งทางทะเล)",
+        "pol_label": "POL / Port of Loading (ท่าเรือต้นทาง) *",
+        "pol_placeholder": "e.g. THBKK — Bangkok, THLCH — Laem Chabang, SGSIN — Singapore",
+        "pod_label": "POD / Port of Discharge (ท่าเรือปลายทาง) *",
+        "pod_placeholder": "e.g. SGSIN — Singapore, USLAX — Los Angeles, CNSHA — Shanghai, NLRTM — Rotterdam",
+        "carrier_label": "Shipping Line / Ocean Liner (สายเรือ)",
+        "carrier_placeholder": "e.g. ONE, Evergreen, Maersk, Cosco, MSC, CMA CGM, Yang Ming",
+        "container_types": ["", "20'GP", "40'GP", "40'HC", "45'HC", "20'RF", "40'RF", "20'OT", "40'OT", "20'FR", "40'FR", "LCL"],
+        "default_container": "20'GP",
+        "unit_options": ["CONTAINER", "20'GP", "40'GP", "40'HC", "CBM", "TON", "KGS", "BL", "SHPMT", "DOC", "ITEM", "SET"],
+        "default_desc": "Ocean Freight",
+        "default_unit": "CONTAINER",
+    },
+    "AIR": {
+        "label": "Air Freight (การขนส่งทางอากาศ)",
+        "pol_label": "AOD / Airport of Departure (สนามบินต้นทาง) *",
+        "pol_placeholder": "e.g. BKK — Suvarnabhumi Airport, DMK — Don Mueang, CNPVG — Shanghai Pudong",
+        "pod_label": "AOA / Airport of Arrival (สนามบินปลายทาง) *",
+        "pod_placeholder": "e.g. SIN — Singapore Changi, NRT — Tokyo Narita, FRA — Frankfurt, LAX — Los Angeles",
+        "carrier_label": "Airline (สายการบิน)",
+        "carrier_placeholder": "e.g. TG — Thai Airways, SQ — Singapore Airlines, EK — Emirates, CX — Cathay Pacific",
+        "container_types": ["", "Loose Cargo / Air Freight", "ULD — PMC Pallet", "ULD — PAG Pallet", "ULD — AKE Container", "Courier Box"],
+        "default_container": "Loose Cargo / Air Freight",
+        "unit_options": ["KG", "KGS", "CBM", "AWB", "SHPMT", "DOC", "ITEM", "LOT", "PACKAGE"],
+        "default_desc": "Air Freight",
+        "default_unit": "KG",
+    },
+    "ROAD": {
+        "label": "Road / Trucking (การขนส่งทางบก/รถบรรทุก)",
+        "pol_label": "Place of Loading / Pick-up (สถานที่รับสินค้า/ต้นทาง) *",
+        "pol_placeholder": "e.g. Bangkok Factory, Lat Krabang ICD, Sadao Border, Nong Khai",
+        "pod_label": "Place of Delivery / Destination (สถานที่ส่งสินค้า/ปลายทาง) *",
+        "pod_placeholder": "e.g. Vientiane Laos, Poipet Cambodia, Bukit Kayu Hitam, Chiang Mai",
+        "carrier_label": "Trucking Company / Haulier (บริษัทรถบรรทุก/หัวลาก)",
+        "carrier_placeholder": "e.g. SCG Logistics, Flash, Kerry Express, Local Haulier",
+        "container_types": ["", "4-Wheeler Truck (4 ล้อ)", "6-Wheeler Truck (6 ล้อ)", "10-Wheeler Truck (10 ล้อ)", "Trailer 20ft (หางลาก)", "Trailer 40ft (หางลาก)", "Lowbed Trailer", "Flatbed", "LTL (Less Truckload)"],
+        "default_container": "Trailer 40ft (หางลาก)",
+        "unit_options": ["TRIP", "TRUCK", "CBM", "TON", "KG", "SHPMT", "DOC", "PALLET"],
+        "default_desc": "Trucking / Transport",
+        "default_unit": "TRIP",
+    },
+    "RAIL": {
+        "label": "Rail Freight (การขนส่งทางราง)",
+        "pol_label": "Origin Rail Station (สถานีรถไฟต้นทาง) *",
+        "pol_placeholder": "e.g. Lat Krabang ICD Rail Station, Nong Khai Station",
+        "pod_label": "Destination Rail Station (สถานีรถไฟปลายทาง) *",
+        "pod_placeholder": "e.g. Thanaleng Station (Laos), Vientiane South, Kunming (China)",
+        "carrier_label": "Rail Operator (ผู้ให้บริการขนส่งทางราง)",
+        "carrier_placeholder": "e.g. State Railway of Thailand (SRT), Lao-China Railway",
+        "container_types": ["", "20'GP Rail Container", "40'GP Rail Container", "40'HC Rail Container", "Wagon"],
+        "default_container": "40'HC Rail Container",
+        "unit_options": ["CONTAINER", "WAGON", "CBM", "TON", "SHPMT", "DOC"],
+        "default_desc": "Rail Freight",
+        "default_unit": "CONTAINER",
+    },
+    "MULTIMODAL": {
+        "label": "Multimodal Transport (การขนส่งต่อเนื่องหลายรูปแบบ)",
+        "pol_label": "Place of Origin / Receipt (สถานที่รับของต้นทาง) *",
+        "pol_placeholder": "e.g. Factory origin, Port of departure",
+        "pod_label": "Place of Final Delivery (สถานที่ส่งของปลายทาง) *",
+        "pod_placeholder": "e.g. Destination warehouse, Final port/border",
+        "carrier_label": "Primary Carrier / Operator (ผู้ให้บริการหลัก)",
+        "carrier_placeholder": "e.g. Multimodal Freight Operator",
+        "container_types": ["", "20'GP", "40'GP", "40'HC", "45'HC", "Trailer", "LCL", "Air / Sea Combo"],
+        "default_container": "40'HC",
+        "unit_options": ["CONTAINER", "CBM", "TON", "KG", "SHPMT", "BL", "SET", "TRIP"],
+        "default_desc": "Multimodal Freight",
+        "default_unit": "CONTAINER",
+    }
+}
 
 
 def _s(value: Any, default: str = "") -> str:
@@ -67,27 +138,74 @@ def _render_pdf(record: Dict[str, Any], items: list[dict]) -> None:
 
 
 def _master_data():
-    customers = list_customers() or []
-    sales = list_sales_users() or []
+    # 1. Pull customers from Business Parties with role CUSTOMER + legacy customer master
+    parties_cust = list_parties("CUSTOMER", active_only=True) or []
+    legacy_cust = list_customers() or []
+    
+    customer_dict: Dict[int, Dict[str, Any]] = {}
+    customer_map: Dict[int, str] = {}
+    
+    for r in parties_cust:
+        cid = int(r["id"])
+        cname = r.get("display_name") or r.get("legal_name") or str(cid)
+        pcode = str(r.get("party_code") or f"C{cid:04d}")
+        customer_dict[cid] = {
+            "id": cid,
+            "customer_code": pcode,
+            "company_name": r.get("legal_name") or cname,
+            "display_name": cname,
+            "tax_id": r.get("tax_id") or "",
+            "branch_no": r.get("branch_no") or "00000",
+            "contact_person": r.get("contact_person") or "",
+            "tel": r.get("phone") or "",
+            "email": r.get("email") or "",
+            "address": r.get("billing_address") or "",
+            "billing_address": r.get("billing_address") or "",
+            "credit_limit": r.get("credit_limit") or 0.0,
+            "credit_currency": r.get("credit_currency") or "THB",
+            "credit_days": r.get("credit_days") or 30,
+            "payment_term_code": r.get("payment_term_code") or "Net 30",
+        }
+        customer_map[cid] = f"{pcode} — {cname}"
+        
+    for r in legacy_cust:
+        cid = int(r["id"])
+        if cid not in customer_dict:
+            cname = r.get("display_name") or r.get("company_name") or str(cid)
+            pcode = str(r.get("customer_code") or f"C{cid:04d}")
+            customer_dict[cid] = r
+            customer_map[cid] = f"{pcode} — {cname}"
+
+    # 2. Pull real salespersons from Salesperson Master
+    sales_list = list_salespersons(active_only=True) or []
+    sales_map: Dict[Any, str] = {}
+    for s in sales_list:
+        sid = s.get("id")
+        scode = str(s.get("sales_code") or "").strip()
+        sname = str(s.get("name") or "").strip()
+        sales_map[sid] = f"{scode} — {sname}".strip(" —") if scode else sname
+
+    # 3. Master carriers, ports, charges
     carriers = list_parties("CARRIER", active_only=True) or []
     ports = list_ports(active_only=True) or []
     charges = list_charges(active_only=True) or []
-    customer_dict = {int(r["id"]): r for r in customers if r.get("id")}
-    customer_map = {int(r["id"]): r.get("company_name", str(r["id"])) for r in customers if r.get("id")}
-    sales_map = {int(r["id"]): (r.get("full_name") or r.get("username") or str(r["id"])) for r in sales if r.get("id")}
+    
     carrier_map = {int(r["id"]): f"{r.get('party_code')} — {r.get('display_name') or r.get('legal_name')}" for r in carriers if r.get("id")}
     port_map = {int(r["id"]): f"{r.get('port_code')} — {r.get('port_name')}, {r.get('country_name') or ''}" for r in ports if r.get("id")}
     
-    # Charge map keyed by description or code for intuitive lookup
     charge_map = {}
     for r in charges:
         code = str(r.get("charge_code") or "").strip().upper()
         if code:
             charge_map[code] = r
+            
     return customer_map, customer_dict, sales_map, carrier_map, port_map, charge_map
 
 
-def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = None, key: str = "qv2_items_editor") -> List[Dict[str, Any]]:
+def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = None, mode: str = "SEA", key: str = "qv2_items_editor") -> List[Dict[str, Any]]:
+    mcfg = MODE_CONFIG.get(mode, MODE_CONFIG["SEA"])
+    unit_opts = mcfg.get("unit_options", ["CONTAINER", "CBM", "TON", "KG", "SHPMT", "DOC"])
+    
     rows = []
     for item in (existing or []):
         desc = _s(item.get("description"))
@@ -97,14 +215,14 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
         
         qty = float(item.get("quantity") or 1.0)
         rate = float(item.get("unit_rate") or item.get("price") or 0.0)
-        unit = _s(item.get("unit"), "CONTAINER").upper()
-        matched_unit = next((u for u in UNIT_OPTIONS if u.upper() == unit), "SHPMT")
+        unit = _s(item.get("unit"), mcfg.get("default_unit", "CONTAINER")).upper()
+        matched_unit = next((u for u in unit_opts if u.upper() == unit), unit_opts[0])
         currency = _s(item.get("currency"), "USD").upper()
         if currency not in CURRENCY_OPTIONS:
             currency = "USD"
         
         rows.append({
-            "description": desc or "Ocean Freight",
+            "description": desc or mcfg.get("default_desc", "Freight Charge"),
             "unit": matched_unit,
             "currency": currency,
             "quantity": qty,
@@ -115,8 +233,8 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
 
     if not rows:
         rows = [{
-            "description": "Ocean Freight",
-            "unit": "CONTAINER",
+            "description": mcfg.get("default_desc", "Ocean Freight"),
+            "unit": mcfg.get("default_unit", "CONTAINER"),
             "currency": "USD",
             "quantity": 1.0,
             "unit_rate": 0.0,
@@ -132,7 +250,7 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
         width="stretch",
         column_config={
             "description": st.column_config.TextColumn("Description * (รายการค่าบริการ / ค่าระวาง)", required=True, width="large"),
-            "unit": st.column_config.SelectboxColumn("Unit (หน่วย)", options=UNIT_OPTIONS, required=True, width="small"),
+            "unit": st.column_config.SelectboxColumn("Unit (หน่วย)", options=unit_opts, required=True, width="small"),
             "currency": st.column_config.SelectboxColumn("Curr", options=CURRENCY_OPTIONS, required=True, width="small"),
             "quantity": st.column_config.NumberColumn("Qty", min_value=0.0, step=1.0, width="small"),
             "unit_rate": st.column_config.NumberColumn("Unit Rate", min_value=0.0, step=10.0, format="%.2f", width="small"),
@@ -151,13 +269,15 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
         # Auto-derive charge_code behind the scenes
         code = "CHG"
         desc_upper = desc.upper()
-        if "OCEAN" in desc_upper or "FREIGHT" in desc_upper or "AIR" in desc_upper:
+        if "OCEAN" in desc_upper or "SEA" in desc_upper or "OFR" in desc_upper:
             code = "OFR"
+        elif "AIR" in desc_upper or "AFR" in desc_upper:
+            code = "AIR"
         elif "TERMINAL" in desc_upper or "THC" in desc_upper:
             code = "THC"
-        elif "DOC" in desc_upper:
+        elif "DOC" in desc_upper or "DOCUMENT" in desc_upper:
             code = "DOC"
-        elif "CUSTOM" in desc_upper or "CLEARANCE" in desc_upper:
+        elif "CUSTOM" in desc_upper or "CLEARANCE" in desc_upper or "DUTY" in desc_upper:
             code = "CUS"
         elif "TRUCK" in desc_upper or "HAULAGE" in desc_upper or "TRANSPORT" in desc_upper:
             code = "TRK"
@@ -170,7 +290,7 @@ def _item_editor(charge_map: Dict[str, Any], existing: List[Dict[str, Any]] = No
         
         qty = float(row.get("quantity") or 1.0)
         rate = float(row.get("unit_rate") or 0.0)
-        unit = _s(row.get("unit"), "SHPMT")
+        unit = _s(row.get("unit"), unit_opts[0])
         currency = _s(row.get("currency"), "USD").upper()
         
         output.append({
@@ -192,85 +312,103 @@ def _create_form(user: Dict[str, Any]):
     customer_map, customer_dict, sales_map, carrier_map, port_map, charge_map = _master_data()
     today = date.today()
 
-    with st.form("quotation_v2_create"):
-        section("1. Quotation Details (ข้อมูลทั่วไป & ลูกค้า)")
+    section("1. General & Customer Details (เลือกคู่ค้า/ลูกค้าและโหมดขนส่ง)")
+    
+    # Header selectors that trigger auto-fill and mode adaptation
+    h1, h2 = st.columns([2, 2])
+    with h1:
+        cust_keys = list(customer_map)
+        selected_cust_id = st.selectbox(
+            "Customer * (เลือกลูกค้าจาก Business Parties)",
+            cust_keys,
+            format_func=lambda x: customer_map[x],
+            key="qv2_new_customer_select"
+        ) if cust_keys else None
+    with h2:
+        selected_mode = st.selectbox(
+            "Transport Mode * (โหมดการขนส่ง - ปรับเปลี่ยนตามโหมด)",
+            MODE_OPTIONS,
+            key="qv2_new_mode_select"
+        )
+
+    mcfg = MODE_CONFIG.get(selected_mode, MODE_CONFIG["SEA"])
+    cust_info = customer_dict.get(selected_cust_id, {}) if selected_cust_id else {}
+
+    with st.form("quotation_v2_create_form"):
         c1, c2, c3 = st.columns(3)
         with c1:
-            cust_keys = list(customer_map)
-            customer_id = st.selectbox("Customer * (ลูกค้า)", cust_keys, format_func=lambda x: customer_map[x]) if cust_keys else None
-            attention = st.text_input("Attention (ผู้ติดต่อ)")
-            tel = st.text_input("Telephone (เบอร์โทร)")
+            attention = st.text_input("Attention (ผู้ติดต่อ)", value=_s(cust_info.get("contact_person")), key="qv2_new_att")
+            tel = st.text_input("Telephone (เบอร์โทร)", value=_s(cust_info.get("tel") or cust_info.get("phone")), key="qv2_new_tel")
         with c2:
-            sales_id = st.selectbox("Salesperson (ผู้ขาย)", list(sales_map), format_func=lambda x: sales_map[x]) if sales_map else None
-            customer_email = st.text_input("Customer Email (อีเมล)")
-            payment_term = st.text_input("Payment Terms (เงื่อนไขการชำระ)", value="Net 30")
+            sales_id = st.selectbox("Salesperson (ผู้ขาย)", list(sales_map), format_func=lambda x: sales_map[x], key="qv2_new_sales") if sales_map else None
+            customer_email = st.text_input("Customer Email (อีเมล)", value=_s(cust_info.get("email")), key="qv2_new_email")
         with c3:
-            job_type = st.selectbox("Job Type * (ประเภทงาน)", list(JOB_TYPES.keys()), format_func=lambda x: JOB_TYPES.get(x, x))
-            issue_date = st.date_input("Issue Date (วันที่ออก)", today)
-            valid_until = st.date_input("Valid Until (ใช้ได้ถึง)", today + timedelta(days=30))
+            job_type = st.selectbox("Job Type * (ประเภทงาน)", list(JOB_TYPES.keys()), format_func=lambda x: JOB_TYPES.get(x, x), key="qv2_new_job")
+            payment_term = st.text_input("Payment Terms (เงื่อนไขการชำระ)", value=_s(cust_info.get("payment_term_code") or "Net 30"), key="qv2_new_pay")
 
-        # Customer Address field (Auto-filled from database if available)
-        default_addr = ""
-        if customer_id and customer_id in customer_dict:
-            c_info = customer_dict[customer_id]
-            default_addr = _s(c_info.get("address") or c_info.get("billing_address"))
-        customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า - ดึงจากฐานข้อมูลลูกค้าอัตโนมัติ)", value=default_addr, height=70)
+        d1, d2 = st.columns(2)
+        with d1:
+            issue_date = st.date_input("Issue Date (วันที่ออก)", today, key="qv2_new_issue")
+        with d2:
+            valid_until = st.date_input("Valid Until (ใช้ได้ถึง)", today + timedelta(days=30), key="qv2_new_valid")
+
+        # Auto-populated Customer Billing Address
+        default_addr = _s(cust_info.get("billing_address") or cust_info.get("address"))
+        customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า - ดึงจากฐานข้อมูล Business Party อัตโนมัติ)", value=default_addr, height=70, key="qv2_new_addr")
 
         # Non-mandatory Shipper & Consignee
         sh1, sh2 = st.columns(2)
         with sh1:
-            shipper = st.text_area("Shipper (ผู้ส่งสินค้า - ไม่บังคับ)", height=68, placeholder="ระบุชื่อบริษัท / ที่อยู่ของ Shipper (ถ้ามี)")
+            shipper = st.text_area("Shipper (ผู้ส่งสินค้า - ไม่บังคับ)", height=68, placeholder="ระบุชื่อบริษัท / ที่อยู่ของ Shipper (ถ้ามี)", key="qv2_new_shp")
         with sh2:
-            consignee = st.text_area("Consignee (ผู้รับสินค้า - ไม่บังคับ)", height=68, placeholder="ระบุชื่อบริษัท / ที่อยู่ของ Consignee (ถ้ามี)")
+            consignee = st.text_area("Consignee (ผู้รับสินค้า - ไม่บังคับ)", height=68, placeholder="ระบุชื่อบริษัท / ที่อยู่ของ Consignee (ถ้ามี)", key="qv2_new_csg")
 
-        section("2. Routing & Incoterms (เส้นทางและการส่งมอบ - ระบุ/พิมพ์ได้อิสระ)")
+        section(f"2. Routing & Carrier ({mcfg['label']})")
         r1, r2, r3, r4 = st.columns(4)
         with r1:
-            mode = st.selectbox("Transport Mode (โหมดขนส่ง)", MODE_OPTIONS)
+            service_type = st.selectbox("Service Type (บริการ)", SERVICE_OPTIONS, key="qv2_new_serv")
         with r2:
-            service_type = st.selectbox("Service Type (บริการ)", SERVICE_OPTIONS)
+            pol = st.text_input(mcfg["pol_label"], placeholder=mcfg["pol_placeholder"], key="qv2_new_pol")
         with r3:
-            pol = st.text_input("POL (ท่าเรือต้นทาง) *", placeholder="e.g. THBKK — Bangkok หรือ ICD Lat Krabang")
+            pod = st.text_input(mcfg["pod_label"], placeholder=mcfg["pod_placeholder"], key="qv2_new_pod")
         with r4:
-            pod = st.text_input("POD (ท่าเรือปลายทาง) *", placeholder="e.g. SGSIN — Singapore หรือ USLAX — Los Angeles")
+            incoterm = st.selectbox("Incoterm", INCOTERM_OPTIONS, key="qv2_new_inco")
 
         r5, r6, r7, r8 = st.columns(4)
         with r5:
-            origin = st.text_input("Origin (สถานที่รับของต้นทาง)")
+            origin = st.text_input("Place of Origin / Receipt (ต้นทางรับของ)", key="qv2_new_orig")
         with r6:
-            destination = st.text_input("Destination (สถานที่ส่งของปลายทาง)")
+            destination = st.text_input("Place of Destination / Delivery (ปลายทางส่งของ)", key="qv2_new_dest")
         with r7:
-            incoterm = st.selectbox("Incoterm", INCOTERM_OPTIONS)
+            carrier = st.text_input(mcfg["carrier_label"], placeholder=mcfg["carrier_placeholder"], key="qv2_new_carr")
         with r8:
-            freight_term = st.selectbox("Freight Term", ["", "Prepaid", "Collect"])
+            freight_term = st.selectbox("Freight Term", ["", "Prepaid", "Collect"], key="qv2_new_frt")
 
-        carrier = st.text_input("Preferred Carrier / Liner (สายเรือ / สายการบิน)", placeholder="e.g. ONE, Evergreen, Maersk, Cosco, Thai Airways")
-
-        section("3. Cargo Specifications (ข้อมูลสินค้า & ตู้สินค้า)")
+        section("3. Cargo Specifications (ข้อมูลสินค้า & บรรจุภัณฑ์)")
         g1, g2, g3 = st.columns(3)
         with g1:
-            commodity = st.text_input("Commodity (ชื่อสินค้า)")
-            hs_code = st.text_input("HS Code")
+            commodity = st.text_input("Commodity (ชื่อสินค้า)", key="qv2_new_comm")
+            hs_code = st.text_input("HS Code", key="qv2_new_hs")
         with g2:
-            container_type = st.selectbox("Container Type (ขนาดตู้)", CONTAINER_TYPE_OPTIONS)
-            container_qty = st.number_input("Container Qty (จำนวนตู้)", min_value=0, step=1, value=1 if container_type and container_type != "LCL" else 0)
+            cont_opts = mcfg.get("container_types", [""])
+            container_type = st.selectbox("Equipment / Container / Vehicle (ประเภทตู้/รถ)", cont_opts, key="qv2_new_cont_type")
+            container_qty = st.number_input("Equipment Qty (จำนวนตู้/คัน)", min_value=0, step=1, value=1 if container_type and container_type != "LCL" else 0, key="qv2_new_cont_qty")
         with g3:
-            package_type = st.selectbox("Package Type (บรรจุภัณฑ์)", PACKAGE_TYPE_OPTIONS)
-            package_qty = st.number_input("Package Qty (จำนวนหีบห่อ)", min_value=0.0, step=1.0, value=0.0)
+            package_type = st.selectbox("Package Type (บรรจุภัณฑ์)", PACKAGE_TYPE_OPTIONS, key="qv2_new_pkg_type")
+            package_qty = st.number_input("Package Qty (จำนวนหีบห่อ)", min_value=0.0, step=1.0, value=0.0, key="qv2_new_pkg_qty")
 
         w1, w2, w3 = st.columns(3)
         with w1:
-            weight_kg = st.number_input("Gross Weight (KG)", min_value=0.0, step=10.0, format="%.2f")
+            weight_kg = st.number_input("Gross Weight (KG)", min_value=0.0, step=10.0, format="%.2f", key="qv2_new_wt")
         with w2:
-            volume_cbm = st.number_input("Volume (CBM)", min_value=0.0, step=0.1, format="%.3f")
+            volume_cbm = st.number_input("Volume (CBM)", min_value=0.0, step=0.1, format="%.3f", key="qv2_new_cbm")
         with w3:
-            is_dg = st.checkbox("Dangerous Goods (สินค้าอันตราย / DG)", value=False)
+            is_dg = st.checkbox("Dangerous Goods (สินค้าอันตราย / DG)", value=False, key="qv2_new_dg")
 
         section("4. Pricing & Selling Charges (รายการค่าใช้จ่ายและราคาขาย)")
-        st.caption("💡 พิมพ์ Description และราคาได้อิสระ โดยไม่ต้องระบุ Charge Code")
-        items_df = _item_editor(charge_map, key="qv2_items_create")
+        st.caption(f"💡 รายการเสนอราคาสำหรับ {selected_mode} Freight (พิมพ์รายละเอียดและราคาได้อิสระ)")
+        items_df = _item_editor(charge_map, mode=selected_mode, key="qv2_items_create_table")
 
-        # Summary Metrics
         if items_df:
             totals_by_curr = {}
             for item in items_df:
@@ -279,14 +417,14 @@ def _create_form(user: Dict[str, Any]):
             st.write("**Total Summary:** " + " | ".join([f"**{tot:,.2f} {curr}**" for curr, tot in totals_by_curr.items()]))
 
         section("5. Terms & Remarks (เงื่อนไขและหมายเหตุ)")
-        subject = st.text_input("Quotation Subject (หัวข้อ)", value=f"{mode} Freight Quotation - {customer_map.get(customer_id, '')}")
-        terms = st.text_area("Terms & Conditions (ข้อกำหนดและเงื่อนไข)", value=DEFAULT_TERMS, height=100)
+        subject = st.text_input("Quotation Subject (หัวข้อ)", value=f"{selected_mode} Freight Quotation - {cust_info.get('company_name', '')}", key="qv2_new_subj")
+        terms = st.text_area("Terms & Conditions (ข้อกำหนดและเงื่อนไข)", value=DEFAULT_TERMS, height=100, key="qv2_new_terms")
 
         submitted = st.form_submit_button("💾 Save Quotation as Draft", type="primary", width="stretch")
 
     if submitted:
         errors = []
-        if customer_id is None:
+        if selected_cust_id is None:
             errors.append("Customer is required (กรุณาเลือกลูกค้า).")
         if valid_until < issue_date:
             errors.append("Valid Until cannot be earlier than Issue Date (วันหมดอายุต้องไม่อยู่ก่อนวันที่ออก).")
@@ -298,16 +436,12 @@ def _create_form(user: Dict[str, Any]):
                 st.error(error)
             return
 
-        # Fallback address from customer master if field is left blank
-        final_addr = customer_address.strip()
-        if not final_addr and customer_id in customer_dict:
-            c_rec = customer_dict[customer_id]
-            final_addr = _s(c_rec.get("address") or c_rec.get("billing_address"))
+        final_addr = customer_address.strip() or _s(cust_info.get("billing_address") or cust_info.get("address"))
 
         payload = {
             "job_type": job_type,
-            "customer_id": customer_id,
-            "customer_name": customer_map[customer_id],
+            "customer_id": selected_cust_id,
+            "customer_name": cust_info.get("display_name") or cust_info.get("company_name") or str(selected_cust_id),
             "customer_address": final_addr,
             "shipper": shipper.strip() or None,
             "consignee": consignee.strip() or None,
@@ -324,7 +458,7 @@ def _create_form(user: Dict[str, Any]):
             "pod": pod.strip() or None,
             "origin": origin.strip(),
             "destination": destination.strip(),
-            "mode": mode,
+            "mode": selected_mode,
             "service_type": service_type,
             "incoterm": incoterm,
             "freight_term": freight_term,
@@ -343,9 +477,9 @@ def _create_form(user: Dict[str, Any]):
         }
         try:
             qno = create_quotation_ssot(payload, items_df)
-            st.success(f"🎉 Quotation {qno} created successfully!")
             st.session_state.pop("qv2_create", None)
             st.session_state["qv2_selected"] = qno
+            st.success(f"🎉 Quotation {qno} created successfully!")
             st.rerun()
         except Exception as exc:
             st.error(f"Unable to save quotation: {exc}")
@@ -356,38 +490,21 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
     customer_map, customer_dict, sales_map, carrier_map, port_map, charge_map = _master_data()
     today = date.today()
 
-    # Index resolution with robust text-matching fallback
-    cust_keys = list(customer_map)
     cur_cust = selected.get("customer_id")
-    if cur_cust not in customer_map:
-        c_name = _s(selected.get("customer_name")).lower()
-        cur_cust = next((cid for cid, name in customer_map.items() if name.lower() == c_name or c_name in name.lower()), cust_keys[0] if cust_keys else None)
+    cust_keys = list(customer_map)
     cust_idx = cust_keys.index(cur_cust) if cur_cust in cust_keys else 0
 
     sales_keys = list(sales_map)
     cur_sales = selected.get("sales_id")
-    if cur_sales not in sales_map:
-        s_name = _s(selected.get("salesperson") or selected.get("sales_person")).lower()
-        cur_sales = next((sid for sid, name in sales_map.items() if s_name and (s_name in name.lower() or name.lower() in s_name)), sales_keys[0] if sales_keys else None)
     sales_idx = sales_keys.index(cur_sales) if cur_sales in sales_keys else 0
 
     job_keys = list(JOB_TYPES.keys())
-    cur_carr = selected.get("carrier_id")
-    carrier_keys = list(carrier_map)
-    carrier_idx = carrier_keys.index(cur_carr) if cur_carr in carrier_keys else 0
-
-    cur_pol = selected.get("pol_id")
-    cur_pod = selected.get("pod_id")
-    port_keys = list(port_map)
-    pol_idx = port_keys.index(cur_pol) if cur_pol in port_keys else 0
-    pod_idx = port_keys.index(cur_pod) if cur_pod in port_keys else (1 if len(port_keys) > 1 else 0)
-
     cur_job = selected.get("job_type")
-    job_keys = list(JOB_TYPES.keys())
     job_idx = job_keys.index(cur_job) if cur_job in job_keys else 0
 
-    cur_mode = selected.get("mode")
+    cur_mode = selected.get("mode") or "SEA"
     mode_idx = MODE_OPTIONS.index(cur_mode) if cur_mode in MODE_OPTIONS else 0
+    mcfg = MODE_CONFIG.get(cur_mode, MODE_CONFIG["SEA"])
 
     cur_serv = selected.get("service_type")
     serv_idx = SERVICE_OPTIONS.index(cur_serv) if cur_serv in SERVICE_OPTIONS else 0
@@ -395,8 +512,9 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
     cur_inco = selected.get("incoterm")
     inco_idx = INCOTERM_OPTIONS.index(cur_inco) if cur_inco in INCOTERM_OPTIONS else 0
 
+    cont_opts = mcfg.get("container_types", [""])
     cur_cont = selected.get("container_type")
-    cont_type_idx = CONTAINER_TYPE_OPTIONS.index(cur_cont) if cur_cont in CONTAINER_TYPE_OPTIONS else 0
+    cont_type_idx = cont_opts.index(cur_cont) if cur_cont in cont_opts else 0
 
     cur_pkg = selected.get("package_type")
     pkg_type_idx = PACKAGE_TYPE_OPTIONS.index(cur_pkg) if cur_pkg in PACKAGE_TYPE_OPTIONS else 0
@@ -404,7 +522,7 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
     curr_addr = _s(selected.get("customer_address"))
     if not curr_addr and cur_cust in customer_dict:
         c_item = customer_dict[cur_cust]
-        curr_addr = _s(c_item.get("address") or c_item.get("billing_address"))
+        curr_addr = _s(c_item.get("billing_address") or c_item.get("address"))
 
     issue_date_val = _date(selected.get("quotation_date"), today)
     valid_until_val = _date(selected.get("validity_date"), issue_date_val + timedelta(days=30))
@@ -413,53 +531,51 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
         section("1. Quotation Details")
         c1, c2, c3 = st.columns(3)
         with c1:
-            customer_id = st.selectbox("Customer *", cust_keys, index=cust_idx, format_func=lambda x: customer_map[x], key=f"edit_cust_{qno}") if cust_keys else None
-            attention = st.text_input("Attention", value=_s(selected.get("attention")), key=f"edit_att_{qno}")
-            tel = st.text_input("Telephone", value=_s(selected.get("tel")), key=f"edit_tel_{qno}")
+            customer_id = st.selectbox("Customer * (ลูกค้า)", cust_keys, index=cust_idx, format_func=lambda x: customer_map[x], key=f"edit_cust_{qno}") if cust_keys else None
+            attention = st.text_input("Attention (ผู้ติดต่อ)", value=_s(selected.get("attention")), key=f"edit_att_{qno}")
+            tel = st.text_input("Telephone (เบอร์โทร)", value=_s(selected.get("tel")), key=f"edit_tel_{qno}")
         with c2:
-            sales_id = st.selectbox("Salesperson", sales_keys, index=sales_idx, format_func=lambda x: sales_map[x], key=f"edit_sales_{qno}") if sales_keys else None
-            customer_email = st.text_input("Customer Email", value=_s(selected.get("customer_email")), key=f"edit_email_{qno}")
+            sales_id = st.selectbox("Salesperson (ผู้ขาย)", sales_keys, index=sales_idx, format_func=lambda x: sales_map[x], key=f"edit_sales_{qno}") if sales_keys else None
+            customer_email = st.text_input("Customer Email (อีเมล)", value=_s(selected.get("customer_email")), key=f"edit_email_{qno}")
             payment_term = st.text_input("Payment Terms", value=_s(selected.get("payment_term"), "Net 30"), key=f"edit_pay_{qno}")
         with c3:
             job_type = st.selectbox("Job Type *", job_keys, index=job_idx, format_func=lambda x: JOB_TYPES.get(x, x), key=f"edit_job_{qno}")
             issue_date = st.date_input("Issue Date", issue_date_val, key=f"edit_issue_{qno}")
             valid_until = st.date_input("Valid Until", valid_until_val, key=f"edit_valid_{qno}")
 
-        # Customer Address field in Edit form
         customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า)", value=curr_addr, height=70, key=f"edit_addr_{qno}")
 
-        # Non-mandatory Shipper & Consignee in Edit form
         sh1, sh2 = st.columns(2)
         with sh1:
             shipper = st.text_area("Shipper (ผู้ส่งสินค้า - ไม่บังคับ)", value=_s(selected.get("shipper")), height=68, key=f"edit_shp_{qno}", placeholder="Shipper name / address")
         with sh2:
             consignee = st.text_area("Consignee (ผู้รับสินค้า - ไม่บังคับ)", value=_s(selected.get("consignee")), height=68, key=f"edit_csg_{qno}", placeholder="Consignee name / address")
 
-        section("2. Routing & Incoterms (เส้นทางและการส่งมอบ - ระบุ/พิมพ์ได้อิสระ)")
+        section(f"2. Routing & Incoterms ({mcfg['label']})")
         r1, r2, r3, r4 = st.columns(4)
         with r1:
             mode = st.selectbox("Transport Mode", MODE_OPTIONS, index=mode_idx, key=f"edit_mode_{qno}")
         with r2:
             service_type = st.selectbox("Service Type", SERVICE_OPTIONS, index=serv_idx, key=f"edit_serv_{qno}")
         with r3:
-            pol = st.text_input("POL (ท่าเรือต้นทาง) *", value=_s(selected.get("pol")), key=f"edit_pol_{qno}")
+            pol = st.text_input(mcfg["pol_label"], value=_s(selected.get("pol")), key=f"edit_pol_{qno}")
         with r4:
-            pod = st.text_input("POD (ท่าเรือปลายทาง) *", value=_s(selected.get("pod")), key=f"edit_pod_{qno}")
+            pod = st.text_input(mcfg["pod_label"], value=_s(selected.get("pod")), key=f"edit_pod_{qno}")
 
         r5, r6, r7, r8 = st.columns(4)
         with r5:
-            origin = st.text_input("Origin", value=_s(selected.get("origin")), key=f"edit_orig_{qno}")
+            origin = st.text_input("Place of Origin / Receipt", value=_s(selected.get("origin")), key=f"edit_orig_{qno}")
         with r6:
-            destination = st.text_input("Destination", value=_s(selected.get("destination")), key=f"edit_dest_{qno}")
+            destination = st.text_input("Place of Destination / Delivery", value=_s(selected.get("destination")), key=f"edit_dest_{qno}")
         with r7:
             incoterm = st.selectbox("Incoterm", INCOTERM_OPTIONS, index=inco_idx, key=f"edit_inco_{qno}")
         with r8:
             raw_frt = _s(selected.get("freight_term")).title()
             frt_opts = ["", "Prepaid", "Collect"]
-            frt_idx = frt_opts.index(raw_frt) if raw_frt in frt_opts else (1 if raw_frt.lower() == "prepaid" else (2 if raw_frt.lower() == "collect" else 0))
+            frt_idx = frt_opts.index(raw_frt) if raw_frt in frt_opts else 0
             freight_term = st.selectbox("Freight Term", frt_opts, index=frt_idx, key=f"edit_frt_{qno}")
 
-        carrier = st.text_input("Preferred Carrier / Liner", value=_s(selected.get("carrier")), key=f"edit_carr_{qno}")
+        carrier = st.text_input(mcfg["carrier_label"], value=_s(selected.get("carrier")), key=f"edit_carr_{qno}")
 
         section("3. Cargo Specifications")
         g1, g2, g3 = st.columns(3)
@@ -467,8 +583,8 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             commodity = st.text_input("Commodity", value=_s(selected.get("commodity")), key=f"edit_comm_{qno}")
             hs_code = st.text_input("HS Code", value=_s(selected.get("hs_code")), key=f"edit_hs_{qno}")
         with g2:
-            container_type = st.selectbox("Container Type", CONTAINER_TYPE_OPTIONS, index=cont_type_idx, key=f"edit_cont_type_{qno}")
-            container_qty = st.number_input("Container Qty", min_value=0, step=1, value=int(selected.get("container_quantity") or 0), key=f"edit_cont_qty_{qno}")
+            container_type = st.selectbox("Equipment / Container / Vehicle", cont_opts, index=cont_type_idx, key=f"edit_cont_type_{qno}")
+            container_qty = st.number_input("Container / Vehicle Qty", min_value=0, step=1, value=int(selected.get("container_quantity") or 0), key=f"edit_cont_qty_{qno}")
         with g3:
             package_type = st.selectbox("Package Type", PACKAGE_TYPE_OPTIONS, index=pkg_type_idx, key=f"edit_pkg_type_{qno}")
             package_qty = st.number_input("Package Qty", min_value=0.0, step=1.0, value=float(selected.get("quantity") or 0), key=f"edit_pkg_qty_{qno}")
@@ -483,7 +599,7 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
 
         section("4. Pricing & Line Items")
         st.caption("💡 พิมพ์ Description และราคาได้อิสระ โดยไม่ต้องระบุ Charge Code")
-        items_df = _item_editor(charge_map, existing=selected.get("items", []), key=f"qv2_edit_items_{qno}")
+        items_df = _item_editor(charge_map, existing=selected.get("items", []), mode=mode, key=f"qv2_edit_items_{qno}")
 
         section("5. Terms & Remarks")
         subject = st.text_input("Subject", value=_s(selected.get("subject")), key=f"edit_subj_{qno}")
@@ -508,7 +624,7 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
         final_edit_addr = customer_address.strip()
         if not final_edit_addr and customer_id in customer_dict:
             c_rec = customer_dict[customer_id]
-            final_edit_addr = _s(c_rec.get("address") or c_rec.get("billing_address"))
+            final_edit_addr = _s(c_rec.get("billing_address") or c_rec.get("address"))
 
         payload = {
             "job_type": job_type,
@@ -665,7 +781,6 @@ def render():
 
     with act_col5:
         if can_edit:
-            # Delete button with confirmation
             delete_key = f"qv2_confirm_del_{selected_no}"
             if not st.session_state.get(delete_key):
                 if st.button("🗑️ Delete Quote", key=f"qv2_del_btn_{selected_no}", width="stretch"):

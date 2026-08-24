@@ -102,8 +102,9 @@ def _party_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> N
             },
             user,
         )
-        st.success("Party / Customer updated." if record.get("id") else "Party / Customer saved.")
+        st.session_state["party_action"] = "Browse"
         st.session_state.pop("master_data_edit_party", None)
+        st.success("Party / Customer updated." if record.get("id") else "Party / Customer saved.")
         st.rerun()
 
 
@@ -132,6 +133,7 @@ def _salesperson_form(user: Dict[str, Any], record: Dict[str, Any] | None = None
             if st.button("🗑️ Delete Sales Person", type="secondary", width="stretch", key=f"sp_del_{record.get('id')}"):
                 delete_salesperson(record["id"], user)
                 st.success("Sales Person deleted successfully.")
+                st.session_state["sp_action"] = "Browse"
                 st.session_state.pop("master_data_edit_sp", None)
                 st.rerun()
 
@@ -149,8 +151,9 @@ def _salesperson_form(user: Dict[str, Any], record: Dict[str, Any] | None = None
             "remarks": remarks.strip(),
             "is_active": active,
         }, user)
-        st.success("Sales Person updated." if record.get("id") else "Sales Person saved.")
+        st.session_state["sp_action"] = "Browse"
         st.session_state.pop("master_data_edit_sp", None)
+        st.success("Sales Person updated." if record.get("id") else "Sales Person saved.")
         st.rerun()
 
 
