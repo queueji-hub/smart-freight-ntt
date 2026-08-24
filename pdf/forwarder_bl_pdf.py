@@ -30,10 +30,28 @@ TEXT = colors.HexColor("#1E293B")
 RED = colors.HexColor("#B91C1C")
 
 
+def _clean_text(val: Any) -> str:
+    """Strips internal codes (e.g. 'BP001 — ', 'C0001 — ', 'SP001 — ') for clean customer-facing PDF presentation."""
+    if val is None:
+        return ""
+    text = str(val).strip()
+    if not text or text.lower() in {"none", "nan", "nat"}:
+        return ""
+    if " — " in text:
+        parts = text.split(" — ", 1)
+        if len(parts[0]) <= 8 and (parts[0].isalnum() or parts[0].startswith(("BP", "C", "SP", "P", "CHG", "USR"))):
+            return parts[1].strip()
+    elif " - " in text:
+        parts = text.split(" - ", 1)
+        if len(parts[0]) <= 8 and (parts[0].isalnum() or parts[0].startswith(("BP", "C", "SP", "P", "CHG", "USR"))):
+            return parts[1].strip()
+    return text
+
+
 def _s(value: Any, default: str = "") -> str:
     if value is None:
         return default
-    text = str(value).strip()
+    text = _clean_text(value)
     return default if text.lower() in {"", "none", "nan", "nat"} else text
 
 

@@ -2,6 +2,7 @@
 from pathlib import Path
 from datetime import date, datetime
 from typing import Dict, List, Any
+import re
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -28,10 +29,28 @@ def _format_date(d) -> str:
         return ""
     if isinstance(d, str):
         try:
-            d = datetime.strptime(d, "%Y-%m-%d").date()
+            d = datetime.strptime(d[:10], "%Y-%m-%d").date()
         except ValueError:
             return d
     return d.strftime("%d-%m-%y")
+
+
+def _clean_text(val: Any) -> str:
+    """Strips internal codes (e.g. 'BP001 — ', 'C0001 — ', 'SP001 — ') for clean customer-facing PDF presentation."""
+    if val is None:
+        return ""
+    text = str(val).strip()
+    if not text or text.lower() in {"none", "nan", "nat"}:
+        return ""
+    if " — " in text:
+        parts = text.split(" — ", 1)
+        if len(parts[0]) <= 8 and (parts[0].isalnum() or parts[0].startswith(("BP", "C", "SP", "P", "CHG", "USR"))):
+            return parts[1].strip()
+    elif " - " in text:
+        parts = text.split(" - ", 1)
+        if len(parts[0]) <= 8 and (parts[0].isalnum() or parts[0].startswith(("BP", "C", "SP", "P", "CHG", "USR"))):
+            return parts[1].strip()
+    return text
 
 
 def _styles() -> Dict[str, ParagraphStyle]:
@@ -85,7 +104,6 @@ def _build_header(styles) -> Table:
     """Header: logo on left, company name + address on right."""
     logo_path = COMPANY.get("logo_path")
     if logo_path and Path(logo_path).exists():
-        # Preserve aspect ratio: fit within 45mm x 28mm box
         from reportlab.lib.utils import ImageReader
         img_reader = ImageReader(logo_path)
         iw, ih = img_reader.getSize()
@@ -124,19 +142,26 @@ def _build_header(styles) -> Table:
 def _build_info_block(quotation: Dict[str, Any], styles) -> Table:
     """Two-column info block (Customer/Shipper/... | No./Date/...)."""
     def _safe_str(val):
-        return str(val) if val is not None and str(val).strip() != "None" else ""
+        return str(val) if val is not None and str(val).strip() not in {"None", "nan", "NaN"} else ""
         
     def _safe_num(val, suffix=""):
-        if not val or val == "None" or float(val) == 0:
+        if not val or val in {"None", "nan", "NaN"}:
             return ""
-        return f"{val} {suffix}".strip()
+        try:
+            num = float(val)
+            if num == 0:
+                return ""
+            num_str = f"{num:,.3f}".rstrip('0').rstrip('.')
+            return f"{num_str} {suffix}".strip()
+        except (ValueError, TypeError):
+            return f"{val} {suffix}".strip()
 
     left_rows = [
-        ("Customer", _safe_str(quotation.get("customer_name"))),
+        ("Customer", _clean_text(quotation.get("customer_name"))),
         ("Address", _safe_str(quotation.get("customer_address"))),
         ("Attention", _safe_str(quotation.get("attention"))),
-        ("Shipper", _safe_str(quotation.get("shipper"))),
-        ("Consignee", _safe_str(quotation.get("consignee"))),
+        ("Shipper", _clean_text(quotation.get("shipper"))),
+        ("Consignee", _clean_text(quotation.get("consignee"))),
         ("POL", _safe_str(quotation.get("pol"))),
         ("POD", _safe_str(quotation.get("pod"))),
         ("Incoterm", _safe_str(quotation.get("incoterm"))),
@@ -156,15 +181,16 @@ def _build_info_block(quotation: Dict[str, Any], styles) -> Table:
     if _safe_num(quotation.get("container_quantity")):
         cont_str = f"{_safe_num(quotation.get('container_quantity'))}x {_safe_str(quotation.get('container_type'))}".strip()
 
+    salesperson_name = _clean_text(quotation.get("salesperson") or quotation.get("sales_person"))
     right_rows = [
         ("No.", _safe_str(quotation.get("quotation_no"))),
         ("Date", _format_date(quotation.get("quotation_date"))),
         ("Validity", _format_date(quotation.get("validity_date"))),
-        ("Salesperson", _safe_str(quotation.get("salesperson"))),
+        ("Salesperson", salesperson_name or "—"),
         ("Payment Term", _safe_str(quotation.get("payment_term"))),
         ("Commodity", _safe_str(quotation.get("commodity"))),
         ("Service Type", _safe_str(quotation.get("service_type"))),
-        ("Volume/Qty", " / ".join([s for s in [qty_str, " ".join(vol_str), cont_str] if s])),
+        ("Volume/Qty", " / ".join([s for s in [qty_str, " ".join(vol_str), cont_str] if s]) or "—"),
     ]
     
     data = []
@@ -206,25 +232,29 @@ def _build_items_table(items: List[Dict[str, Any]], styles) -> Table:
     ]
     
     data = [header, sub_header]
-    
     currency_totals = {}
     
     for item in items:
         amount = float(item.get("amount") or item.get("price") or 0)
         rate = float(item.get("unit_rate") or amount)
-        qty = float(item.get("quantity") or 1)
-        curr = item.get("currency", "USD")
+        qty = float(item.get("quantity") if item.get("quantity") is not None else 1.0)
+        curr = str(item.get("currency") or "USD").upper()
+        
+        desc = _clean_text(item.get("description", "")) or "Freight / Service Charge"
+        unit = _clean_text(item.get("unit") or item.get("basis") or "")
         
         currency_totals[curr] = currency_totals.get(curr, 0) + amount
         
+        qty_display = f"{qty:,.3f}".rstrip('0').rstrip('.') if qty != int(qty) else str(int(qty))
+        
         data.append([
-            Paragraph(item.get("description", ""), styles["body"]),
-            Paragraph(f"{qty:,.3f}".rstrip('0').rstrip('.'), styles["body"]),
-            Paragraph(item.get("unit", "") or "", styles["body"]),
+            Paragraph(desc, styles["body"]),
+            Paragraph(qty_display, styles["body"]),
+            Paragraph(unit, styles["body"]),
             Paragraph(curr, styles["body"]),
             Paragraph(f"{rate:,.2f}", styles["body"]),
             Paragraph(f"<b>{amount:,.2f}</b>", styles["body"]),
-            Paragraph(item.get("remark", "") or "", styles["body"]),
+            Paragraph(str(item.get("remark") or ""), styles["body"]),
         ])
     
     # Add Total Rows by Currency
@@ -237,29 +267,26 @@ def _build_items_table(items: List[Dict[str, Any]], styles) -> Table:
                     Paragraph(f"<b>{tot:,.2f}</b>", styles["body"]),
                     ""
                 ])
-
+    
     tbl = Table(
         data,
         colWidths=[55*mm, 15*mm, 15*mm, 15*mm, 20*mm, 25*mm, 35*mm],
-        repeatRows=2,  # Repeat both header rows on each page
+        repeatRows=2,
     )
     tbl.setStyle(TableStyle([
-        # Top "DESCRIPTION" header row - blue background, spans full width
         ("SPAN", (0,0), (-1,0)),
         ("BACKGROUND", (0,0), (-1,0), BRAND_BLUE),
         ("ALIGN", (0,0), (-1,0), "CENTER"),
-        # Sub header row - grey background, all centered
         ("BACKGROUND", (0,1), (-1,1), HEADER_GREY),
         ("ALIGN", (0,1), (-1,1), "CENTER"),
-        # Body
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("ALIGN", (0,2), (0,-1), "LEFT"),     # Description left-aligned
-        ("ALIGN", (1,2), (1,-1), "CENTER"),   # QTY
-        ("ALIGN", (2,2), (2,-1), "CENTER"),   # UNIT
-        ("ALIGN", (3,2), (3,-1), "CENTER"),   # CURR
-        ("ALIGN", (4,2), (4,-1), "RIGHT"),    # RATE
-        ("ALIGN", (5,2), (5,-1), "RIGHT"),    # AMOUNT
-        ("ALIGN", (6,2), (6,-1), "LEFT"),     # Remark
+        ("ALIGN", (0,2), (0,-1), "LEFT"),
+        ("ALIGN", (1,2), (1,-1), "CENTER"),
+        ("ALIGN", (2,2), (2,-1), "CENTER"),
+        ("ALIGN", (3,2), (3,-1), "CENTER"),
+        ("ALIGN", (4,2), (4,-1), "RIGHT"),
+        ("ALIGN", (5,2), (5,-1), "RIGHT"),
+        ("ALIGN", (6,2), (6,-1), "LEFT"),
         ("LEFTPADDING", (0,0), (-1,-1), 4),
         ("RIGHTPADDING", (0,0), (-1,-1), 4),
         ("TOPPADDING", (0,0), (-1,-1), 3),
@@ -292,8 +319,10 @@ def _build_terms(terms_text: str, styles) -> List:
     return flowables
 
 
-def _build_signature(styles) -> Table:
+def _build_signature(styles, quotation: Dict[str, Any] = None) -> Table:
     """Signature block: closing message + signature lines."""
+    sp_name = _clean_text((quotation or {}).get("salesperson") or (quotation or {}).get("sales_person")) or COMPANY['signer_name']
+    
     closing = Paragraph(
         "We do hope the above given rates will meet your requirements. "
         "Should any further information you may require, "
@@ -306,8 +335,8 @@ def _build_signature(styles) -> Table:
         Paragraph("Yours sincerely", styles["body"]),
         Spacer(1, 18*mm),
         Paragraph("_________________________________", styles["body"]),
-        Paragraph(f"<b>{COMPANY['signer_name']}</b>", styles["body"]),
-        Paragraph(COMPANY["signer_title"], styles["body"]),
+        Paragraph(f"<b>{sp_name}</b>", styles["body"]),
+        Paragraph("Sales Executive" if sp_name != COMPANY['signer_name'] else COMPANY["signer_title"], styles["body"]),
         Paragraph(COMPANY["name"].title(), styles["body"]),
     ]
     customer_block = [
@@ -340,17 +369,7 @@ def generate_quotation_pdf(
     items: List[Dict[str, Any]] | None = None,
     output_path: str | None = None,
 ) -> str:
-    """Generate the A4 quotation PDF.
-    
-    Args:
-        quotation: dict with quotation header fields or quotation_no string.
-        items: optional list of dicts with keys: description, currency, price, unit, remark.
-               If None, read from quotation['items'].
-        output_path: optional output path. Defaults to OUTPUT_DIR/<quotation_no>.pdf
-    
-    Returns:
-        The output file path as a string.
-    """
+    """Generate the A4 quotation PDF without internal codes."""
     if isinstance(quotation, str):
         from managers.quotation_manager import get_quotation_by_no
         q_doc = get_quotation_by_no(quotation)
@@ -391,10 +410,10 @@ def generate_quotation_pdf(
     story.append(Spacer(1, 3*mm))
     
     # 4. Subject line
-    subject = quotation.get("subject") or "Sea Import Shipment"
+    subject = quotation.get("subject") or "Freight Quotation"
     story.append(Table(
         [[Paragraph("<b>Subject</b>", styles["label"]),
-          Paragraph(f": {subject}", styles["value"])]],
+          Paragraph(f": {_clean_text(subject)}", styles["value"])]],
         colWidths=[24*mm, 156*mm],
     ))
     story.append(Spacer(1, 3*mm))
@@ -420,7 +439,7 @@ def generate_quotation_pdf(
     
     # 8. Signature block
     story.append(Spacer(1, 6*mm))
-    story.append(_build_signature(styles))
+    story.append(_build_signature(styles, quotation))
     
     doc.build(
         story,

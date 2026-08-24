@@ -159,7 +159,12 @@ def _create_form(user: Dict[str, Any]):
         sales_id = st.selectbox("Sales", sales_ids, format_func=lambda x: sales_map[x]) if sales_ids else None
         job_type = st.selectbox("Job Type *", list(JOB_TYPES.keys()), format_func=lambda x: JOB_TYPES.get(x, x))
         cargo_type = st.selectbox("Cargo Type *", CARGO_TYPES)
-        quotation_no = st.text_input("Quotation Ref", placeholder="Optional")
+
+        b1, b2 = st.columns(2)
+        with b1:
+            carrier_booking_no = st.text_input("Carrier Booking No. * (เลขที่บุ๊คกิ้งสายเรือ/สายการบิน)", placeholder="e.g. ONEYBK123456 / TG-987654")
+        with b2:
+            quotation_no = st.text_input("Quotation Ref (อ้างอิงใบเสนอราคา)", placeholder="Optional")
 
         section("Routing & Vessel")
         pol, transhipment_port, pod = st.columns(3)
@@ -272,7 +277,7 @@ def _create_form(user: Dict[str, Any]):
         sales_name = sales_map.get(sales_id, "") if sales_id else ""
         payload = {
             "booking_no": None,
-            "carrier_booking_no": None,
+            "carrier_booking_no": carrier_booking_no.strip() or None,
             "quotation_id": None,
             "quotation_no": quotation_no.strip() or None,
             "job_type": job_type,
@@ -323,10 +328,10 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
     section("Booking Summary")
     summary = st.columns(5)
     summary[0].metric("Booking No.", booking_no or "—")
-    summary[1].metric("Customer", _s(selected.get("customer_name"), "—"))
-    summary[2].metric("Status", current_status)
-    summary[3].metric("POL", _s(selected.get("pol"), "—"))
-    summary[4].metric("POD", _s(selected.get("pod"), "—"))
+    summary[1].metric("Carrier Booking", _s(selected.get("carrier_booking_no"), "—"))
+    summary[2].metric("Customer", _s(selected.get("customer_name"), "—"))
+    summary[3].metric("Status", current_status)
+    summary[4].metric("Route", f"{_s(selected.get('pol'), '—')} ➔ {_s(selected.get('pod'), '—')}")
 
     section("Routing & Vessel")
     cols = st.columns(5)
@@ -391,6 +396,9 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
         with st.expander("Edit Booking", expanded=False):
             section("Routing & Transport")
             with st.form(f"edit_booking_{booking_no}"):
+                c_bno_col, _ = st.columns(2)
+                new_carrier_bno = c_bno_col.text_input("Carrier Booking No. (เลขที่บุ๊คกิ้งสายเรือ/สายการบิน)", value=_s(selected.get("carrier_booking_no")))
+
                 r1, r2, r3 = st.columns(3)
                 new_pol = r1.text_input("POL", value=_s(selected.get("pol")))
                 new_trans = r2.text_input("Transshipment Port", value=_s(selected.get("transhipment_port")))
@@ -411,6 +419,7 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
                     update_booking(
                         booking_no,
                         {
+                            "carrier_booking_no": new_carrier_bno.strip() or None,
                             "pol": new_pol.strip(),
                             "pod": new_pod.strip(),
                             "vessel": new_vessel.strip() or None,
@@ -467,6 +476,7 @@ def render():
     table = pd.DataFrame([
         {
             "Booking No.": _s(r.get("booking_no")),
+            "Carrier Booking": _s(r.get("carrier_booking_no"), "—"),
             "Customer": _s(r.get("customer_name"), "—"),
             "POL": _s(r.get("pol"), "—"),
             "POD": _s(r.get("pod"), "—"),
