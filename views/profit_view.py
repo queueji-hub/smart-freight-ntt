@@ -285,7 +285,8 @@ def render():
                 # Check for already vouchered lines
                 already_v = [r for r in ap_lines if r["id"] in selected_ap_ids and r.get("voucher_no")]
                 if already_v:
-                    st.error(f"⚠️ รายการ AP ต่อไปนี้ถูกตั้งเบิกไปแล้ว: {', '.join([f'#{x.get(\"id\")} ({x.get(\"voucher_no\")})' for x in already_v])}")
+                    v_str = ", ".join([f"#{x.get('id')} ({x.get('voucher_no')})" for x in already_v])
+                    st.error(f"⚠️ รายการ AP ต่อไปนี้ถูกตั้งเบิกไปแล้ว: {v_str}")
                 else:
                     st.session_state[f"show_pv_modal_{shipment_id}"] = "PV"
 
@@ -296,7 +297,8 @@ def render():
             else:
                 already_v = [r for r in ap_lines if r["id"] in selected_ap_ids and r.get("voucher_no")]
                 if already_v:
-                    st.error(f"⚠️ รายการ AP ต่อไปนี้ถูกตั้งเบิกไปแล้ว: {', '.join([f'#{x.get(\"id\")} ({x.get(\"voucher_no\")})' for x in already_v])}")
+                    v_str = ", ".join([f"#{x.get('id')} ({x.get('voucher_no')})" for x in already_v])
+                    st.error(f"⚠️ รายการ AP ต่อไปนี้ถูกตั้งเบิกไปแล้ว: {v_str}")
                 else:
                     st.session_state[f"show_pv_modal_{shipment_id}"] = "ADV"
 
@@ -307,7 +309,8 @@ def render():
             else:
                 already_p = [r for r in ap_lines if r["id"] in selected_ap_ids and (r.get("is_matched") or r.get("matched_ar_id"))]
                 if already_p:
-                    st.error(f"⚠️ รายการ AP ต่อไปนี้ถูกดึงไปเป็น AR แล้ว: {', '.join([f'#{x.get(\"id\")}' for x in already_p])} (ไม่สามารถดึงซ้ำได้)")
+                    p_str = ", ".join([f"#{x.get('id')}" for x in already_p])
+                    st.error(f"⚠️ รายการ AP ต่อไปนี้ถูกดึงไปเป็น AR แล้ว: {p_str} (ไม่สามารถดึงซ้ำได้)")
                 else:
                     st.session_state[f"show_pull_modal_{shipment_id}"] = True
 
@@ -318,7 +321,8 @@ def render():
             else:
                 already_i = [r for r in ar_lines if r["id"] in selected_ar_ids and r.get("invoice_no")]
                 if already_i:
-                    st.error(f"⚠️ รายการ AR ต่อไปนี้ถูกออกใบแจ้งหนี้ไปแล้ว: {', '.join([f'#{x.get(\"id\")} ({x.get(\"invoice_no\")})' for x in already_i])}")
+                    i_str = ", ".join([f"#{x.get('id')} ({x.get('invoice_no')})" for x in already_i])
+                    st.error(f"⚠️ รายการ AR ต่อไปนี้ถูกออกใบแจ้งหนี้ไปแล้ว: {i_str}")
                 else:
                     st.session_state[f"show_inv_modal_{shipment_id}"] = True
 
