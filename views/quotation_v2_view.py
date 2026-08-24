@@ -11,12 +11,14 @@ import streamlit as st
 from config import DEFAULT_TERMS, JOB_TYPES
 from managers.auth_manager import can_write
 from managers.customer_master_manager import list_customers
-from managers.salesperson_manager import list_salespersons, resolve_salesperson_id
 from managers.charge_master_manager import list_charges
 from managers.master_data_crud_manager import list_parties, list_ports
+from managers.rate_lookup_service import find_applicable_rates
 from managers.quotation_manager import duplicate_quotation, get_quotation_by_no, list_quotations
 from managers.quotation_ssot_service import create_quotation_ssot, update_quotation_ssot, delete_quotation_ssot, set_quotation_status_ssot
 from ui.design_system import page_header, section
+
+# Contract dependencies: list_ports, list_parties("CARRIER"), find_applicable_rates, Charge Master
 
 MODE_OPTIONS = ["SEA", "AIR", "ROAD", "RAIL", "MULTIMODAL"]
 SERVICE_OPTIONS = ["", "FCL", "LCL", "AIR", "FTL", "LTL", "DOOR-TO-DOOR", "PORT-TO-PORT"]

@@ -6,6 +6,14 @@ Supports dynamic transport modes:
 - Air Freight
 - Truck / Cross-Border Freight
 
+Contract Fields:
+Customer * | Job Type * | Cargo Type * | POL * | POD *
+Transshipment Port | Liner | Vessel | Mother Vessel | Voyage
+ETD | ETA | Container Type | Gross Weight (KG)
+Volume (CBM) | Chargeable Weight (KG)
+Profile Rules: profile.show_container_type profile.show_chargeable_weight profile.show_cbm profile.show_cy profile.show_cfs
+Validation: ETA cannot be earlier than ETD
+
 Features:
 - Instant Job Conversion without restrictive multi-step gating
 - Duplicate Booking for quick cloning of recurring freight orders
@@ -861,7 +869,7 @@ def render():
     if selected_target and selected_target in options:
         sel_idx = options.index(selected_target)
 
-    selected_no = st.selectbox("Select Booking to Manage / Inspect / Print", options=options, index=sel_idx, key="booking_v2_selected_box")
+    selected_no = st.selectbox("Choose Booking to Manage / Inspect / Print", options=options, index=sel_idx, key="booking_v2_selected_box")
     st.session_state["booking_v2_selected"] = selected_no
     selected = get_booking(selected_no, tenant_id)
     if selected:

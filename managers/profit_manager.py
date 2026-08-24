@@ -46,6 +46,21 @@ AP_CATEGORIES = [
 TAX_TYPES = ["VAT 7%", "Non-VAT", "Advance"]
 WHT_TYPES = ["None", "WHT 1%", "WHT 3%", "WHT 0.75%", "WHT 5%"]
 
+def _resolve_charge_domain(charge_code: str = "", category: str = "", description: str = "") -> str:
+    """Resolve standard charge domain (ocean_freight, air_freight, terminal, customs, trucking, other)."""
+    text = f"{charge_code} {category} {description}".lower()
+    if any(k in text for k in ["custom", "duty", "clearance", "formalit", "import duty"]):
+        return "customs"
+    if any(k in text for k in ["ocean", "sea", "of", "freight cost", "freight revenue"]):
+        return "ocean_freight"
+    if any(k in text for k in ["air", "flight", "af"]):
+        return "air_freight"
+    if any(k in text for k in ["terminal", "thc", "port"]):
+        return "terminal"
+    if any(k in text for k in ["truck", "inland", "trailer", "carrier", "haulage", "delivery"]):
+        return "trucking"
+    return "other"
+
 
 def _convert_to_thb(amount: float, currency: str, ex_rate: Optional[float] = None) -> float:
     if not currency or currency.upper() == "THB":
