@@ -16,11 +16,11 @@ apply_theme()
 
 ERP_MODULES = {
     "EXECUTIVE": [("dashboard", "Home", "dashboard"), ("reports", "Reports", "reports")],
-    "DATA": [("data", "Master Data", "settings"), ("rates", "Rate Master", "settings")],
+    "DATA": [("data", "Master Data", "settings")],
     "SALES": [("crm", "Customers", "crm"), ("quotation", "Quotations", "quotation"), ("handover", "Job Handover", "shipment")],
     "OPERATIONS": [("booking", "Bookings", "booking"), ("job_control", "Jobs", "shipment"), ("bl", "Bills of Lading", "bl")],
     "DOCUMENTS": [("document", "Documents", "document")],
-    "FINANCE": [("billing", "Finance", "billing"), ("ap", "Payables", "ap"), ("profit", "Profitability", "profit")],
+    "FINANCE": [("billing", "Billing & AR", "billing"), ("ap", "Payables (AP)", "ap"), ("profit", "Profitability", "profit")],
     "ADMIN": [("users", "Users", "users"), ("settings", "Settings", "settings"), ("health", "System Health", "system_health")],
 }
 PAGE_ROUTES = {page_id: (f"views.{module_name}_view", "render") for modules in ERP_MODULES.values() for page_id, _label, module_name in modules}
@@ -28,7 +28,8 @@ PAGE_ROUTES["booking"] = ("views.booking_v2_view", "render")
 PAGE_ROUTES["quotation"] = ("views.quotation_v2_view", "render")
 PAGE_ROUTES["bl"] = ("views.bl_v2_view", "render")
 PAGE_ROUTES["billing"] = ("views.finance_document_workspace", "render")
-PAGE_ROUTES["ap"] = ("views.ar_ap_workspace", "render")
+PAGE_ROUTES["ap"] = ("views.ap_view", "render")
+PAGE_ROUTES["ar"] = ("views.ar_ap_workspace", "render")
 PAGE_ROUTES["document"] = ("views.document_v2_view", "render")
 PAGE_ROUTES["health"] = ("views.system_health_view", "render")
 PAGE_ROUTES["data"] = ("views.master_data_view", "render")

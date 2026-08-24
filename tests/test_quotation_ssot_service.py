@@ -32,3 +32,25 @@ def test_update_quotation_ssot_requires_customer_id(monkeypatch):
         assert "customer_id is required" in str(exc)
     else:
         raise AssertionError("customer_id must be required")
+
+
+def test_delete_quotation_ssot(monkeypatch):
+    monkeypatch.setattr(ssot, "_legacy_delete_quotation", lambda qno: True)
+    assert ssot.delete_quotation_ssot("QT-TEST-01") is True
+
+
+def test_normalize_items_preserves_custom_unit_and_currency(monkeypatch):
+    items = [{
+        "charge_code": "OFR",
+        "description": "Ocean Freight (40HC to Singapore)",
+        "unit": "40'HC",
+        "currency": "EUR",
+        "quantity": 2,
+        "unit_rate": 1500,
+    }]
+    normalized = ssot._normalize_items(items)
+    assert len(normalized) == 1
+    assert normalized[0]["unit"] == "40'HC"
+    assert normalized[0]["currency"] == "EUR"
+    assert normalized[0]["description"] == "Ocean Freight (40HC to Singapore)"
+

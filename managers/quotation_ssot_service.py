@@ -6,6 +6,8 @@ from typing import Any, Dict, List
 from database.connection import get_connection
 from managers.quotation_manager import create_quotation as _legacy_create_quotation
 from managers.quotation_manager import update_quotation as _legacy_update_quotation
+from managers.quotation_manager import delete_quotation as _legacy_delete_quotation
+from managers.quotation_manager import set_quotation_status as _legacy_set_quotation_status
 from managers.ssot_write_adapter import sync_quotation_master_ids
 from managers.tenant_context import get_current_tenant_id
 from managers.charge_master_manager import list_charges
@@ -18,8 +20,6 @@ def _normalize_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         charges = list_charges(active_only=True)
     except Exception:
         charges = []
-    if not charges:
-        return items
     by_code = {str(c.get("charge_code") or "").upper(): c for c in charges}
     by_description = {str(c.get("description") or "").strip().lower(): c for c in charges}
     normalized: List[Dict[str, Any]] = []
@@ -29,14 +29,22 @@ def _normalize_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         description = str(item.get("description") or "").strip()
         master = by_code.get(code) if code else by_description.get(description.lower())
         if master:
-            item["charge_code"] = master["charge_code"]
-            item["description"] = master["description"]
+            item["charge_code"] = code or master.get("charge_code")
+            if not item.get("description"):
+                item["description"] = master.get("description")
             if not item.get("basis"):
                 item["basis"] = master.get("default_basis")
             if not item.get("unit"):
-                item["unit"] = master.get("default_unit")
+                item["unit"] = master.get("default_unit") or "SHPMT"
             if not item.get("currency"):
                 item["currency"] = master.get("default_currency") or "USD"
+        else:
+            if not item.get("unit"):
+                item["unit"] = "SHPMT"
+            if not item.get("currency"):
+                item["currency"] = "USD"
+            if not item.get("description"):
+                item["description"] = code or "Freight Charge"
         normalized.append(item)
     return normalized
 
@@ -83,3 +91,13 @@ def update_quotation_ssot(quotation_no: str, data: Dict[str, Any], items: List[D
     normalized_items = _normalize_items(items)
     _legacy_update_quotation(quotation_no, data, normalized_items)
     sync_quotation_master_ids(quotation_no, customer_id=customer_id, sales_id=sales_id)
+
+
+def delete_quotation_ssot(quotation_no: str) -> bool:
+    """Deletes quotation and its associated items atomically."""
+    return _legacy_delete_quotation(quotation_no)
+
+
+def set_quotation_status_ssot(quotation_no: str, status: str) -> None:
+    """Updates quotation status."""
+    _legacy_set_quotation_status(quotation_no, status)

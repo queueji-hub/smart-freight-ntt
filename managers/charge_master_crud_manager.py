@@ -91,3 +91,17 @@ def upsert_charge(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
                 charge_id = int(row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0])
         conn.commit()
         return charge_id
+
+
+def delete_charge(charge_id: int, user: Optional[Dict[str, Any]] = None) -> bool:
+    """Deletes a charge record from charge_master."""
+    if not charge_id:
+        return False
+    tenant = _tenant(user)
+    with get_connection() as conn:
+        _ensure(conn)
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM charge_master WHERE id=%s AND tenant_id=%s", (int(charge_id), tenant))
+            conn.commit()
+            return True
+

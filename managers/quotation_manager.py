@@ -73,7 +73,7 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     data.get("commodity", ""),
                     data.get("subject", ""),
                     data.get("terms_conditions", ""),
-                    "ACTIVE",
+                    data.get("status") or "Draft",
                     tenant_id,
                     data.get("customer_address", ""),
                     data.get("customer_email", ""),
@@ -147,7 +147,8 @@ def list_quotations() -> List[Dict[str, Any]]:
             cur.execute("""
                 SELECT 
                     quotation_no, job_type, customer_name, subject,
-                    quotation_date, validity_date, status
+                    quotation_date, validity_date, status, pol, pod, salesperson,
+                    service_type, incoterm
                 FROM quotations 
                 WHERE tenant_id = %s
                 ORDER BY id DESC;
@@ -209,7 +210,6 @@ def get_quotation(quotation_no: str) -> Optional[Dict[str, Any]]:
 def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[str, Any]]) -> None:
     """
     Updates quotation metadata master record and replaces line rows in a block.
-    Fixed: removed duplicate fetchone() that caused NoneType crash.
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -233,7 +233,8 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                         customer_address = %s, customer_email = %s, salesperson = %s,
                         shipper = %s, consignee = %s, service_type = %s, origin = %s, destination = %s,
                         incoterm = %s, freight_term = %s, hs_code = %s, quantity = %s, package_type = %s,
-                        weight_kg = %s, volume_cbm = %s, container_type = %s, container_quantity = %s, is_dg = %s
+                        weight_kg = %s, volume_cbm = %s, container_type = %s, container_quantity = %s, is_dg = %s,
+                        status = COALESCE(%s, status)
                     WHERE id = %s AND tenant_id = %s;
                 """, (
                     data.get("job_type"), data.get("customer_name"), data.get("attention"), data.get("tel"),
@@ -248,6 +249,7 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                     float(data.get("weight_kg") or 0.0), float(data.get("volume_cbm") or 0.0), 
                     data.get("container_type", ""), int(data.get("container_quantity") or 0), 
                     bool(data.get("is_dg") or False),
+                    data.get("status"),
                     q_id, tenant_id
                 ))
 
@@ -285,6 +287,45 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                 raise RuntimeError(f"Failed executing update transaction: {str(e)}")
 
 
+def set_quotation_status(quotation_no: str, status: str) -> None:
+    """Updates the lifecycle status of a quotation (e.g. Draft, Sent, Approved, Rejected, Cancelled)."""
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE quotations 
+                SET status = %s 
+                WHERE quotation_no = %s AND tenant_id = %s;
+            """, (status, quotation_no, tenant_id))
+            conn.commit()
+
+
+def delete_quotation(quotation_no: str) -> bool:
+    """
+    Deletes quotation items and master quotation record atomically.
+    Tenant-isolated.
+    """
+    if not quotation_no:
+        return False
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute("SELECT id FROM quotations WHERE quotation_no = %s AND tenant_id = %s LIMIT 1;", (quotation_no, tenant_id))
+                row = cur.fetchone()
+                if not row:
+                    return False
+                q_id = row[0] if isinstance(row, (tuple, list)) else row["id"]
+
+                cur.execute("DELETE FROM quotation_items WHERE quotation_id = %s;", (q_id,))
+                cur.execute("DELETE FROM quotations WHERE id = %s AND tenant_id = %s;", (q_id, tenant_id))
+                conn.commit()
+                return True
+            except Exception as e:
+                conn.rollback()
+                raise RuntimeError(f"Failed to delete quotation {quotation_no}: {str(e)}")
+
+
 def duplicate_quotation(quotation_no: str) -> str:
     """
     Fetches an existing quotation layout pattern and duplicates it into a new transaction context sequence.
@@ -295,6 +336,8 @@ def duplicate_quotation(quotation_no: str) -> str:
 
     source_data["quotation_date"] = datetime.now().strftime("%Y-%m-%d")
     source_data["validity_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+    source_data["status"] = "Draft"
+    source_data.pop("quotation_no", None)
 
     return create_quotation(source_data, source_data.get("items", []))
 

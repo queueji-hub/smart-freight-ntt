@@ -6,8 +6,8 @@ import streamlit as st
 import pandas as pd
 
 from managers.auth_manager import can_write
-from managers.master_data_crud_manager import list_parties, upsert_party, list_ports, upsert_port
-from managers.charge_master_crud_manager import list_charges, upsert_charge
+from managers.master_data_crud_manager import list_parties, upsert_party, delete_party, list_ports, upsert_port, delete_port
+from managers.charge_master_crud_manager import list_charges, upsert_charge, delete_charge
 from ui.design_system import page_header, section
 
 ROLE_OPTIONS = ["CUSTOMER", "CARRIER", "VENDOR", "AGENT", "CO_LOADER", "SHIPPER", "CONSIGNEE"]
@@ -48,8 +48,18 @@ def _party_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> N
     swift = bank4.text_input("SWIFT", value=str(record.get("swift_code") or ""))
     address = st.text_area("Billing Address", value=str(record.get("billing_address") or ""))
 
+    btn_cols = st.columns([3, 1] if record.get("id") else [1])
     save_label = "Update Party" if record.get("id") else "Save Party"
-    save = st.button(save_label, type="primary", width="stretch", key=f"party_save_{record.get('id','new')}")
+    with btn_cols[0]:
+        save = st.button(save_label, type="primary", width="stretch", key=f"party_save_{record.get('id','new')}")
+    if record.get("id") and len(btn_cols) > 1:
+        with btn_cols[1]:
+            if st.button("🗑️ Delete Party", type="secondary", width="stretch", key=f"party_del_{record.get('id')}"):
+                delete_party(int(record["id"]), user)
+                st.success("Party deleted successfully.")
+                st.session_state.pop("master_data_edit_party", None)
+                st.rerun()
+
     if save:
         if len(code) != 5 or not legal.strip():
             st.error("Code must be exactly 5 characters and Legal Name is required.")
@@ -99,8 +109,19 @@ def _port_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> No
     country_name = d3.text_input("Country Name", value=str(record.get("country_name") or ""))
     timezone = st.text_input("Timezone", value=str(record.get("timezone") or ""))
     active = st.checkbox("Active", value=bool(record.get("is_active", True)), key=f"port_active_{record.get('id','new')}")
+    
+    btn_cols = st.columns([3, 1] if record.get("id") else [1])
     save_label = "Update Port" if record.get("id") else "Save Port"
-    save = st.button(save_label, type="primary", width="stretch", key=f"port_save_{record.get('id','new')}")
+    with btn_cols[0]:
+        save = st.button(save_label, type="primary", width="stretch", key=f"port_save_{record.get('id','new')}")
+    if record.get("id") and len(btn_cols) > 1:
+        with btn_cols[1]:
+            if st.button("🗑️ Delete Port", type="secondary", width="stretch", key=f"port_del_{record.get('id')}"):
+                delete_port(int(record["id"]), user)
+                st.success("Port deleted successfully.")
+                st.session_state.pop("master_data_edit_port", None)
+                st.rerun()
+
     if save:
         if len(code) != 5 or not name.strip():
             st.error("Port Code must be exactly 5 characters and Port Name is required.")
@@ -136,8 +157,20 @@ def _charge_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> 
     unit = d2.text_input("Default Unit", value=str(record.get("default_unit") or ""))
     currency = d3.text_input("Default Currency", value=str(record.get("default_currency") or "USD"), max_chars=3).upper()
     active = d4.checkbox("Active", value=bool(record.get("is_active", True)), key=f"charge_active_{record.get('id','new')}")
+    
+    btn_cols = st.columns([3, 1] if record.get("id") else [1])
     save_label = "Update Charge" if record.get("id") else "Save Charge"
-    if st.button(save_label, type="primary", width="stretch", key=f"charge_save_{record.get('id','new')}"):
+    with btn_cols[0]:
+        save = st.button(save_label, type="primary", width="stretch", key=f"charge_save_{record.get('id','new')}")
+    if record.get("id") and len(btn_cols) > 1:
+        with btn_cols[1]:
+            if st.button("🗑️ Delete Charge", type="secondary", width="stretch", key=f"charge_del_{record.get('id')}"):
+                delete_charge(int(record["id"]), user)
+                st.success("Charge deleted successfully.")
+                st.session_state.pop("master_data_edit_charge", None)
+                st.rerun()
+
+    if save:
         if not code or not description.strip():
             st.error("Charge Code and Description are required.")
             return
@@ -181,15 +214,19 @@ def render() -> None:
             st.dataframe(frame, hide_index=True, width="stretch")
             options = [r for r in rows if r.get("id")]
             if options:
-                selected = st.selectbox("Edit Port", options, format_func=lambda r: f"{r.get('port_code')} — {r.get('port_name')}", key="port_edit_selector")
-                if st.button("Edit Selected Port", key="port_edit_button"):
-                    st.session_state["master_data_edit_port"] = int(selected["id"])
+                col_sel, col_btn = st.columns([3, 1])
+                with col_sel:
+                    selected = st.selectbox("Select Port to Edit/Delete", options, format_func=lambda r: f"{r.get('port_code')} — {r.get('port_name')}", key="port_edit_selector")
+                with col_btn:
+                    st.write("")
+                    if st.button("Edit Port", key="port_edit_button", width="stretch"):
+                        st.session_state["master_data_edit_port"] = int(selected["id"])
             edit_id = st.session_state.get("master_data_edit_port")
             if edit_id:
                 record = next((r for r in rows if int(r.get("id")) == int(edit_id)), None)
                 if record:
                     _port_form(user, record)
-                    if st.button("Cancel Edit", key="port_cancel_edit"):
+                    if st.button("Close Edit", key="port_cancel_edit"):
                         st.session_state.pop("master_data_edit_port", None)
                         st.rerun()
     elif mode == "Business Parties":
@@ -206,15 +243,19 @@ def render() -> None:
             st.dataframe(frame, hide_index=True, width="stretch")
             options = [r for r in rows if r.get("id")]
             if options:
-                selected = st.selectbox("Edit Party", options, format_func=lambda r: f"{r.get('party_code')} — {r.get('legal_name')}", key="party_edit_selector")
-                if st.button("Edit Selected Party", key="party_edit_button"):
-                    st.session_state["master_data_edit_party"] = int(selected["id"])
+                col_sel, col_btn = st.columns([3, 1])
+                with col_sel:
+                    selected = st.selectbox("Select Party to Edit/Delete", options, format_func=lambda r: f"{r.get('party_code')} — {r.get('legal_name')}", key="party_edit_selector")
+                with col_btn:
+                    st.write("")
+                    if st.button("Edit Party", key="party_edit_button", width="stretch"):
+                        st.session_state["master_data_edit_party"] = int(selected["id"])
             edit_id = st.session_state.get("master_data_edit_party")
             if edit_id:
                 record = next((r for r in rows if int(r.get("id")) == int(edit_id)), None)
                 if record:
                     _party_form(user, record)
-                    if st.button("Cancel Edit", key="party_cancel_edit"):
+                    if st.button("Close Edit", key="party_cancel_edit"):
                         st.session_state.pop("master_data_edit_party", None)
                         st.rerun()
     else:
@@ -230,14 +271,19 @@ def render() -> None:
             st.dataframe(frame, hide_index=True, width="stretch")
             options = [r for r in rows if r.get("id")]
             if options:
-                selected = st.selectbox("Edit Charge", options, format_func=lambda r: f"{r.get('charge_code')} — {r.get('description')}", key="charge_edit_selector")
-                if st.button("Edit Selected Charge", key="charge_edit_button"):
-                    st.session_state["master_data_edit_charge"] = int(selected["id"])
+                col_sel, col_btn = st.columns([3, 1])
+                with col_sel:
+                    selected = st.selectbox("Select Charge to Edit/Delete", options, format_func=lambda r: f"{r.get('charge_code')} — {r.get('description')}", key="charge_edit_selector")
+                with col_btn:
+                    st.write("")
+                    if st.button("Edit Charge", key="charge_edit_button", width="stretch"):
+                        st.session_state["master_data_edit_charge"] = int(selected["id"])
             edit_id = st.session_state.get("master_data_edit_charge")
             if edit_id:
                 record = next((r for r in rows if int(r.get("id")) == int(edit_id)), None)
                 if record:
                     _charge_form(user, record)
-                    if st.button("Cancel Edit", key="charge_cancel_edit"):
+                    if st.button("Close Edit", key="charge_cancel_edit"):
                         st.session_state.pop("master_data_edit_charge", None)
                         st.rerun()
+

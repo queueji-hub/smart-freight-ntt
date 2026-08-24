@@ -116,3 +116,28 @@ def upsert_party(data: Dict[str, Any], roles: List[str], finance: Optional[Dict[
                  finance.get("bank_name"), finance.get("bank_account_name"), finance.get("bank_account_no"), finance.get("swift_code")))
         conn.commit()
         return party_id
+
+
+def delete_port(port_id: int, user: Optional[Dict[str, Any]] = None) -> bool:
+    """Deletes a port record from ports table."""
+    if not port_id:
+        return False
+    tenant = _tenant(user)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM ports WHERE id=%s AND tenant_id=%s", (int(port_id), tenant))
+        conn.commit()
+        return True
+
+
+def delete_party(party_id: int, user: Optional[Dict[str, Any]] = None) -> bool:
+    """Deletes a business party record and associated roles/finance profiles."""
+    if not party_id:
+        return False
+    tenant = _tenant(user)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM party_roles WHERE party_id=%s AND tenant_id=%s", (int(party_id), tenant))
+        cur.execute("DELETE FROM party_finance_profiles WHERE party_id=%s AND tenant_id=%s", (int(party_id), tenant))
+        cur.execute("DELETE FROM business_parties WHERE id=%s AND tenant_id=%s", (int(party_id), tenant))
+        conn.commit()
+        return True
+
