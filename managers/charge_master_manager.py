@@ -27,24 +27,64 @@ def list_charges(active_only: bool = True) -> List[Dict[str, Any]]:
     with get_connection() as conn:
         _ensure_schema(conn)
         with conn.cursor() as cur:
-            where = "WHERE tenant_id=%s"
+            is_sqlite = type(conn).__name__ == "SQLiteConnAdapter" or "sqlite" in str(type(conn)).lower()
+            where = "WHERE (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default')" if not is_sqlite else "WHERE (tenant_id=? OR tenant_id IS NULL OR tenant_id='default')"
             params: list[Any] = [tenant_id]
             if active_only:
-                where += " AND is_active = TRUE"
+                where += " AND is_active = 1" if is_sqlite else " AND is_active = TRUE"
             try:
                 cur.execute(
                     f"""
                     SELECT id, charge_code, description, category, default_basis,
-                           default_unit, default_currency, is_active
+                           default_unit, default_currency, default_tax_type, default_wht_type, is_active
                     FROM charge_master
                     {where}
                     ORDER BY charge_code
                     """,
                     params,
                 )
-                return [dict(row) for row in cur.fetchall()]
+                rows = cur.fetchall()
+                if not rows:
+                    return []
+                if isinstance(rows[0], dict) or hasattr(rows[0], "keys"):
+                    return [dict(row) for row in rows]
+                else:
+                    cols = ["id", "charge_code", "description", "category", "default_basis", "default_unit", "default_currency", "default_tax_type", "default_wht_type", "is_active"]
+                    return [dict(zip(cols, row)) for row in rows]
             except Exception:
                 return []
+
+
+def list_charge_categories() -> List[str]:
+    """Returns distinct active charge categories from Master Data."""
+    charges = list_charges(active_only=True)
+    cats = []
+    seen = set()
+    for c in charges:
+        cat = str(c.get("category") or "").strip()
+        if cat and cat not in seen:
+            seen.add(cat)
+            cats.append(cat)
+    
+    # Standard fallbacks if table was empty
+    default_cats = [
+        "Ocean Freight Cost (สายเรือ)",
+        "Air Freight Cost (สายการบิน)",
+        "Port Terminal Cost (THC / ท่าเรือ)",
+        "Customs Brokerage Cost (พิธีการศุลกากร)",
+        "Inland Transport / Trucking (รถหัวลาก/ขนส่ง)",
+        "Port Storage / Demurrage / Detention",
+        "Documentation / D/O Cost",
+        "Advance Paid on Behalf (สำรองจ่าย)",
+        "Cargo Handling / CFS",
+        "Surcharge & Fuel",
+        "Insurance & Other"
+    ]
+    for dc in default_cats:
+        if dc not in seen:
+            seen.add(dc)
+            cats.append(dc)
+    return cats
 
 
 def get_charge(charge_code: str) -> Optional[Dict[str, Any]]:
@@ -55,19 +95,37 @@ def get_charge(charge_code: str) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         _ensure_schema(conn)
         with conn.cursor() as cur:
+            is_sqlite = type(conn).__name__ == "SQLiteConnAdapter" or "sqlite" in str(type(conn)).lower()
             try:
-                cur.execute(
-                    """
-                    SELECT id, charge_code, description, category, default_basis,
-                           default_unit, default_currency, is_active
-                    FROM charge_master
-                    WHERE tenant_id=%s AND UPPER(charge_code)=%s
-                    LIMIT 1
-                    """,
-                    (tenant_id, code),
-                )
+                if is_sqlite:
+                    cur.execute(
+                        """
+                        SELECT id, charge_code, description, category, default_basis,
+                               default_unit, default_currency, default_tax_type, default_wht_type, is_active
+                        FROM charge_master
+                        WHERE (tenant_id=? OR tenant_id IS NULL OR tenant_id='default') AND UPPER(charge_code)=?
+                        LIMIT 1
+                        """,
+                        (tenant_id, code),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT id, charge_code, description, category, default_basis,
+                               default_unit, default_currency, default_tax_type, default_wht_type, is_active
+                        FROM charge_master
+                        WHERE (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default') AND UPPER(charge_code)=%s
+                        LIMIT 1
+                        """,
+                        (tenant_id, code),
+                    )
                 row = cur.fetchone()
-                return dict(row) if row else None
+                if not row:
+                    return None
+                if isinstance(row, dict) or hasattr(row, "keys"):
+                    return dict(row)
+                cols = ["id", "charge_code", "description", "category", "default_basis", "default_unit", "default_currency", "default_tax_type", "default_wht_type", "is_active"]
+                return dict(zip(cols, row))
             except Exception:
                 return None
 
@@ -79,10 +137,12 @@ def upsert_charge(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
     if not code or not desc:
         raise ValueError("Charge code and description are required.")
     
-    category = str(data.get("category") or "FREIGHT").strip().upper()
-    basis = str(data.get("default_basis") or "PER_SHIPMENT").strip()
-    unit = str(data.get("default_unit") or "SHIPMENT").strip()
-    curr = str(data.get("default_currency") or "USD").strip().upper()
+    category = str(data.get("category") or "Ocean Freight Cost (สายเรือ)").strip()
+    basis = str(data.get("default_basis") or "Container").strip()
+    unit = str(data.get("default_unit") or "CTR").strip()
+    curr = str(data.get("default_currency") or "THB").strip().upper()
+    tax_type = str(data.get("default_tax_type") or "VAT 7%").strip()
+    wht_type = str(data.get("default_wht_type") or "None").strip()
     active = bool(data.get("is_active", True))
 
     with get_connection() as conn:
@@ -93,28 +153,28 @@ def upsert_charge(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
             if cid:
                 if is_sqlite:
                     cur.execute("""
-                        UPDATE charge_master SET charge_code=?, description=?, category=?, default_basis=?, default_unit=?, default_currency=?, is_active=?
+                        UPDATE charge_master SET charge_code=?, description=?, category=?, default_basis=?, default_unit=?, default_currency=?, default_tax_type=?, default_wht_type=?, is_active=?
                         WHERE id=? AND (tenant_id=? OR tenant_id IS NULL OR tenant_id='default')
-                    """, (code, desc, category, basis, unit, curr, 1 if active else 0, int(cid), tenant_id))
+                    """, (code, desc, category, basis, unit, curr, tax_type, wht_type, 1 if active else 0, int(cid), tenant_id))
                 else:
                     cur.execute("""
-                        UPDATE charge_master SET charge_code=%s, description=%s, category=%s, default_basis=%s, default_unit=%s, default_currency=%s, is_active=%s
+                        UPDATE charge_master SET charge_code=%s, description=%s, category=%s, default_basis=%s, default_unit=%s, default_currency=%s, default_tax_type=%s, default_wht_type=%s, is_active=%s
                         WHERE id=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default')
-                    """, (code, desc, category, basis, unit, curr, active, int(cid), tenant_id))
+                    """, (code, desc, category, basis, unit, curr, tax_type, wht_type, active, int(cid), tenant_id))
                 conn.commit()
                 return int(cid)
             else:
                 if is_sqlite:
                     cur.execute("""
-                        INSERT INTO charge_master (tenant_id, charge_code, description, category, default_basis, default_unit, default_currency, is_active)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (tenant_id, code, desc, category, basis, unit, curr, 1 if active else 0))
+                        INSERT INTO charge_master (tenant_id, charge_code, description, category, default_basis, default_unit, default_currency, default_tax_type, default_wht_type, is_active)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (tenant_id, code, desc, category, basis, unit, curr, tax_type, wht_type, 1 if active else 0))
                     cid = cur.lastrowid
                 else:
                     cur.execute("""
-                        INSERT INTO charge_master (tenant_id, charge_code, description, category, default_basis, default_unit, default_currency, is_active)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-                    """, (tenant_id, code, desc, category, basis, unit, curr, active))
+                        INSERT INTO charge_master (tenant_id, charge_code, description, category, default_basis, default_unit, default_currency, default_tax_type, default_wht_type, is_active)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                    """, (tenant_id, code, desc, category, basis, unit, curr, tax_type, wht_type, active))
                     row = cur.fetchone()
                     cid = row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
                 conn.commit()

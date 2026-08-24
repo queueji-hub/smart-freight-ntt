@@ -158,6 +158,77 @@ def _salesperson_form(user: Dict[str, Any], record: Dict[str, Any] | None = None
         st.rerun()
 
 
+def _charge_master_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
+    record = record or {}
+    section("Charge Code & Service Profile (ข้อมูลรหัสค่าบริการ/ค่าใช้จ่าย)")
+    
+    with st.form(f"charge_form_{record.get('id', 'new')}"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            code = st.text_input("Charge Code (รหัสค่าบริการ) *", value=str(record.get("charge_code") or ""), placeholder="e.g. OF, THC-O, CUS, TRK").upper()
+            desc = st.text_input("Description (ชื่อรายการค่าบริการ) *", value=str(record.get("description") or ""), placeholder="e.g. Ocean Freight 40HC")
+        with c2:
+            cat = st.text_input("Category (หมวดหมู่ค่าบริการ) *", value=str(record.get("category") or "Ocean Freight Cost (สายเรือ)"))
+            basis = st.text_input("Default Basis (ฐานคิด)", value=str(record.get("default_basis") or "Container"))
+        with c3:
+            unit_opts = ["CTR", "BL", "CBM", "TRIP", "SHPT", "LOT", "SET", "KG"]
+            cur_unit = record.get("default_unit") or "CTR"
+            unit_idx = unit_opts.index(cur_unit) if cur_unit in unit_opts else 0
+            unit = st.selectbox("Default Unit (หน่วยนับ)", unit_opts, index=unit_idx)
+            
+            curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
+            cur_curr = str(record.get("default_currency") or "THB").upper()
+            curr_idx = curr_opts.index(cur_curr) if cur_curr in curr_opts else 0
+            curr = st.selectbox("Default Currency (สกุลเงิน)", curr_opts, index=curr_idx)
+
+        t1, t2, t3 = st.columns(3)
+        with t1:
+            tax_opts = ["VAT 7%", "Non-VAT", "Advance"]
+            cur_tax = record.get("default_tax_type") or "VAT 7%"
+            tax_idx = tax_opts.index(cur_tax) if cur_tax in tax_opts else 0
+            tax_type = st.selectbox("Default Tax Type (ประเภทภาษี)", tax_opts, index=tax_idx)
+        with t2:
+            wht_opts = ["None", "WHT 1%", "WHT 3%"]
+            cur_wht = record.get("default_wht_type") or "None"
+            wht_idx = wht_opts.index(cur_wht) if cur_wht in wht_opts else 0
+            wht_type = st.selectbox("Default Withholding Tax (ภาษีหัก ณ ที่จ่าย)", wht_opts, index=wht_idx)
+        with t3:
+            active = st.checkbox("Active (เปิดใช้งาน)", value=bool(record.get("is_active", True)))
+
+        btn1, btn2 = st.columns([1, 1])
+        with btn1:
+            submitted = st.form_submit_button("💾 Save Charge Code", type="primary", width="stretch")
+        with btn2:
+            cancel = st.form_submit_button("Cancel / Back", width="stretch")
+
+        if cancel:
+            st.session_state.pop("master_data_edit_charge", None)
+            st.session_state["charge_action_target"] = "Browse"
+            st.rerun()
+
+        if submitted:
+            if not code.strip() or not desc.strip():
+                st.error("Charge Code and Description are required.")
+            else:
+                from managers.charge_master_manager import upsert_charge
+                upsert_charge({
+                    "id": record.get("id"),
+                    "charge_code": code.strip(),
+                    "description": desc.strip(),
+                    "category": cat.strip(),
+                    "default_basis": basis.strip(),
+                    "default_unit": unit.strip(),
+                    "default_currency": curr.strip(),
+                    "default_tax_type": tax_type.strip(),
+                    "default_wht_type": wht_type.strip(),
+                    "is_active": active,
+                }, user=user)
+                st.success("Charge Code saved successfully.")
+                st.session_state.pop("master_data_edit_charge", None)
+                st.session_state["charge_action_target"] = "Browse"
+                st.rerun()
+
+
 def render() -> None:
     page_header("data", status_text="Online")
     user = st.session_state.get("user", {})
@@ -170,6 +241,7 @@ def render() -> None:
         "Master Data Section",
         [
             "🤝 Business Parties (คู่ค้า / ลูกค้า / สายเรือ / ซัพพลายเออร์)",
+            "💳 Charge Master (รหัสค่าใช้จ่าย / ค่าบริการ)",
             "👤 Sales Persons (พนักงานขาย)",
         ],
         horizontal=True,
@@ -262,6 +334,75 @@ def render() -> None:
                 _party_form(user, record)
                 if st.button("✖️ Close Edit", key="party_cancel_edit"):
                     st.session_state.pop("master_data_edit_party", None)
+                    st.rerun()
+
+    elif "Charge Master" in mode:
+        section("Charge Master Ledger (ฐานข้อมูลรหัสค่าใช้จ่าย / ค่าบริการ)")
+        ch_target = st.session_state.get("charge_action_target", "Browse")
+        ch_idx = 0 if ch_target == "Browse" else 1
+        action = st.radio("Action", ["Browse", "➕ New Charge Code"], index=ch_idx, horizontal=True, key="charge_action_radio")
+        st.session_state["charge_action_target"] = action
+
+        if action == "➕ New Charge Code":
+            _charge_master_form(user)
+            return
+
+        from managers.charge_master_manager import list_charges, delete_charge
+        rows = list_charges(active_only=False)
+
+        search_query = st.text_input("🔍 Search Charge Codes & Services", placeholder="Search by Code, Description, Category...", key="md_charge_search")
+        if search_query.strip():
+            sq = search_query.strip().lower()
+            rows = [
+                r for r in rows
+                if sq in f"{r.get('charge_code','')} {r.get('description','')} {r.get('category','')} {r.get('default_currency','')}".lower()
+            ]
+
+        frame = pd.DataFrame([
+            {
+                "ID": r.get("id"),
+                "Charge Code": r.get("charge_code"),
+                "Description": r.get("description"),
+                "Category": r.get("category"),
+                "Basis": r.get("default_basis") or "—",
+                "Unit": r.get("default_unit") or "—",
+                "Currency": r.get("default_currency") or "THB",
+                "Tax Type": r.get("default_tax_type") or "VAT 7%",
+                "WHT": r.get("default_wht_type") or "None",
+                "Active": "✅ Active" if r.get("is_active") else "Inactive",
+            }
+            for r in rows
+        ])
+        st.dataframe(frame, hide_index=True, width="stretch")
+
+        options = [r for r in rows if r.get("id")]
+        if options:
+            col_sel, col_btn, col_del = st.columns([3, 1, 1])
+            with col_sel:
+                selected = st.selectbox(
+                    "Select Charge Code to Edit",
+                    options,
+                    format_func=lambda r: f"[{r.get('charge_code')}] {r.get('description')} ({r.get('category')})",
+                    key="charge_edit_selector"
+                )
+            with col_btn:
+                st.write("")
+                if st.button("✏️ Edit Charge", key="charge_edit_button", width="stretch"):
+                    st.session_state["master_data_edit_charge"] = selected["id"]
+            with col_del:
+                st.write("")
+                if st.button("🗑️ Delete", key="charge_del_button", width="stretch"):
+                    delete_charge(selected["id"], user=user)
+                    st.success("Charge deleted.")
+                    st.rerun()
+
+        edit_id = st.session_state.get("master_data_edit_charge")
+        if edit_id is not None:
+            record = next((r for r in rows if str(r.get("id")) == str(edit_id)), None)
+            if record:
+                _charge_master_form(user, record)
+                if st.button("✖️ Close Edit", key="charge_cancel_edit"):
+                    st.session_state.pop("master_data_edit_charge", None)
                     st.rerun()
 
     elif "Sales Persons" in mode:

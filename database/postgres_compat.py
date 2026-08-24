@@ -305,13 +305,54 @@ def ensure_phase30_charge_master_schema(conn) -> None:
             "default_basis": "TEXT",
             "default_unit": "TEXT",
             "default_currency": "TEXT DEFAULT 'USD'",
+            "default_tax_type": "TEXT DEFAULT 'VAT 7%'",
+            "default_wht_type": "TEXT DEFAULT 'None'",
             "is_active": "BOOLEAN DEFAULT TRUE",
             "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
         })
         cur.execute("UPDATE charge_master SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''")
         cur.execute("UPDATE charge_master SET is_active=TRUE WHERE is_active IS NULL")
+        cur.execute("UPDATE charge_master SET default_tax_type='VAT 7%' WHERE default_tax_type IS NULL")
+        cur.execute("UPDATE charge_master SET default_wht_type='None' WHERE default_wht_type IS NULL")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_charge_master_active ON charge_master(tenant_id, is_active)")
+
+        # Seed standard canonical freight forwarder charges
+        canonical_seeds = [
+            ("OF", "Ocean Freight", "Ocean Freight Cost (สายเรือ)", "Container", "CTR", "USD", "Non-VAT", "None"),
+            ("THC-O", "Terminal Handling Charge Origin (THC)", "Port Terminal Cost (THC / ท่าเรือ)", "Container", "CTR", "THB", "VAT 7%", "WHT 1%"),
+            ("THC-D", "Terminal Handling Charge Destination (THC)", "Port Terminal Cost (THC / ท่าเรือ)", "Container", "CTR", "THB", "VAT 7%", "WHT 1%"),
+            ("CUS", "Customs Clearance & Formalities", "Customs Brokerage Cost (พิธีการศุลกากร)", "Shipment", "SHPT", "THB", "VAT 7%", "WHT 3%"),
+            ("TRK", "Inland Transport & Container Trucking", "Inland Transport / Trucking (รถหัวลาก/ขนส่ง)", "Trip", "TRIP", "THB", "VAT 7%", "WHT 1%"),
+            ("STO", "Port Storage & Demurrage Fee", "Port Storage / Demurrage / Detention", "Lot", "LOT", "THB", "VAT 7%", "None"),
+            ("DO", "Delivery Order (D/O) & Documentation", "Documentation / D/O Cost", "Bill of Lading", "BL", "THB", "VAT 7%", "WHT 3%"),
+            ("ADV-DUTY", "Customs Import Duty (เงินทดรองจ่ายภาษีศุลกากร)", "Advance Paid on Behalf (สำรองจ่าย)", "Shipment", "SHPT", "THB", "Advance", "None"),
+            ("CFS", "CFS Cargo Handling Fee", "Cargo Handling / CFS", "CBM", "CBM", "THB", "VAT 7%", "WHT 3%"),
+            ("AIR", "Air Freight Cargo", "Air Freight Cost (สายการบิน)", "Gross Weight", "KG", "USD", "Non-VAT", "None"),
+            ("FSC", "Fuel Surcharge (BAF/FAF)", "Surcharge & Fuel", "Container", "CTR", "USD", "Non-VAT", "None"),
+            ("SEC", "Port Security & Screening Fee", "Port Terminal Cost (THC / ท่าเรือ)", "Container", "CTR", "THB", "VAT 7%", "WHT 1%"),
+            ("INS", "Marine Cargo Insurance", "Insurance & Other", "Shipment", "SHPT", "THB", "Non-VAT", "None"),
+        ]
+        for s_code, s_desc, s_cat, s_basis, s_unit, s_curr, s_tax, s_wht in canonical_seeds:
+            cur.execute("SELECT id FROM charge_master WHERE (tenant_id='default' OR tenant_id IS NULL) AND charge_code=%s LIMIT 1", (s_code,))
+            existing = cur.fetchone()
+            if not existing:
+                cur.execute(
+                    """
+                    INSERT INTO charge_master (tenant_id, charge_code, description, category, default_basis, default_unit, default_currency, default_tax_type, default_wht_type, is_active)
+                    VALUES ('default', %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                    """,
+                    (s_code, s_desc, s_cat, s_basis, s_unit, s_curr, s_tax, s_wht)
+                )
+            else:
+                cid = existing["id"] if isinstance(existing, dict) else existing[0]
+                cur.execute(
+                    """
+                    UPDATE charge_master SET default_tax_type=%s, default_wht_type=%s, is_active=TRUE
+                    WHERE id=%s
+                    """,
+                    (s_tax, s_wht, cid)
+                )
     _safe_commit(conn)
 
 

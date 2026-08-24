@@ -3,10 +3,9 @@
 Provides ERP-grade Single Source of Truth for:
 - Unified Side-by-Side AP (Cost/Payables) and AR (Revenue/Billing) Ledger
 - Live Accrual P&L Dashboard (Cost, Revenue, Advance, VAT, WHT, Profit Margin)
-- Prominent Batch Actions: Payment Voucher, Advance Request, Invoice, Pull to AR, P&L PDF
-- Deep Business Parties Integration (Payees, Carriers, Truckers, Terminals, Customers)
-- Comprehensive Vendor Invoice Reference Tracking & Line Traceability
-- Quick 1-Click Charge Presets for Freight Operations
+- Master Data Driven: Dynamic Charge Master & Business Parties Integration
+- Multi-Currency Customer Billing / Invoicing with live Exchange Rate conversion
+- Strict Single-Action Locking: Prevents duplicate pulls, repeat vouchers, or double billing
 """
 from __future__ import annotations
 
@@ -18,9 +17,8 @@ import pandas as pd
 import streamlit as st
 
 from managers.auth_manager import can_write
+from managers.charge_master_manager import list_charge_categories, list_charges
 from managers.profit_manager import (
-    AP_CATEGORIES,
-    AR_CATEGORIES,
     TAX_TYPES,
     WHT_TYPES,
     add_cost_line,
@@ -42,17 +40,6 @@ from managers.profit_manager import (
 )
 from managers.shipment_manager import get_shipment, list_shipments
 from ui.design_system import page_header, section
-
-STANDARD_PRESETS = [
-    {"label": "🌊 Ocean Freight", "cat": "Ocean Freight Cost (สายเรือ)", "desc": "Ocean Freight", "tax": "Non-VAT", "wht": "None", "unit": "CTR"},
-    {"label": "⚓ THC Origin", "cat": "Port Terminal Cost (THC / ท่าเรือ)", "desc": "Terminal Handling Charge (THC) Origin", "tax": "VAT 7%", "wht": "WHT 1%", "unit": "CTR"},
-    {"label": "⚓ THC Destination", "cat": "Port Terminal Cost (THC / ท่าเรือ)", "desc": "Terminal Handling Charge (THC) Dest", "tax": "VAT 7%", "wht": "WHT 1%", "unit": "CTR"},
-    {"label": "🛃 Customs Clearance", "cat": "Customs Brokerage Cost (พิธีการศุลกากร)", "desc": "Customs Clearance & Formality", "tax": "VAT 7%", "wht": "WHT 3%", "unit": "SHPT"},
-    {"label": "🚛 Inland Trucking", "cat": "Inland Transport / Trucking (รถหัวลาก/ขนส่ง)", "desc": "Container Trucking & Haulage", "tax": "VAT 7%", "wht": "WHT 1%", "unit": "TRIP"},
-    {"label": "📦 Port Storage", "cat": "Port Storage / Demurrage / Detention", "desc": "Port Storage & Demurrage Fee", "tax": "VAT 7%", "wht": "None", "unit": "LOT"},
-    {"label": "📄 D/O & Doc Fee", "cat": "Documentation / D/O Cost", "desc": "Delivery Order (D/O) & Documentation", "tax": "VAT 7%", "wht": "WHT 3%", "unit": "BL"},
-    {"label": "💵 Customs Duty (Advance)", "cat": "Advance Paid on Behalf (สำรองจ่าย)", "desc": "Customs Import Duty (เงินทดรองจ่ายค่าภาษีศุลกากร)", "tax": "Advance", "wht": "None", "unit": "SHPT"},
-]
 
 
 def _s(v: Any, fb: str = "—") -> str:
@@ -90,7 +77,6 @@ def _get_business_party_options(default_carrier: str = "", default_customer: str
     except Exception:
         pass
 
-    # Add Job default carrier and customer if not present
     if default_carrier and default_carrier not in seen_names:
         seen_names.add(default_carrier)
         options.append((None, f"🚢 [Carrier / Line] {default_carrier}", {"legal_name": default_carrier}))
@@ -98,6 +84,19 @@ def _get_business_party_options(default_carrier: str = "", default_customer: str
         seen_names.add(default_customer)
         options.append((None, f"👤 [Customer / Consignee] {default_customer}", {"legal_name": default_customer}))
 
+    return options
+
+
+def _get_charge_master_options() -> List[Tuple[Optional[str], str, Dict[str, Any]]]:
+    """Fetches standard charges from Master Data database."""
+    charges = list_charges(active_only=True) or []
+    options = [(None, "— Custom / Freeform Charge —", {})]
+    for c in charges:
+        code = c.get("charge_code")
+        desc = c.get("description")
+        cat = c.get("category")
+        lbl = f"💳 [{code}] {desc} ({cat})"
+        options.append((code, lbl, c))
     return options
 
 
@@ -204,38 +203,70 @@ def render():
         lock_status = "🔒 Financial Locked" if is_fin_locked else "🔓 Financial Open"
         st.caption(lock_status)
 
-    # 4. Master Data Business Parties Cache
+    # 4. Master Data Business Parties & Charge Codes Cache
     bp_options = _get_business_party_options(
         default_carrier=ship.get("carrier") or "",
         default_customer=ship.get("customer_name") or ""
     )
+    charge_options = _get_charge_master_options()
+    db_categories = list_charge_categories()
 
-    # 5. Prominent Multi-Select & Batch Action Command Bar
+    # 5. Filter Active & Available Lines (Exclude already Pulled, Vouchered, Invoiced)
+    ap_available_for_pull = [r for r in ap_lines if not r.get("is_matched") and not r.get("matched_ar_id")]
+    ap_available_for_pv = [r for r in ap_lines if str(r.get("payout_status")).upper() != "PAID" and not r.get("voucher_no")]
+    ar_available_for_inv = [r for r in ar_lines if str(r.get("billing_status")).upper() not in ["INVOICED", "COLLECTED", "PAID"] and not r.get("invoice_no")]
+
+    # 6. Prominent Multi-Select & Batch Action Command Bar
     section("⚡ Batch Action Control Bar (ศูนย์สั่งการเบิกจ่าย, วางบิล และส่งออกเอกสาร)")
 
-    # Multi-select boxes for batch actions
-    ap_unpaid = [r for r in ap_lines if str(r.get("payout_status")).upper() != "PAID"]
-    ar_unbilled = [r for r in ar_lines if str(r.get("billing_status")).upper() not in ["INVOICED", "COLLECTED", "PAID"]]
+    # Status notice of active vs locked lines
+    pulled_count = len(ap_lines) - len(ap_available_for_pull)
+    vouchered_count = len(ap_lines) - len(ap_available_for_pv)
+    invoiced_count = len(ar_lines) - len(ar_available_for_inv)
+    if pulled_count > 0 or vouchered_count > 0 or invoiced_count > 0:
+        st.caption(f"🔒 **Locked Status:** {pulled_count} AP lines pulled to AR | {vouchered_count} AP lines in Vouchers | {invoiced_count} AR lines on Invoices (ป้องกันการดึงหรือทำรายการซ้ำ)")
 
     b_col_ap, b_col_ar = st.columns(2)
     with b_col_ap:
-        ap_select_opts = {f"#{r['id']} - {r.get('description')} [{r.get('supplier','—')}] (Inv: {_s(r.get('vendor_invoice_no'))}) - {_money(r.get('amount_thb'))}": r["id"] for r in ap_lines}
+        # Show AP lines that can be actioned (Payment Voucher or Pull to AR)
+        ap_select_opts = {}
+        for r in ap_lines:
+            status_flags = []
+            if r.get("is_matched") or r.get("matched_ar_id"):
+                status_flags.append("🔒 Pulled to AR")
+            if r.get("voucher_no"):
+                status_flags.append(f"🔒 Voucher: {r.get('voucher_no')}")
+            flag_str = f" [{', '.join(status_flags)}]" if status_flags else " [⚡ Available]"
+            
+            lbl = f"#{r['id']} - {r.get('description')} [{r.get('supplier','—')}] (Inv: {_s(r.get('vendor_invoice_no'))}) - {_money(r.get('amount_thb'))}{flag_str}"
+            ap_select_opts[lbl] = r["id"]
+
+        # Only default selectable to available lines
         selected_ap_labels = st.multiselect(
-            "Select AP Lines for Batch Action (เลือกรายการตั้งเบิกจ่าย AP) *",
+            "Select AP Lines for Batch Action (เลือกรายการตั้งเบิกจ่าย AP หรือ Pull to AR) *",
             options=list(ap_select_opts.keys()),
             key=f"batch_ap_sel_{shipment_id}",
-            help="Select one or more AP cost lines to pull to AR or create a Payment Voucher / Advance Request."
+            help="Select one or more available AP cost lines to pull to AR or create a Payment Voucher / Advance Request."
         )
         selected_ap_ids = [ap_select_opts[k] for k in selected_ap_labels]
         selected_ap_sum = sum(float(r.get("amount_thb") or 0) for r in ap_lines if r["id"] in selected_ap_ids)
 
     with b_col_ar:
-        ar_select_opts = {f"#{r['id']} - {r.get('description')} [{r.get('supplier','—')}] - {_money(r.get('amount_thb'))}": r["id"] for r in ar_lines}
+        ar_select_opts = {}
+        for r in ar_lines:
+            status_flags = []
+            if r.get("invoice_no"):
+                status_flags.append(f"🔒 Invoice: {r.get('invoice_no')}")
+            flag_str = f" [{', '.join(status_flags)}]" if status_flags else " [⚡ Available]"
+
+            lbl = f"#{r['id']} - {r.get('description')} [{r.get('supplier','—')}] - {_money(r.get('amount_thb'))}{flag_str}"
+            ar_select_opts[lbl] = r["id"]
+
         selected_ar_labels = st.multiselect(
             "Select AR Lines for Batch Action (เลือกรายการออกใบแจ้งหนี้ AR) *",
             options=list(ar_select_opts.keys()),
             key=f"batch_ar_sel_{shipment_id}",
-            help="Select one or more AR revenue lines to group into a customer invoice."
+            help="Select one or more available AR revenue lines to group into a customer invoice."
         )
         selected_ar_ids = [ar_select_opts[k] for k in selected_ar_labels]
         selected_ar_sum = sum(float(r.get("amount_thb") or 0) for r in ar_lines if r["id"] in selected_ar_ids)
@@ -251,28 +282,45 @@ def render():
             if not selected_ap_ids:
                 st.warning("⚠️ กรุณาเลือกรายการ AP อย่างน้อย 1 รายการในช่องด้านบนก่อนกดตั้งเบิก")
             else:
-                st.session_state[f"show_pv_modal_{shipment_id}"] = "PV"
+                # Check for already vouchered lines
+                already_v = [r for r in ap_lines if r["id"] in selected_ap_ids and r.get("voucher_no")]
+                if already_v:
+                    st.error(f"⚠️ รายการ AP ต่อไปนี้ถูกตั้งเบิกไปแล้ว: {', '.join([f'#{x.get(\"id\")} ({x.get(\"voucher_no\")})' for x in already_v])}")
+                else:
+                    st.session_state[f"show_pv_modal_{shipment_id}"] = "PV"
 
     with act2:
         if st.button("💵 เบิกสำรองจ่าย (Advance)", key=f"btn_adv_act_{shipment_id}", width="stretch"):
             if not selected_ap_ids:
                 st.warning("⚠️ กรุณาเลือกรายการ AP อย่างน้อย 1 รายการในช่องด้านบน")
             else:
-                st.session_state[f"show_pv_modal_{shipment_id}"] = "ADV"
+                already_v = [r for r in ap_lines if r["id"] in selected_ap_ids and r.get("voucher_no")]
+                if already_v:
+                    st.error(f"⚠️ รายการ AP ต่อไปนี้ถูกตั้งเบิกไปแล้ว: {', '.join([f'#{x.get(\"id\")} ({x.get(\"voucher_no\")})' for x in already_v])}")
+                else:
+                    st.session_state[f"show_pv_modal_{shipment_id}"] = "ADV"
 
     with act3:
         if st.button("📥 ดึง AP ➔ AR", key=f"btn_pull_act_{shipment_id}", width="stretch"):
             if not selected_ap_ids:
                 st.warning("⚠️ กรุณาเลือกรายการ AP ที่ต้องการดึงไปเป็นรายได้ AR ในช่องด้านบน")
             else:
-                st.session_state[f"show_pull_modal_{shipment_id}"] = True
+                already_p = [r for r in ap_lines if r["id"] in selected_ap_ids and (r.get("is_matched") or r.get("matched_ar_id"))]
+                if already_p:
+                    st.error(f"⚠️ รายการ AP ต่อไปนี้ถูกดึงไปเป็น AR แล้ว: {', '.join([f'#{x.get(\"id\")}' for x in already_p])} (ไม่สามารถดึงซ้ำได้)")
+                else:
+                    st.session_state[f"show_pull_modal_{shipment_id}"] = True
 
     with act4:
         if st.button("🧾 วางบิล AR (Invoice)", key=f"btn_inv_act_{shipment_id}", width="stretch", type="primary" if selected_ar_ids else "secondary"):
             if not selected_ar_ids:
                 st.warning("⚠️ กรุณาเลือกรายการ AR อย่างน้อย 1 รายการในช่องด้านบนเพื่อออกใบแจ้งหนี้")
             else:
-                st.session_state[f"show_inv_modal_{shipment_id}"] = True
+                already_i = [r for r in ar_lines if r["id"] in selected_ar_ids and r.get("invoice_no")]
+                if already_i:
+                    st.error(f"⚠️ รายการ AR ต่อไปนี้ถูกออกใบแจ้งหนี้ไปแล้ว: {', '.join([f'#{x.get(\"id\")} ({x.get(\"invoice_no\")})' for x in already_i])}")
+                else:
+                    st.session_state[f"show_inv_modal_{shipment_id}"] = True
 
     with act5:
         if st.button("📊 พิมพ์ P&L PDF", key=f"btn_pdf_act_{shipment_id}", width="stretch"):
@@ -301,7 +349,6 @@ def render():
             st.markdown(f"### ⚡ ดำเนินการสร้าง {title_tag}")
             st.caption(f"สร้างเอกสารรวม {len(selected_ap_ids)} รายการ AP ที่เลือก (ยอดรวม {_money(selected_ap_sum)})")
             
-            # Find default vendor from selected items
             chosen_lines = [r for r in ap_lines if r["id"] in selected_ap_ids]
             default_payee = chosen_lines[0].get("supplier") if chosen_lines else ship.get("carrier")
             vinv_collected = [str(l.get("vendor_invoice_no")).strip() for l in chosen_lines if l.get("vendor_invoice_no") and str(l.get("vendor_invoice_no")).strip() not in ("None", "—", "")]
@@ -328,17 +375,20 @@ def render():
                 conf_c1, conf_c2 = st.columns(2)
                 with conf_c1:
                     if st.button("🚀 ยืนยันสร้างเอกสาร", type="primary", key=f"pv_confirm_{shipment_id}", width="stretch"):
-                        v_no = create_batch_payment_voucher(
-                            shipment_id=shipment_id,
-                            ap_line_ids=selected_ap_ids,
-                            payee_name=payee_final,
-                            voucher_type="ADVANCE_REQUEST" if is_adv else "PAYMENT_VOUCHER",
-                            due_date=pv_due.isoformat(),
-                            user=user
-                        )
-                        st.session_state[f"show_pv_modal_{shipment_id}"] = False
-                        st.success(f"🎉 สร้างเอกสาร {v_no} สำเร็จเรียบร้อย!")
-                        st.rerun()
+                        try:
+                            v_no = create_batch_payment_voucher(
+                                shipment_id=shipment_id,
+                                ap_line_ids=selected_ap_ids,
+                                payee_name=payee_final,
+                                voucher_type="ADVANCE_REQUEST" if is_adv else "PAYMENT_VOUCHER",
+                                due_date=pv_due.isoformat(),
+                                user=user
+                            )
+                            st.session_state[f"show_pv_modal_{shipment_id}"] = False
+                            st.success(f"🎉 สร้างเอกสาร {v_no} สำเร็จเรียบร้อย!")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Failed to create voucher: {exc}")
                 with conf_c2:
                     if st.button("ยกเลิก", key=f"pv_cancel_{shipment_id}", width="stretch"):
                         st.session_state[f"show_pv_modal_{shipment_id}"] = False
@@ -369,92 +419,110 @@ def render():
                 pull_btn1, pull_btn2 = st.columns(2)
                 with pull_btn1:
                     if st.button("🚀 ยืนยัน Pull to AR", type="primary", key=f"p_confirm_{shipment_id}", width="stretch"):
-                        created = pull_ap_to_ar(
-                            shipment_id=shipment_id,
-                            ap_line_ids=selected_ap_ids,
-                            markup_pct=pull_markup,
-                            target_customer=cust_final,
-                            user=user
-                        )
-                        st.session_state[f"show_pull_modal_{shipment_id}"] = False
-                        st.success(f"🎉 สร้างรายการ AR สำเร็จ {len(created)} รายการ!")
-                        st.rerun()
+                        try:
+                            created = pull_ap_to_ar(
+                                shipment_id=shipment_id,
+                                ap_line_ids=selected_ap_ids,
+                                markup_pct=pull_markup,
+                                target_customer=cust_final,
+                                user=user
+                            )
+                            st.session_state[f"show_pull_modal_{shipment_id}"] = False
+                            st.success(f"🎉 สร้างรายการ AR สำเร็จ {len(created)} รายการ!")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Pull failed: {exc}")
                 with pull_btn2:
                     if st.button("ยกเลิก", key=f"p_cancel_{shipment_id}", width="stretch"):
                         st.session_state[f"show_pull_modal_{shipment_id}"] = False
                         st.rerun()
             st.divider()
 
-    # C. Batch Invoice Action Panel
+    # C. Batch Invoice Action Panel (With Target Currency & Exchange Rate Selection)
     if st.session_state.get(f"show_inv_modal_{shipment_id}"):
         with st.container():
             st.markdown("### 🧾 ออกใบแจ้งหนี้ลูกค้า (Batch Customer Invoice)")
-            st.caption(f"รวบรวม {len(selected_ar_ids)} รายการ AR ที่เลือก (ยอดรวม {_money(selected_ar_sum)}) ออกใบแจ้งหนี้")
+            st.caption(f"รวบรวม {len(selected_ar_ids)} รายการ AR ที่เลือก (ยอดรวม THB {_money(selected_ar_sum)}) ออกใบแจ้งหนี้")
 
-            i_c1, i_c2 = st.columns([2, 1])
+            i_c1, i_c2, i_c3 = st.columns(3)
             with i_c1:
-                st.write(f"**Customer:** {_s(ship.get('customer_name'))} | **Job No:** {job_no}")
+                curr_options = ["THB", "USD", "EUR", "JPY", "CNY", "SGD"]
+                chosen_curr = st.selectbox("Target Billing Currency (สกุลเงินที่ต้องการวางบิล) *", curr_options, index=0, key=f"inv_bill_curr_{shipment_id}")
             with i_c2:
+                default_ex_map = {"THB": 1.0, "USD": 35.5, "EUR": 38.5, "JPY": 0.24, "CNY": 4.9, "SGD": 26.5}
+                def_rate = default_ex_map.get(chosen_curr, 1.0)
+                inv_ex_rate = st.number_input(f"Exchange Rate ({chosen_curr} to THB) *", min_value=0.0001, value=float(def_rate), step=0.1, key=f"inv_ex_rate_{shipment_id}")
+            with i_c3:
+                converted_est = selected_ar_sum / inv_ex_rate if inv_ex_rate > 0 else selected_ar_sum
+                st.metric(f"Total Billed ({chosen_curr})", f"{chosen_curr} {converted_est:,.2f}")
+
+            inv_row1, inv_row2 = st.columns([2, 1])
+            with inv_row1:
+                st.write(f"**Customer:** {_s(ship.get('customer_name'))} | **Job No:** {job_no}")
+            with inv_row2:
                 inv_btn1, inv_btn2 = st.columns(2)
                 with inv_btn1:
                     if st.button("🚀 ยืนยันออก Invoice", type="primary", key=f"i_confirm_{shipment_id}", width="stretch"):
-                        inv_no = create_batch_invoice_from_ar(
-                            shipment_id=shipment_id,
-                            ar_line_ids=selected_ar_ids,
-                            customer_id=ship.get("customer_id") or 1,
-                            user=user
-                        )
-                        st.session_state[f"show_inv_modal_{shipment_id}"] = False
-                        st.success(f"🎉 สร้างใบแจ้งหนี้ {inv_no} สำเร็จเรียบร้อย!")
-                        st.rerun()
+                        try:
+                            inv_no = create_batch_invoice_from_ar(
+                                shipment_id=shipment_id,
+                                ar_line_ids=selected_ar_ids,
+                                customer_id=ship.get("customer_id") or 1,
+                                billing_currency=chosen_curr,
+                                exchange_rate=inv_ex_rate,
+                                user=user
+                            )
+                            st.session_state[f"show_inv_modal_{shipment_id}"] = False
+                            st.success(f"🎉 สร้างใบแจ้งหนี้ {inv_no} สำเร็จเรียบร้อย (สกุลเงิน {chosen_curr})!")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Invoice creation failed: {exc}")
                 with inv_btn2:
                     if st.button("ยกเลิก", key=f"i_cancel_{shipment_id}", width="stretch"):
                         st.session_state[f"show_inv_modal_{shipment_id}"] = False
                         st.rerun()
             st.divider()
 
-    # 6. Workspace Tabs
+    # 7. Workspace Tabs
     tab_matrix, tab_audit, tab_signoffs = st.tabs([
-        "📊 Unified AP / AR Ledger Matrix & Quick Entry",
+        "📊 Unified AP / AR Ledger Matrix & Master Data Entry",
         "📜 Document Ledger & Audit Traceability (ประวัติเอกสารย้อนหลัง)",
         "📋 P&L Sign-off & Official Profit Sheets"
     ])
 
     with tab_matrix:
-        # Quick Presets & Quick Add Drawers
+        # Master Data Driven Entry Forms
         if can_edit and not is_fin_locked:
-            st.markdown("##### ⚡ Quick Charge Presets (ปุ่มใส่ค่าใช้จ่ายมาตรฐาน Freight ยอดนิยม)")
-            p_cols = st.columns(len(STANDARD_PRESETS))
-            for p_idx, preset in enumerate(STANDARD_PRESETS):
-                with p_cols[p_idx]:
-                    if st.button(preset["label"], key=f"preset_btn_{p_idx}_{shipment_id}", width="stretch"):
-                        st.session_state[f"preset_desc_{shipment_id}"] = preset["desc"]
-                        st.session_state[f"preset_cat_{shipment_id}"] = preset["cat"]
-                        st.session_state[f"preset_tax_{shipment_id}"] = preset["tax"]
-                        st.session_state[f"preset_wht_{shipment_id}"] = preset["wht"]
-                        st.session_state[f"preset_unit_{shipment_id}"] = preset["unit"]
-                        st.toast(f"⚡ Loaded preset: {preset['label']}", icon="✨")
-
-            # Entry Forms
             add_c1, add_c2 = st.columns(2)
             with add_c1:
-                with st.expander("➕ เพิ่มรายการต้นทุน AP (Add Operational Cost)", expanded=len(ap_lines) == 0):
+                with st.expander("➕ เพิ่มรายการต้นทุน AP (Add Operational Cost จาก Master Data)", expanded=len(ap_lines) == 0):
+                    # Charge Master Selector outside form for instant reactive auto-fill
+                    cm_idx_ap = st.selectbox(
+                        "Standard Charge from Master Data (เลือกค่าบริการมาตรฐาน)",
+                        options=range(len(charge_options)),
+                        format_func=lambda idx: charge_options[idx][1],
+                        key=f"ap_cm_choice_{shipment_id}"
+                    )
+                    chosen_cm_ap = charge_options[cm_idx_ap][2]
+
+                    # Auto-fill defaults from Charge Master
+                    def_desc_ap = chosen_cm_ap.get("description") or "Ocean Freight"
+                    def_cat_ap = chosen_cm_ap.get("category") or db_categories[0]
+                    def_unit_ap = chosen_cm_ap.get("default_unit") or "CTR"
+                    def_curr_ap = chosen_cm_ap.get("default_currency") or "THB"
+                    def_tax_ap = chosen_cm_ap.get("default_tax_type") or "VAT 7%"
+                    def_wht_ap = chosen_cm_ap.get("default_wht_type") or "None"
+                    charge_code_ap = chosen_cm_ap.get("charge_code")
+
                     with st.form(f"quick_add_ap_form_{shipment_id}", clear_on_submit=True):
-                        # Preset Defaults
-                        def_desc = st.session_state.get(f"preset_desc_{shipment_id}", "Ocean Freight")
-                        def_cat = st.session_state.get(f"preset_cat_{shipment_id}", AP_CATEGORIES[0])
-                        def_tax = st.session_state.get(f"preset_tax_{shipment_id}", TAX_TYPES[0])
-                        def_wht = st.session_state.get(f"preset_wht_{shipment_id}", WHT_TYPES[0])
-                        def_unit = st.session_state.get(f"preset_unit_{shipment_id}", "CTR")
-
-                        cat_idx = AP_CATEGORIES.index(def_cat) if def_cat in AP_CATEGORIES else 0
-                        tax_idx = TAX_TYPES.index(def_tax) if def_tax in TAX_TYPES else 0
-                        wht_idx = WHT_TYPES.index(def_wht) if def_wht in WHT_TYPES else 0
-
-                        cat_ap = st.selectbox("AP Category *", AP_CATEGORIES, index=cat_idx, key=f"q_ap_cat_{shipment_id}")
-                        desc_ap = st.text_input("AP Description / Charge Name *", value=def_desc, key=f"q_ap_desc_{shipment_id}")
+                        cat_ap = st.selectbox(
+                            "AP Category *",
+                            db_categories,
+                            index=db_categories.index(def_cat_ap) if def_cat_ap in db_categories else 0,
+                            key=f"q_ap_cat_{shipment_id}"
+                        )
+                        desc_ap = st.text_input("AP Description / Charge Name *", value=def_desc_ap, key=f"q_ap_desc_{shipment_id}")
                         
-                        # Business Party selection
                         bp_idx = st.selectbox(
                             "Payee / Vendor (เชื่อมโยง Business Parties) *",
                             options=range(len(bp_options)),
@@ -468,16 +536,20 @@ def render():
                         f1, f2, f3 = st.columns(3)
                         qty_ap = f1.number_input("Qty", min_value=0.01, value=1.0, step=1.0, key=f"q_ap_qty_{shipment_id}")
                         unit_opts = ["CTR", "BL", "CBM", "TRIP", "SHPT", "LOT", "SET", "KG"]
-                        unit_idx = unit_opts.index(def_unit) if def_unit in unit_opts else 0
+                        unit_idx = unit_opts.index(def_unit_ap) if def_unit_ap in unit_opts else 0
                         unit_ap = f2.selectbox("Unit", unit_opts, index=unit_idx, key=f"q_ap_unit_{shipment_id}")
                         prc_ap = f3.number_input("Unit Price Rate", min_value=0.0, value=0.0, step=500.0, key=f"q_ap_prc_{shipment_id}")
 
                         t1, t2, t3 = st.columns(3)
-                        curr_ap = t1.selectbox("Currency", ["THB", "USD", "EUR", "CNY", "JPY", "SGD"], index=0, key=f"q_ap_curr_{shipment_id}")
+                        curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
+                        curr_idx = curr_opts.index(def_curr_ap) if def_curr_ap in curr_opts else 0
+                        curr_ap = t1.selectbox("Currency", curr_opts, index=curr_idx, key=f"q_ap_curr_{shipment_id}")
                         ex_ap = t2.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if curr_ap == "THB" else 35.5, step=0.1, key=f"q_ap_ex_{shipment_id}")
+                        tax_idx = TAX_TYPES.index(def_tax_ap) if def_tax_ap in TAX_TYPES else 0
                         tax_ap = t3.selectbox("Tax / VAT Type", TAX_TYPES, index=tax_idx, key=f"q_ap_tax_{shipment_id}")
                         
                         w1, w2, w3 = st.columns(3)
+                        wht_idx = WHT_TYPES.index(def_wht_ap) if def_wht_ap in WHT_TYPES else 0
                         wht_ap = w1.selectbox("Withholding Tax (WHT)", WHT_TYPES, index=wht_idx, key=f"q_ap_wht_{shipment_id}")
                         vinv_ap = w2.text_input("Vendor Invoice / Tax Inv No.", placeholder="e.g. ONE-12345 / PAT-8899", key=f"q_ap_vinv_{shipment_id}")
                         vinv_date = w3.date_input("Vendor Invoice Date", value=date.today(), key=f"q_ap_vdate_{shipment_id}")
@@ -494,6 +566,7 @@ def render():
                                     "shipment_id": shipment_id,
                                     "cost_type": "AP",
                                     "party_id": party_id_ap,
+                                    "matched_charge_code": charge_code_ap,
                                     "category": cat_ap,
                                     "description": desc_ap.strip(),
                                     "supplier": supp_ap.strip() or None,
@@ -512,12 +585,32 @@ def render():
                                 st.rerun()
 
             with add_c2:
-                with st.expander("➕ เพิ่มรายการรายได้ AR (Add Customer Revenue)", expanded=len(ar_lines) == 0):
+                with st.expander("➕ เพิ่มรายการรายได้ AR (Add Customer Revenue จาก Master Data)", expanded=len(ar_lines) == 0):
+                    cm_idx_ar = st.selectbox(
+                        "Standard Charge from Master Data (เลือกค่าบริการมาตรฐาน)",
+                        options=range(len(charge_options)),
+                        format_func=lambda idx: charge_options[idx][1],
+                        key=f"ar_cm_choice_{shipment_id}"
+                    )
+                    chosen_cm_ar = charge_options[cm_idx_ar][2]
+
+                    def_desc_ar = chosen_cm_ar.get("description") or "Ocean Freight Revenue"
+                    def_cat_ar = chosen_cm_ar.get("category") or db_categories[0]
+                    def_unit_ar = chosen_cm_ar.get("default_unit") or "CTR"
+                    def_curr_ar = chosen_cm_ar.get("default_currency") or "THB"
+                    def_tax_ar = chosen_cm_ar.get("default_tax_type") or "VAT 7%"
+                    def_wht_ar = chosen_cm_ar.get("default_wht_type") or "None"
+                    charge_code_ar = chosen_cm_ar.get("charge_code")
+
                     with st.form(f"quick_add_ar_form_{shipment_id}", clear_on_submit=True):
-                        cat_ar = st.selectbox("AR Category *", AR_CATEGORIES, key=f"q_ar_cat_{shipment_id}")
-                        desc_ar = st.text_input("AR Description / Charge Name *", placeholder="e.g. Ocean Freight & THC, Documentation...", key=f"q_ar_desc_{shipment_id}")
+                        cat_ar = st.selectbox(
+                            "AR Category *",
+                            db_categories,
+                            index=db_categories.index(def_cat_ar) if def_cat_ar in db_categories else 0,
+                            key=f"q_ar_cat_{shipment_id}"
+                        )
+                        desc_ar = st.text_input("AR Description / Charge Name *", value=def_desc_ar, key=f"q_ar_desc_{shipment_id}")
                         
-                        # Business Party Customer selection
                         bp_ar_idx = st.selectbox(
                             "Customer / Bill To (เชื่อมโยง Business Parties) *",
                             options=range(len(bp_options)),
@@ -530,16 +623,22 @@ def render():
 
                         f1, f2, f3 = st.columns(3)
                         qty_ar = f1.number_input("Qty", min_value=0.01, value=1.0, step=1.0, key=f"q_ar_qty_{shipment_id}")
-                        unit_ar = f2.selectbox("Unit", ["CTR", "BL", "CBM", "TRIP", "SHPT", "LOT", "SET", "KG"], index=0, key=f"q_ar_unit_{shipment_id}")
+                        unit_opts = ["CTR", "BL", "CBM", "TRIP", "SHPT", "LOT", "SET", "KG"]
+                        unit_idx = unit_opts.index(def_unit_ar) if def_unit_ar in unit_opts else 0
+                        unit_ar = f2.selectbox("Unit", unit_opts, index=unit_idx, key=f"q_ar_unit_{shipment_id}")
                         prc_ar = f3.number_input("Unit Price Selling Rate", min_value=0.0, value=0.0, step=500.0, key=f"q_ar_prc_{shipment_id}")
 
                         t1, t2, t3 = st.columns(3)
-                        curr_ar = t1.selectbox("Currency", ["THB", "USD", "EUR", "CNY", "JPY", "SGD"], index=0, key=f"q_ar_curr_{shipment_id}")
+                        curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
+                        curr_idx = curr_opts.index(def_curr_ar) if def_curr_ar in curr_opts else 0
+                        curr_ar = t1.selectbox("Currency", curr_opts, index=curr_idx, key=f"q_ar_curr_{shipment_id}")
                         ex_ar = t2.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if curr_ar == "THB" else 35.5, step=0.1, key=f"q_ar_ex_{shipment_id}")
-                        tax_ar = t3.selectbox("Tax / VAT Type", TAX_TYPES, index=0, key=f"q_ar_tax_{shipment_id}")
+                        tax_idx = TAX_TYPES.index(def_tax_ar) if def_tax_ar in TAX_TYPES else 0
+                        tax_ar = t3.selectbox("Tax / VAT Type", TAX_TYPES, index=tax_idx, key=f"q_ar_tax_{shipment_id}")
                         
                         w1, _ = st.columns(2)
-                        wht_ar = w1.selectbox("Withholding Tax (WHT)", WHT_TYPES, index=0, key=f"q_ar_wht_{shipment_id}")
+                        wht_idx = WHT_TYPES.index(def_wht_ar) if def_wht_ar in WHT_TYPES else 0
+                        wht_ar = w1.selectbox("Withholding Tax (WHT)", WHT_TYPES, index=wht_idx, key=f"q_ar_wht_{shipment_id}")
 
                         # Preview calculations live
                         prev_ar = compute_line_tax_and_net(qty_ar, prc_ar, tax_ar, wht_ar, curr_ar, ex_ar)
@@ -553,6 +652,7 @@ def render():
                                     "shipment_id": shipment_id,
                                     "cost_type": "AR",
                                     "party_id": party_id_ar,
+                                    "matched_charge_code": charge_code_ar,
                                     "category": cat_ar,
                                     "description": desc_ar.strip(),
                                     "supplier": cust_ar.strip() or None,
@@ -572,10 +672,18 @@ def render():
         section("Unified Side-by-Side AP / AR Ledger Matrix (ตารางรวม AP/AR และกำไรต่อรายการ)")
 
         if not matrix_rows:
-            st.info("No cost or revenue lines recorded for this Job. Use the quick presets and forms above to start building the ledger.")
+            st.info("No cost or revenue lines recorded for this Job. Use the Master Data forms above to start building the ledger.")
         else:
             table_data = []
             for r in matrix_rows:
+                # Link Status Tag
+                if r["is_matched"]:
+                    link_tag = "🔒 Pulled ➔ AR"
+                elif r["ap_id"] and not r["ar_id"]:
+                    link_tag = "✦ AP Available"
+                else:
+                    link_tag = "✦ Pure AR"
+
                 table_data.append({
                     "No.": r["line_no"],
                     # AP Side
@@ -588,7 +696,7 @@ def render():
                     "AP Tax/WHT": f"{r['ap_tax_type']} / {r['ap_wht_type']}" if r["ap_id"] else "—",
                     "AP Status": f"{r['ap_payout_status']} ({r['ap_voucher_no']})" if r["ap_id"] else "—",
                     # Bridge
-                    "Link": "➔" if r["is_matched"] else ("✦ Pure AR" if not r["ap_id"] else "✦ Unbilled AP"),
+                    "Link Status": link_tag,
                     # AR Side
                     "AR Description (เรียกเก็บ)": r["ar_description"],
                     "Customer (Business Party)": r["ar_customer"],
@@ -685,8 +793,9 @@ def render():
             else:
                 for inv in invoices:
                     doc_no = inv.get("doc_no")
-                    with st.expander(f"📄 {doc_no} — {inv.get('customer_name','—')} | {_money(inv.get('grand_total'))} [{inv.get('status','ISSUED')}]", expanded=True):
+                    with st.expander(f"📄 {doc_no} — {inv.get('customer_name','—')} | {_money(inv.get('grand_total'), inv.get('currency','THB'))} [{inv.get('status','ISSUED')}]", expanded=True):
                         st.write(f"**Customer:** {inv.get('customer_name')}")
+                        st.write(f"**Billing Currency:** `{inv.get('currency','THB')}` | **Ex.Rate:** {float(inv.get('exchange_rate',1.0)):.4f}")
                         st.write(f"**Issue Date:** {_s(inv.get('issue_date'))} | **Due Date:** {_s(inv.get('due_date'))} | **Status:** {inv.get('status')}")
                         
                         inv_items = inv.get("items", [])

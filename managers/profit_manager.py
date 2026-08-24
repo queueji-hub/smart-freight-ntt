@@ -526,6 +526,12 @@ def pull_ap_to_ar(
     with get_connection() as conn:
         with conn.cursor() as cur:
             for ap_id in ap_line_ids:
+                # Check if this AP line has already been pulled to AR
+                cur.execute("SELECT id FROM job_costs WHERE matched_ap_id=%s AND tenant_id=%s LIMIT 1", (ap_id, tenant_id))
+                existing_ar = cur.fetchone()
+                if existing_ar:
+                    raise ValueError(f"AP line #{ap_id} has already been pulled to AR (AR #{existing_ar['id'] if isinstance(existing_ar, dict) else existing_ar[0]}).")
+
                 cur.execute("SELECT * FROM job_costs WHERE id=%s AND tenant_id=%s", (ap_id, tenant_id))
                 ap = cur.fetchone()
                 if not ap:
@@ -601,12 +607,15 @@ def create_batch_payment_voucher(
             s_row = cur.fetchone()
             job_no = s_row["job_no"] if s_row else f"JOB-{shipment_id}"
 
-            # 2. Sum selected AP lines
+            # 2. Fetch and validate selected AP lines
             cur.execute(
                 f"SELECT * FROM job_costs WHERE id IN ({','.join(['%s']*len(ap_line_ids))}) AND tenant_id=%s",
                 (*ap_line_ids, tenant_id)
             )
             selected_lines = [dict(r) for r in cur.fetchall()]
+            for l in selected_lines:
+                if l.get("voucher_no") and str(l.get("voucher_no")).strip() not in ("—", "None", ""):
+                    raise ValueError(f"AP line #{l.get('id')} ({l.get('description')}) is already attached to Voucher {l.get('voucher_no')}.")
 
             subtotal = sum(float(l.get("amount") or 0) for l in selected_lines)
             vat_total = sum(float(l.get("vat_amount") or 0) for l in selected_lines)
@@ -696,6 +705,8 @@ def create_batch_invoice_from_ar(
     shipment_id: int,
     ar_line_ids: List[int],
     customer_id: Optional[int] = None,
+    billing_currency: Optional[str] = None,
+    exchange_rate: Optional[float] = None,
     user: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Groups selected AR lines into an official Customer Invoice / Billing Note."""
@@ -716,21 +727,51 @@ def create_batch_invoice_from_ar(
             cust_id = customer_id or ship_dict.get("customer_id") or 1
             cust_name = ship_dict.get("customer_name") or "Valued Customer"
 
-            # 2. Fetch selected AR lines
+            # 2. Fetch and validate selected AR lines
             cur.execute(
                 f"SELECT * FROM job_costs WHERE id IN ({','.join(['%s']*len(ar_line_ids))}) AND tenant_id=%s",
                 (*ar_line_ids, tenant_id)
             )
             selected_lines = [dict(r) for r in cur.fetchall()]
+            for l in selected_lines:
+                if l.get("invoice_no") and str(l.get("invoice_no")).strip() not in ("—", "None", ""):
+                    raise ValueError(f"AR line #{l.get('id')} ({l.get('description')}) is already billed on Invoice {l.get('invoice_no')}.")
 
-            # 3. Build Invoice payload
+            # 3. Determine Billing Currency and Exchange Rate
+            target_curr = str(billing_currency or selected_lines[0].get("currency") or "THB").upper()
+            target_ex = float(exchange_rate or 1.0)
+            if not exchange_rate or exchange_rate <= 0:
+                if target_curr == "THB":
+                    target_ex = 1.0
+                elif selected_lines and selected_lines[0].get("currency") == target_curr:
+                    target_ex = float(selected_lines[0].get("exchange_rate") or 1.0)
+                elif target_curr == "USD":
+                    target_ex = 35.5
+                elif target_curr == "EUR":
+                    target_ex = 38.5
+                elif target_curr == "JPY":
+                    target_ex = 0.24
+                elif target_curr == "CNY":
+                    target_ex = 4.9
+
+            # 4. Build Invoice payload with currency conversion
             from managers.invoice_manager import create_invoice
             inv_items = []
             for l in selected_lines:
+                qty = float(l.get("quantity") or 1)
+                l_curr = str(l.get("currency") or "THB").upper()
+                orig_rate = float(l.get("unit_price") or 0)
+                amount_thb = float(l.get("amount_thb") or (orig_rate * qty))
+
+                if l_curr == target_curr:
+                    unit_price = orig_rate
+                else:
+                    unit_price = round((amount_thb / qty) / (target_ex if target_ex > 0 else 1.0), 2)
+
                 inv_items.append({
                     "description": l.get("description") or "Freight Service",
-                    "quantity": float(l.get("quantity") or 1),
-                    "unit_price": float(l.get("unit_price") or 0),
+                    "quantity": qty,
+                    "unit_price": unit_price,
                     "tax_type": l.get("tax_type") or "VAT 7%",
                     "wht_type": l.get("wht_type") or "None",
                     "unit": l.get("unit") or "UNIT",
@@ -753,14 +794,14 @@ def create_batch_invoice_from_ar(
                 "package_qty": ship_dict.get("package_quantity"),
                 "gross_weight": ship_dict.get("gross_weight"),
                 "measurement_cbm": ship_dict.get("cbm"),
-                "currency": selected_lines[0].get("currency", "THB") if selected_lines else "THB",
-                "exchange_rate": float(selected_lines[0].get("exchange_rate") or 1.0) if selected_lines else 1.0,
+                "currency": target_curr,
+                "exchange_rate": target_ex,
                 "created_by": user.get("username", "billing_specialist"),
             }
 
             doc_no = create_invoice(inv_data, inv_items)
 
-            # 4. Update linked AR cost lines
+            # 5. Update linked AR cost lines
             cur.execute(
                 f"UPDATE job_costs SET billing_status='INVOICED', invoice_no=%s WHERE id IN ({','.join(['%s']*len(ar_line_ids))}) AND tenant_id=%s",
                 (doc_no, *ar_line_ids, tenant_id)
