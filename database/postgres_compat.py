@@ -477,22 +477,22 @@ def ensure_phase30_profitability_schema(conn) -> None:
         )
         _add_columns(cur, "job_costs", {
             "tenant_id": "TEXT DEFAULT 'default'",
+            "party_id": "INTEGER",
             "line_no": "INTEGER DEFAULT 1",
             "unit": "TEXT DEFAULT 'UNIT'",
-            "cost_status": "TEXT DEFAULT 'ESTIMATED'",
-            "billable_to_customer": "BOOLEAN DEFAULT TRUE",
-            "matched_charge_code": "TEXT",
-            "vendor_invoice_no": "TEXT",
-            "payout_status": "TEXT DEFAULT 'UNPAID'",
-            "billing_status": "TEXT DEFAULT 'UNBILLED'",
+            "exchange_rate": "NUMERIC(15,6) DEFAULT 1",
             "tax_type": "TEXT DEFAULT 'VAT 7%'",
             "vat_amount": "NUMERIC(15,2) DEFAULT 0",
             "wht_type": "TEXT DEFAULT 'None'",
             "wht_amount": "NUMERIC(15,2) DEFAULT 0",
             "net_amount": "NUMERIC(15,2) DEFAULT 0",
+            "billing_status": "TEXT DEFAULT 'UNBILLED'",
+            "payout_status": "TEXT DEFAULT 'UNPAID'",
             "voucher_no": "TEXT",
             "invoice_no": "TEXT",
             "matched_ap_id": "INTEGER",
+            "vendor_invoice_no": "TEXT",
+            "vendor_invoice_date": "DATE",
         })
         cur.execute(
             """
@@ -523,9 +523,12 @@ def ensure_phase30_profitability_schema(conn) -> None:
             """
         )
         _add_columns(cur, "ap_vouchers", {
+            "party_id": "INTEGER",
             "voucher_no": "TEXT",
             "voucher_type": "TEXT DEFAULT 'PAYMENT_VOUCHER'",
             "payee_name": "TEXT",
+            "payee_tax_id": "TEXT",
+            "vendor_invoice_refs": "TEXT",
             "wht_total": "NUMERIC(15,2) DEFAULT 0",
         })
         try:

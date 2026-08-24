@@ -325,21 +325,15 @@ def _financial(j):
     d.metric("Net Cashflow Expected", _money(summary["total_ar_net"] - summary["total_ap_net"]))
     
     with e:
-        st.write("**Handover Status**")
+        if st.button("🚀 Open AP/AR & P&L Center", key=f"open_full_profit_{j['id']}", type="primary", use_container_width=True):
+            st.session_state["job_control_selector"] = j["job_no"]
+            st.session_state["current_navigation"] = "profit"
+            st.query_params["page"] = "profit"
+            st.rerun()
         if is_locked:
-            st.success(f"🔒 Locked ({_s(j.get('handover_by'), 'Operation')})")
-            if can_edit and st.button("Unlock for Revision", key=f"unlock_fin_{j['id']}", use_container_width=True):
-                unlock_job_financials(j["id"], user)
-                st.rerun()
+            st.caption(f"🔒 Locked ({_s(j.get('handover_by'), 'Operation')})")
         else:
-            st.warning("📝 Work in Progress")
-            if can_edit and st.button("🔒 Handover to Accounting", key=f"lock_fin_{j['id']}", type="primary", use_container_width=True):
-                try:
-                    lock_job_financials(j["id"], user)
-                    st.success("Financials verified & handed over to Accounting.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Handover failed: {exc}")
+            st.caption("🔓 Financial Open")
 
     # Load charge master options for streamlined entry
     std_charges = []

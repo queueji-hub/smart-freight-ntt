@@ -130,22 +130,24 @@ def generate_payment_voucher_pdf(voucher: Dict[str, Any], items: List[Dict[str, 
 
     # 2. Metadata Block
     payee = _s(voucher.get("payee_name") or voucher.get("vendor_name"), "—")
+    payee_tax_id = _s(voucher.get("payee_tax_id"), "—")
     job_no = _s(voucher.get("job_no"), "—")
+    vendor_inv_ref = _s(voucher.get("vendor_invoice_refs") or voucher.get("invoice_no"), "—")
     due_date = _s(voucher.get("due_date"), "—")
     currency = _s(voucher.get("currency"), "THB")
     status = _s(voucher.get("status"), "REQUESTED")
 
     meta_data = [
         [
-            Paragraph("<b>Paid To / ผู้รับเงิน (Payee):</b>", st["label"]), Paragraph(payee, st["val"]),
+            Paragraph("<b>Paid To / ผู้รับเงิน (Payee):</b>", st["label"]), Paragraph(f"{payee} (Tax ID: {payee_tax_id})", st["val"]),
             Paragraph("<b>Job No. / เลขที่งาน:</b>", st["label"]), Paragraph(job_no, st["val"]),
         ],
         [
+            Paragraph("<b>Ref Vendor Invoices / ใบแจ้งหนี้:</b>", st["label"]), Paragraph(vendor_inv_ref, st["val"]),
             Paragraph("<b>Payment Due Date / วันครบกำหนด:</b>", st["label"]), Paragraph(due_date, st["val"]),
-            Paragraph("<b>Voucher Status / สถานะ:</b>", st["label"]), Paragraph(status, st["val"]),
         ],
     ]
-    meta_table = Table(meta_data, colWidths=[38 * 2.83465, 55 * 2.83465, 38 * 2.83465, 55 * 2.83465])
+    meta_table = Table(meta_data, colWidths=[42 * 2.83465, 52 * 2.83465, 38 * 2.83465, 54 * 2.83465])
     meta_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), BLUE_LIGHT),
         ("BOX", (0, 0), (-1, -1), 0.75, BORDER_COLOR),
@@ -161,12 +163,12 @@ def generate_payment_voucher_pdf(voucher: Dict[str, Any], items: List[Dict[str, 
     item_header = [
         Paragraph("No.", st["th_center"]),
         Paragraph("Description / รายละเอียดการเบิกจ่าย", st["th_left"]),
+        Paragraph("Vendor Inv. No.", st["th_center"]),
         Paragraph("Qty", st["th_center"]),
         Paragraph("Unit Rate", st["th_right"]),
         Paragraph(f"Amount ({currency})", st["th_right"]),
-        Paragraph("Tax", st["th_center"]),
+        Paragraph("Tax / WHT", st["th_center"]),
         Paragraph("VAT 7%", st["th_right"]),
-        Paragraph("WHT", st["th_right"]),
         Paragraph(f"Net Payable ({currency})", st["th_right"]),
     ]
 
@@ -187,21 +189,24 @@ def generate_payment_voucher_pdf(voucher: Dict[str, Any], items: List[Dict[str, 
         wht_total += wht
         net_total += net
 
+        vinv = _s(it.get("vendor_invoice_no"), "—")
+        tax_wht_str = f"{_s(it.get('tax_type'),'VAT')}/{_s(it.get('wht_type'),'0%')}"
+
         item_rows.append([
             Paragraph(str(idx), st["td_center"]),
             Paragraph(_s(it.get("description")), st["td_left"]),
-            Paragraph(f"{float(it.get('quantity') or 1):,.2f}", st["td_center"]),
+            Paragraph(vinv, st["td_center"]),
+            Paragraph(f"{float(it.get('quantity') or 1):g} {_s(it.get('unit'),'UNIT')}", st["td_center"]),
             Paragraph(_money(it.get("unit_price")), st["td_right"]),
             Paragraph(_money(amt), st["td_right"]),
-            Paragraph(_s(it.get("tax_type"), "VAT 7%"), st["td_center"]),
+            Paragraph(tax_wht_str, st["td_center"]),
             Paragraph(_money(vat), st["td_right"]),
-            Paragraph(_money(wht), st["td_right"]),
             Paragraph(_money(net), st["td_right_b"]),
         ])
 
     table = Table(
         item_rows,
-        colWidths=[10 * 2.83465, 54 * 2.83465, 12 * 2.83465, 18 * 2.83465, 22 * 2.83465, 16 * 2.83465, 16 * 2.83465, 16 * 2.83465, 22 * 2.83465]
+        colWidths=[8 * 2.83465, 46 * 2.83465, 24 * 2.83465, 16 * 2.83465, 16 * 2.83465, 20 * 2.83465, 18 * 2.83465, 16 * 2.83465, 22 * 2.83465]
     )
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),

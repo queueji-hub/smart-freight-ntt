@@ -135,23 +135,24 @@ def add_cost_line(data: Dict[str, Any]) -> int:
             cur.execute(
                 """
                 INSERT INTO job_costs (
-                    shipment_id, tenant_id, cost_type, category, description, supplier,
+                    shipment_id, tenant_id, party_id, cost_type, category, description, supplier,
                     quantity, unit, unit_price, amount, currency, exchange_rate, amount_thb,
                     tax_type, vat_amount, wht_type, wht_amount, net_amount,
                     cost_status, payout_status, billing_status, billable_to_customer,
-                    matched_charge_code, matched_ap_id, vendor_invoice_no, voucher_no, invoice_no,
-                    remark, created_by
+                    matched_charge_code, matched_ap_id, vendor_invoice_no, vendor_invoice_date,
+                    voucher_no, invoice_no, remark, created_by
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id
                 """,
                 (
-                    data["shipment_id"], tenant_id, cost_type,
+                    data["shipment_id"], tenant_id, data.get("party_id"), cost_type,
                     data.get("category"), data.get("description"), data.get("supplier"),
                     qty, data.get("unit") or "UNIT", unit_price, calcs["amount"], currency, calcs["exchange_rate"], calcs["amount_thb"],
                     tax_type, calcs["vat_amount"], wht_type, calcs["wht_amount"], calcs["net_amount"],
                     cost_status, payout_stat, billing_stat, billable,
-                    data.get("matched_charge_code"), data.get("matched_ap_id"), data.get("vendor_invoice_no"),
+                    data.get("matched_charge_code"), data.get("matched_ap_id"),
+                    data.get("vendor_invoice_no"), data.get("vendor_invoice_date"),
                     data.get("voucher_no"), data.get("invoice_no"),
                     data.get("remark"), data.get("created_by"),
                 ),
@@ -191,15 +192,17 @@ def update_cost_line(cost_id: int, data: Dict[str, Any]) -> bool:
             cur.execute(
                 """
                 UPDATE job_costs SET
-                    category=%s, description=%s, supplier=%s, quantity=%s, unit=%s,
+                    party_id=%s, category=%s, description=%s, supplier=%s, quantity=%s, unit=%s,
                     unit_price=%s, amount=%s, currency=%s, exchange_rate=%s, amount_thb=%s,
                     tax_type=%s, vat_amount=%s, wht_type=%s, wht_amount=%s, net_amount=%s,
                     cost_status=%s, payout_status=%s, billing_status=%s, billable_to_customer=%s,
-                    matched_charge_code=%s, matched_ap_id=%s, vendor_invoice_no=%s,
+                    matched_charge_code=%s, matched_ap_id=%s,
+                    vendor_invoice_no=%s, vendor_invoice_date=%s,
                     voucher_no=%s, invoice_no=%s, remark=%s
                 WHERE id=%s AND tenant_id=%s
                 """,
                 (
+                    data.get("party_id", ex_dict.get("party_id")),
                     data.get("category", ex_dict.get("category")),
                     data.get("description", ex_dict.get("description")),
                     data.get("supplier", ex_dict.get("supplier")),
@@ -222,6 +225,7 @@ def update_cost_line(cost_id: int, data: Dict[str, Any]) -> bool:
                     data.get("matched_charge_code", ex_dict.get("matched_charge_code")),
                     data.get("matched_ap_id", ex_dict.get("matched_ap_id")),
                     data.get("vendor_invoice_no", ex_dict.get("vendor_invoice_no")),
+                    data.get("vendor_invoice_date", ex_dict.get("vendor_invoice_date")),
                     data.get("voucher_no", ex_dict.get("voucher_no")),
                     data.get("invoice_no", ex_dict.get("invoice_no")),
                     data.get("remark", ex_dict.get("remark")),
@@ -377,6 +381,7 @@ def get_unified_job_ledger(shipment_id: int) -> Dict[str, Any]:
         paired_rows.append({
             "line_no": idx,
             "ap_id": ap["id"],
+            "ap_party_id": ap.get("party_id"),
             "ap_category": ap.get("category"),
             "ap_description": ap.get("description"),
             "ap_supplier": ap.get("supplier") or "—",
@@ -395,8 +400,10 @@ def get_unified_job_ledger(shipment_id: int) -> Dict[str, Any]:
             "ap_payout_status": ap.get("payout_status", "UNPAID"),
             "ap_voucher_no": ap.get("voucher_no") or "—",
             "ap_vendor_inv": ap.get("vendor_invoice_no") or "—",
+            "ap_vendor_inv_date": ap.get("vendor_invoice_date") or "—",
             # AR side
             "ar_id": matched_ar["id"] if matched_ar else None,
+            "ar_party_id": matched_ar.get("party_id") if matched_ar else None,
             "ar_category": matched_ar.get("category") if matched_ar else "—",
             "ar_description": matched_ar.get("description") if matched_ar else "— (Unbilled)",
             "ar_customer": matched_ar.get("supplier") if matched_ar else "—",
@@ -608,13 +615,32 @@ def create_batch_payment_voucher(
             currency = selected_lines[0].get("currency", "THB") if selected_lines else "THB"
             ex_rate = float(selected_lines[0].get("exchange_rate") or 1.0) if selected_lines else 1.0
 
-            # Resolve vendor_id if table requires it
+            # Resolve vendor_id & party_id
             vendor_id = None
+            party_id = selected_lines[0].get("party_id") if selected_lines else None
+            payee_tax_id = None
+
+            # Look up in business_parties first
+            if party_id:
+                cur.execute("SELECT id, tax_id, legal_name FROM business_parties WHERE id=%s AND tenant_id=%s", (party_id, tenant_id))
+                bp_row = cur.fetchone()
+                if bp_row:
+                    payee_tax_id = bp_row.get("tax_id") if isinstance(bp_row, dict) else bp_row[1]
+            if not payee_tax_id and payee_name:
+                cur.execute("SELECT id, tax_id FROM business_parties WHERE (legal_name=%s OR display_name=%s) AND tenant_id=%s LIMIT 1", (payee_name, payee_name, tenant_id))
+                bp_row = cur.fetchone()
+                if bp_row:
+                    party_id = party_id or (bp_row.get("id") if isinstance(bp_row, dict) else bp_row[0])
+                    payee_tax_id = bp_row.get("tax_id") if isinstance(bp_row, dict) else bp_row[1]
+
+            # Look up or create in vendors
             if payee_name:
-                cur.execute("SELECT id FROM vendors WHERE (legal_name = %s OR vendor_code = %s) AND tenant_id = %s LIMIT 1", (payee_name, payee_name, tenant_id))
+                cur.execute("SELECT id, tax_id FROM vendors WHERE (legal_name = %s OR vendor_code = %s) AND tenant_id = %s LIMIT 1", (payee_name, payee_name, tenant_id))
                 v_row = cur.fetchone()
                 if v_row:
                     vendor_id = v_row["id"] if isinstance(v_row, dict) else v_row[0]
+                    if not payee_tax_id:
+                        payee_tax_id = v_row.get("tax_id") if isinstance(v_row, dict) else v_row[1]
             if not vendor_id:
                 cur.execute("SELECT id FROM vendors WHERE tenant_id = %s LIMIT 1", (tenant_id,))
                 v_row = cur.fetchone()
@@ -623,31 +649,32 @@ def create_batch_payment_voucher(
                 else:
                     v_code = f"V-{(payee_name or 'GEN')[:8].upper().replace(' ', '')}"
                     cur.execute(
-                        "INSERT INTO vendors (tenant_id, vendor_code, legal_name, status) VALUES (%s, %s, %s, 'Active') RETURNING id",
-                        (tenant_id, v_code, payee_name or "General Vendor")
+                        "INSERT INTO vendors (tenant_id, vendor_code, legal_name, tax_id, status) VALUES (%s, %s, %s, %s, 'Active') RETURNING id",
+                        (tenant_id, v_code, payee_name or "General Vendor", payee_tax_id)
                     )
                     v_row = cur.fetchone()
                     vendor_id = v_row["id"] if isinstance(v_row, dict) else v_row[0]
 
-            inv_no_val = selected_lines[0].get("vendor_invoice_no") if selected_lines else None
-            if not inv_no_val:
-                inv_no_val = voucher_no
+            # Collect and deduplicate vendor invoice numbers
+            v_invoices = [str(l.get("vendor_invoice_no")).strip() for l in selected_lines if l.get("vendor_invoice_no") and str(l.get("vendor_invoice_no")).strip() not in ("None", "—", "")]
+            vendor_invoice_refs = ", ".join(dict.fromkeys(v_invoices)) if v_invoices else None
+            inv_no_val = vendor_invoice_refs or voucher_no
 
             # 3. Insert into ap_vouchers
             cur.execute(
                 """
                 INSERT INTO ap_vouchers (
-                    tenant_id, voucher_no, voucher_type, job_no, vendor_id, payee_name,
-                    invoice_no, invoice_date, due_date, currency, exchange_rate,
-                    subtotal, tax, wht_total, total, status, created_by
+                    tenant_id, party_id, voucher_no, voucher_type, job_no, vendor_id, payee_name,
+                    payee_tax_id, vendor_invoice_refs, invoice_no, invoice_date, due_date,
+                    currency, exchange_rate, subtotal, tax, wht_total, total, status, created_by
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s, CURRENT_DATE, %s, %s,%s,%s,%s,%s,%s,'REQUESTED',%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, CURRENT_DATE, %s, %s,%s,%s,%s,%s,%s,'REQUESTED',%s)
                 RETURNING id
                 """,
                 (
-                    tenant_id, voucher_no, voucher_type, job_no, vendor_id, payee_name,
-                    inv_no_val, due_date or date.today().isoformat(), currency, ex_rate,
-                    subtotal, vat_total, wht_total, total, user.get("username", "accountant")
+                    tenant_id, party_id, voucher_no, voucher_type, job_no, vendor_id, payee_name,
+                    payee_tax_id, vendor_invoice_refs, inv_no_val, due_date or date.today().isoformat(),
+                    currency, ex_rate, subtotal, vat_total, wht_total, total, user.get("username", "accountant")
                 )
             )
 

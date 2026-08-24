@@ -217,12 +217,17 @@ def _cost_table(title: str, lines: List[Dict[str, Any]], bg_color, styles, total
             orig_amt = float(line.get("amount") or amt_thb)
             curr_str = f"{curr} {orig_amt:,.2f}" if curr != "THB" else f"{orig_amt:,.2f}"
             party = _s(line.get("supplier") or line.get("vendor_name") or line.get("customer"))
+            ref_no = line.get("vendor_invoice_no") if not is_ar else line.get("invoice_no")
+            if ref_no and str(ref_no).strip() not in ("—", "None", ""):
+                party_cell = f"{party}<br/><font color='#64748B' size='6'>Ref: {ref_no}</font>"
+            else:
+                party_cell = party
 
             data.append([
                 Paragraph(str(i), styles["td_center"]),
                 Paragraph(_s(line.get("category")), styles["td_left"]),
                 Paragraph(_s(line.get("description")), styles["td_left"]),
-                Paragraph(party, styles["td_left"]),
+                Paragraph(party_cell, styles["td_left"]),
                 Paragraph(curr_str, styles["td_right"]),
                 Paragraph(f"{amt_thb:,.2f}", styles["td_right"]),
             ])
