@@ -331,7 +331,7 @@ def _signature_block(styles) -> Table:
 
 
 def generate_profit_pdf(
-    shipment: Dict[str, Any],
+    shipment: Any,
     ar_lines: List[Dict[str, Any]] = None,
     ap_lines: List[Dict[str, Any]] = None,
     summary: Dict[str, Any] = None,
@@ -339,6 +339,29 @@ def generate_profit_pdf(
     output_path: str = None,
 ) -> str:
     """Generate comprehensive Enterprise Job Profitability & Operations Sheet PDF."""
+    if isinstance(shipment, (int, str)) and not isinstance(shipment, dict):
+        from managers.shipment_manager import get_shipment
+        from managers.profit_manager import get_cost_lines, get_profit_summary
+        from database.connection import get_connection
+        from managers.tenant_context import get_current_tenant_id
+        tenant_id = get_current_tenant_id()
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                if str(shipment).isdigit():
+                    cur.execute("SELECT * FROM shipments WHERE id=%s AND tenant_id=%s", (int(shipment), tenant_id))
+                else:
+                    cur.execute("SELECT * FROM shipments WHERE job_no=%s AND tenant_id=%s", (str(shipment), tenant_id))
+                r = cur.fetchone()
+                shipment = dict(r) if r else {}
+        if shipment:
+            s_id = shipment.get("id")
+            if ar_lines is None:
+                ar_lines = get_cost_lines(s_id, "AR")
+            if ap_lines is None:
+                ap_lines = get_cost_lines(s_id, "AP")
+            if summary is None:
+                summary = get_profit_summary(s_id)
+
     shipment = shipment or {}
     sheet = sheet or {}
     summary = summary or {}

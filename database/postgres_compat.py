@@ -477,12 +477,62 @@ def ensure_phase30_profitability_schema(conn) -> None:
         )
         _add_columns(cur, "job_costs", {
             "tenant_id": "TEXT DEFAULT 'default'",
+            "line_no": "INTEGER DEFAULT 1",
+            "unit": "TEXT DEFAULT 'UNIT'",
             "cost_status": "TEXT DEFAULT 'ESTIMATED'",
             "billable_to_customer": "BOOLEAN DEFAULT TRUE",
             "matched_charge_code": "TEXT",
             "vendor_invoice_no": "TEXT",
             "payout_status": "TEXT DEFAULT 'UNPAID'",
+            "billing_status": "TEXT DEFAULT 'UNBILLED'",
+            "tax_type": "TEXT DEFAULT 'VAT 7%'",
+            "vat_amount": "NUMERIC(15,2) DEFAULT 0",
+            "wht_type": "TEXT DEFAULT 'None'",
+            "wht_amount": "NUMERIC(15,2) DEFAULT 0",
+            "net_amount": "NUMERIC(15,2) DEFAULT 0",
+            "voucher_no": "TEXT",
+            "invoice_no": "TEXT",
+            "matched_ap_id": "INTEGER",
         })
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ap_vouchers (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT DEFAULT 'default',
+                voucher_no TEXT,
+                voucher_type TEXT DEFAULT 'PAYMENT_VOUCHER',
+                job_no TEXT,
+                vendor_id INTEGER,
+                payee_name TEXT,
+                invoice_no TEXT,
+                invoice_date DATE,
+                due_date DATE,
+                payment_date DATE,
+                currency TEXT DEFAULT 'THB',
+                exchange_rate NUMERIC(10,5) DEFAULT 1,
+                subtotal NUMERIC(15,2) DEFAULT 0,
+                tax NUMERIC(15,2) DEFAULT 0,
+                wht_total NUMERIC(15,2) DEFAULT 0,
+                total NUMERIC(15,2) DEFAULT 0,
+                status TEXT DEFAULT 'REQUESTED',
+                remark TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        _add_columns(cur, "ap_vouchers", {
+            "voucher_no": "TEXT",
+            "voucher_type": "TEXT DEFAULT 'PAYMENT_VOUCHER'",
+            "payee_name": "TEXT",
+            "wht_total": "NUMERIC(15,2) DEFAULT 0",
+        })
+        try:
+            cur.execute("ALTER TABLE ap_vouchers ALTER COLUMN vendor_id DROP NOT NULL")
+            cur.execute("ALTER TABLE ap_vouchers ALTER COLUMN invoice_no DROP NOT NULL")
+        except Exception:
+            pass
         _add_columns(cur, "shipments", {
             "financial_locked": "BOOLEAN DEFAULT FALSE",
             "handover_to_accounting_at": "TIMESTAMP",

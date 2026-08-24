@@ -12,8 +12,9 @@ from managers.shipment_manager import (
 )
 from managers.profit_manager import (
     get_profit_summary, get_cost_sell_audit_matrix, get_cost_lines,
+    get_unified_job_ledger, get_job_document_audit,
     add_cost_line, update_cost_line, delete_cost_line, lock_job_financials, unlock_job_financials,
-    AP_CATEGORIES, AR_CATEGORIES,
+    AP_CATEGORIES, AR_CATEGORIES, TAX_TYPES, WHT_TYPES,
 )
 from core.audit import list_audit_logs, log_action
 
@@ -304,20 +305,24 @@ def _documents(j):
 
 
 def _financial(j):
-    st.markdown('<div class="s-section">Operation Cost & Revenue Management (Cost vs. Sell)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="s-section">Operation Cost & Revenue Management (Unified AP / AR Ledger)</div>', unsafe_allow_html=True)
     st.caption("Operation team manages both Cost (AP) and Sell (AR) charges and reconciles billing coverage before handover to Accounting.")
     
     user = st.session_state.get("user", {})
     can_edit = can_write(st.session_state.get("role", "admin"), "shipment")
     is_locked = bool(j.get("financial_locked"))
-    audit_data = get_cost_sell_audit_matrix(j["id"])
+    ledger = get_unified_job_ledger(j["id"])
+    summary = ledger["summary"]
+    matrix_rows = ledger["matrix_rows"]
 
     # Top metrics bar
     a, b, c, d, e = st.columns(5)
-    a.metric("Total Sell (Revenue)", _money(audit_data["total_sell_thb"]))
-    b.metric("Total Cost (Expense)", _money(audit_data["total_cost_thb"]))
-    c.metric("Gross Profit", _money(audit_data["gross_profit"]), delta=f"{audit_data['margin_pct']:.1f}% Margin")
-    d.metric("Unbilled Cost Items", str(audit_data["unbilled_cost_count"]), delta_color="inverse")
+    a.metric("Total Sell (AR)", _money(summary["total_ar_amount"]))
+    b.metric("Total Cost (AP)", _money(summary["total_ap_amount"]))
+    gp = summary["gross_profit"]
+    margin = summary["margin_pct"]
+    c.metric("Gross Profit", _money(gp), delta=f"{margin:.1f}% Margin")
+    d.metric("Net Cashflow Expected", _money(summary["total_ar_net"] - summary["total_ap_net"]))
     
     with e:
         st.write("**Handover Status**")
@@ -331,16 +336,10 @@ def _financial(j):
             if can_edit and st.button("🔒 Handover to Accounting", key=f"lock_fin_{j['id']}", type="primary", use_container_width=True):
                 try:
                     lock_job_financials(j["id"], user)
-                    if audit_data["unbilled_cost_count"] > 0:
-                        st.success(f"Financials handed over to Accounting ({audit_data['unbilled_cost_count']} unbilled/unmatched cost line(s) noted).")
-                    else:
-                        st.success("Financials verified & handed over to Accounting.")
+                    st.success("Financials verified & handed over to Accounting.")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Handover failed: {exc}")
-
-    if audit_data["unbilled_cost_count"] > 0:
-        st.warning(f"ℹ️ **Reconciliation Notice**: Found **{audit_data['unbilled_cost_count']} unbilled cost line(s)** totaling {_money(audit_data['unbilled_cost_amount'])}. (Note: You can still handover to Accounting — unmatched items will be recorded for accounting review).")
 
     # Load charge master options for streamlined entry
     std_charges = []
@@ -351,49 +350,62 @@ def _financial(j):
         std_charges = []
     std_charge_opts = ["— Custom / Freeform —"] + [f"{c['charge_code']} - {c['description']} ({c.get('category','Other')})" for c in std_charges]
 
-    fin_tabs = st.tabs(["📊 Cost vs. Sell Audit Matrix", "💰 Cost (AP - ต้นทุนจ่าย)", "🧾 Sell (AR - รายได้เรียกเก็บ)"])
+    fin_tabs = st.tabs([
+        "📊 Unified AP / AR Matrix & Margin",
+        "💰 Cost (AP - ต้นทุนจ่าย)",
+        "🧾 Sell (AR - รายได้เรียกเก็บ)",
+        "📜 Document Audit (ประวัติเอกสาร)"
+    ])
 
     # -------------------------------------------------------------
-    # TAB 1: AUDIT MATRIX
+    # TAB 1: UNIFIED AUDIT MATRIX
     # -------------------------------------------------------------
     with fin_tabs[0]:
-        st.markdown("##### 🔍 Reconciliation & Margin Audit")
-        matrix_rows = audit_data.get("matrix_rows", [])
+        st.markdown("##### 🔍 Unified Side-by-Side AP / AR Reconciliation & Margins")
         if not matrix_rows:
             st.info("No cost or sell charges recorded yet. Add Cost lines and Sell lines in the respective tabs.")
         else:
-            display_rows = [{
-                "Audit Status": r["badge"],
-                "Cost Category / Description": f"{_s(r['category'])} - {_s(r['description'])}",
-                "Vendor / Supplier": _s(r["supplier"]),
-                "Cost (THB)": _money(r["cost_thb"]),
-                "Billable?": "Yes" if r["is_billable"] else "No (Internal)",
-                "Matching Customer Item": _s(r["sell_description"]),
-                "Sell (THB)": _money(r["sell_thb"]),
-                "Item Profit (THB)": _money(r["profit_thb"]),
-            } for r in matrix_rows]
-            st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
+            table_data = []
+            for r in matrix_rows:
+                table_data.append({
+                    "No.": r["line_no"],
+                    "AP Description": r["ap_description"],
+                    "Payee": r["ap_supplier"],
+                    "AP Rate": f"{r['ap_unit_price']:,.2f} {r['ap_currency']}" if r["ap_id"] else "—",
+                    "AP Qty": f"{r['ap_quantity']:g} {r['ap_unit']}" if r["ap_id"] else "—",
+                    "AP Amount (฿)": f"{r['ap_amount_thb']:,.2f}" if r["ap_id"] else "—",
+                    "AP Tax": r["ap_tax_type"] if r["ap_id"] else "—",
+                    "AP Status": f"{r['ap_payout_status']} ({r['ap_voucher_no']})" if r["ap_id"] else "—",
+                    "Link": "➔" if r["is_matched"] else ("✦ Pure AR" if not r["ap_id"] else "✦ Unbilled AP"),
+                    "AR Description": r["ar_description"],
+                    "AR Rate": f"{r['ar_unit_price']:,.2f} {r['ar_currency']}" if r["ar_id"] else "—",
+                    "AR Qty": f"{r['ar_quantity']:g} {r['ar_unit']}" if r["ar_id"] else "—",
+                    "AR Amount (฿)": f"{r['ar_amount_thb']:,.2f}" if r["ar_id"] else "—",
+                    "AR Tax": r["ar_tax_type"] if r["ar_id"] else "—",
+                    "AR Status": f"{r['ar_billing_status']} ({r['ar_invoice_no']})" if r["ar_id"] else "—",
+                    "Profit (฿)": f"{r['line_profit_thb']:,.2f}",
+                    "Margin %": f"{r['line_margin_pct']:.1f}%",
+                })
+            st.dataframe(pd.DataFrame(table_data), hide_index=True, width="stretch")
 
     # -------------------------------------------------------------
     # TAB 2: COST (AP) ENTRY
     # -------------------------------------------------------------
     with fin_tabs[1]:
         st.markdown("##### 💰 Operational Cost Lines (Vendor / Carrier / Port / Trucking)")
-        ap_lines = get_cost_lines(j["id"], cost_type="AP")
+        ap_lines = ledger["ap_lines"]
         if ap_lines:
             ap_display = [{
                 "ID": r["id"],
-                "Code": _s(r.get("matched_charge_code")),
                 "Category": r.get("category"),
                 "Description": r.get("description"),
-                "Supplier / Vendor": r.get("supplier"),
-                "Qty": r.get("quantity"),
-                "Price": r.get("unit_price"),
-                "Curr": r.get("currency"),
+                "Payee / Supplier": r.get("supplier"),
+                "Qty": f"{r.get('quantity', 1):g} {r.get('unit', 'UNIT')}",
+                "Unit Rate": f"{float(r.get('unit_price',0)):,.2f} {r.get('currency','THB')}",
                 "Amount (THB)": _money(r.get("amount_thb")),
-                "Billable": "Yes" if r.get("billable_to_customer", 1) in (1, True, "1") else "No",
-                "Status": r.get("cost_status"),
-                "Payout": r.get("payout_status", "UNPAID"),
+                "Tax / WHT": f"{r.get('tax_type', 'VAT 7%')} / {r.get('wht_type', 'None')}",
+                "Net Payable": _money(r.get("net_amount")),
+                "Payout Status": f"{r.get('payout_status', 'UNPAID')} ({_s(r.get('voucher_no'))})",
             } for r in ap_lines]
             st.dataframe(pd.DataFrame(ap_display), use_container_width=True, hide_index=True)
 
@@ -417,11 +429,16 @@ def _financial(j):
 
                     c4, c5, c6, c7 = st.columns(4)
                     qty = c4.number_input("Quantity", min_value=0.001, value=1.0, step=0.01, format="%.2f")
-                    price = c5.number_input("Unit Price", min_value=0.0, value=0.0, step=0.01, format="%.2f")
-                    curr = c6.selectbox("Currency", ["THB", "USD", "EUR", "CNY", "JPY", "SGD"], index=0)
-                    billable = c7.selectbox("Billable to Customer?", ["Yes (เรียกเก็บลูกค้า)", "No (ต้นทุนภายในบริษัท)"], index=0)
+                    unit = c5.selectbox("Unit", ["BL", "CTR", "CBM", "TRIP", "SHPT", "LOT", "SET", "KG"], index=0)
+                    price = c6.number_input("Unit Price", min_value=0.0, value=0.0, step=500.0, format="%.2f")
+                    curr = c7.selectbox("Currency", ["THB", "USD", "EUR", "CNY", "JPY", "SGD"], index=0)
 
-                    remark = st.text_input("Remarks / Notes")
+                    t1, t2, t3 = st.columns(3)
+                    ex = t1.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if curr == "THB" else 35.5, step=0.1)
+                    tax_type = t2.selectbox("Tax Type", TAX_TYPES, index=0)
+                    wht_type = t3.selectbox("WHT Type", WHT_TYPES, index=0)
+
+                    vinv = st.text_input("Vendor Invoice / Ref No.", placeholder="e.g. ONE-12345")
                     save_cost = st.form_submit_button("Save Cost Line", type="primary", use_container_width=True)
 
                 if save_cost:
@@ -440,12 +457,14 @@ def _financial(j):
                             "description": final_desc or "Operational Cost",
                             "supplier": supplier.strip() or None,
                             "quantity": qty,
+                            "unit": unit,
                             "unit_price": price,
-                            "amount": qty * price,
                             "currency": curr,
-                            "billable_to_customer": (billable.startswith("Yes")),
+                            "exchange_rate": ex,
+                            "tax_type": tax_type,
+                            "wht_type": wht_type,
                             "matched_charge_code": matched_code,
-                            "remark": remark.strip() or None,
+                            "vendor_invoice_no": vinv.strip() or None,
                             "created_by": user.get("username", "operation"),
                         })
                         st.success("Cost line added.")
@@ -458,19 +477,19 @@ def _financial(j):
     # -------------------------------------------------------------
     with fin_tabs[2]:
         st.markdown("##### 🧾 Customer Revenue Lines (Freight / Handling / Clearance / DOC)")
-        ar_lines = get_cost_lines(j["id"], cost_type="AR")
+        ar_lines = ledger["ar_lines"]
         if ar_lines:
             ar_display = [{
                 "ID": r["id"],
-                "Code": _s(r.get("matched_charge_code")),
                 "Category": r.get("category"),
                 "Description": r.get("description"),
                 "Customer": r.get("supplier") or _s(j.get("customer_name")),
-                "Qty": r.get("quantity"),
-                "Price": r.get("unit_price"),
-                "Curr": r.get("currency"),
+                "Qty": f"{r.get('quantity', 1):g} {r.get('unit', 'UNIT')}",
+                "Selling Rate": f"{float(r.get('unit_price',0)):,.2f} {r.get('currency','THB')}",
                 "Amount (THB)": _money(r.get("amount_thb")),
-                "Status": r.get("cost_status"),
+                "Tax / WHT": f"{r.get('tax_type', 'VAT 7%')} / {r.get('wht_type', 'None')}",
+                "Net Receivable": _money(r.get("net_amount")),
+                "Billing Status": f"{r.get('billing_status', 'UNBILLED')} ({_s(r.get('invoice_no'))})",
             } for r in ar_lines]
             st.dataframe(pd.DataFrame(ar_display), use_container_width=True, hide_index=True)
 
@@ -492,12 +511,17 @@ def _financial(j):
                     s_desc = s2.text_input("Description / Charge Name", value="Ocean Freight Revenue")
                     s_cust = s3.text_input("Customer", value=_s(j.get("customer_name"), ""))
 
-                    s4, s5, s6 = st.columns(3)
+                    s4, s5, s6, s7 = st.columns(4)
                     s_qty = s4.number_input("Quantity", min_value=0.001, value=1.0, step=0.01, format="%.2f", key=f"ar_qty_{j['id']}")
-                    s_price = s5.number_input("Unit Price", min_value=0.0, value=0.0, step=0.01, format="%.2f", key=f"ar_prc_{j['id']}")
-                    s_curr = s6.selectbox("Currency", ["THB", "USD", "EUR", "CNY", "JPY", "SGD"], index=0, key=f"ar_curr_{j['id']}")
+                    s_unit = s5.selectbox("Unit", ["BL", "CTR", "CBM", "TRIP", "SHPT", "LOT", "SET", "KG"], index=0, key=f"ar_unit_{j['id']}")
+                    s_price = s6.number_input("Unit Price Rate", min_value=0.0, value=0.0, step=500.0, format="%.2f", key=f"ar_prc_{j['id']}")
+                    s_curr = s7.selectbox("Currency", ["THB", "USD", "EUR", "CNY", "JPY", "SGD"], index=0, key=f"ar_curr_{j['id']}")
 
-                    s_remark = st.text_input("Remarks / Notes", key=f"ar_rem_{j['id']}")
+                    t1, t2, t3 = st.columns(3)
+                    s_ex = t1.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if s_curr == "THB" else 35.5, step=0.1, key=f"ar_ex_{j['id']}")
+                    s_tax = t2.selectbox("Tax Type", TAX_TYPES, index=0, key=f"ar_tax_{j['id']}")
+                    s_wht = t3.selectbox("WHT Type", WHT_TYPES, index=0, key=f"ar_wht_{j['id']}")
+
                     save_sell = st.form_submit_button("Save Customer Revenue Line", type="primary", use_container_width=True)
 
                 if save_sell:
@@ -516,17 +540,44 @@ def _financial(j):
                             "description": final_s_desc or "Customer Revenue",
                             "supplier": s_cust.strip() or None,
                             "quantity": s_qty,
+                            "unit": s_unit,
                             "unit_price": s_price,
-                            "amount": s_qty * s_price,
                             "currency": s_curr,
-                            "billable_to_customer": True,
+                            "exchange_rate": s_ex,
+                            "tax_type": s_tax,
+                            "wht_type": s_wht,
                             "matched_charge_code": s_matched_code,
-                            "remark": s_remark.strip() or None,
                             "created_by": user.get("username", "operation"),
                         })
                         st.success("Customer revenue line added.")
+                        st.rerun()
                     except Exception as exc:
                         st.error(f"Failed to add revenue: {exc}")
+
+    # -------------------------------------------------------------
+    # TAB 4: DOCUMENT AUDIT TRACEABILITY
+    # -------------------------------------------------------------
+    with fin_tabs[3]:
+        st.markdown("##### 📜 Linked Documents Audit & Traceability")
+        doc_audit = get_job_document_audit(j["id"])
+        vouchers = doc_audit["payment_vouchers"]
+        invoices = doc_audit["invoices"]
+
+        d1, d2 = st.columns(2)
+        with d1:
+            st.markdown(f"**📑 AP Payment Vouchers ({len(vouchers)})**")
+            if not vouchers:
+                st.caption("No Payment Vouchers generated yet.")
+            else:
+                for v in vouchers:
+                    st.write(f"• **{v.get('voucher_no')}** — {v.get('payee_name')} | {_money(v.get('total'))} [{v.get('status')}]")
+        with d2:
+            st.markdown(f"**🧾 AR Customer Invoices ({len(invoices)})**")
+            if not invoices:
+                st.caption("No Invoices generated yet.")
+            else:
+                for inv in invoices:
+                    st.write(f"• **{inv.get('doc_no')}** — {inv.get('customer_name')} | {_money(inv.get('grand_total'))} [{inv.get('status')}]")
 
 
 def _history(j):

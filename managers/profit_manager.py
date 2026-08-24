@@ -1,30 +1,57 @@
-from managers.tenant_context import get_current_tenant_id
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+"""Job Profitability, Unified AP/AR Ledger, Batch Billing & Disbursement Manager.
+
+Provides ERP-grade Single Source of Truth for:
+- Unified Side-by-Side AP/AR Cost & Revenue Reconciliation
+- Accrual P&L calculation (Advance / Service / VAT / WHT / Margin)
+- Pull AP to AR with customizable markup and selling descriptions
+- Batch AP Payment Voucher & Advance Request generation
+- Batch AR Customer Invoice generation
+- Full Document Audit Trail & Line Traceability
+"""
+from __future__ import annotations
+
+from datetime import datetime, date
+from typing import List, Dict, Any, Optional, Tuple
+
 from database.connection import get_connection
+from managers.tenant_context import get_current_tenant_id
+from managers.document_numbering_service import generate_document_number
 
 AR_CATEGORIES = [
     "Ocean Freight Revenue",
+    "Air Freight Revenue",
     "Local Terminal Charges (AR)",
     "Customs Clearance Service",
     "Inland Trucking Revenue",
-    "Warehousing",
+    "Warehousing & Storage",
+    "Documentation & D/O Fee",
+    "Port & Gate Charges",
+    "Advance Disbursement (สำรองจ่าย)",
     "Miscellaneous Revenue",
 ]
 
 AP_CATEGORIES = [
-    "Ocean Freight Cost",
-    "Port Terminal Cost",
-    "Customs Duty Paid",
-    "Inland Carrier Expenses",
+    "Ocean Freight Cost (สายเรือ)",
+    "Air Freight Cost (สายการบิน)",
+    "Port Terminal Cost (THC / ท่าเรือ)",
+    "Customs Duty & Clearance (กรมศุลกากร)",
+    "Inland Carrier & Trucking (รถบรรทุก)",
+    "Warehouse / Storage / CFS Cost",
+    "D/O & Line Documentation Fee",
+    "Advance Paid on Behalf (สำรองจ่าย)",
     "Agent Handling Fee",
     "Miscellaneous Cost",
 ]
 
+TAX_TYPES = ["VAT 7%", "Non-VAT", "Advance"]
+WHT_TYPES = ["None", "WHT 1%", "WHT 3%", "WHT 0.75%", "WHT 5%"]
 
-def _convert_to_thb(amount: float, currency: str) -> float:
+
+def _convert_to_thb(amount: float, currency: str, ex_rate: Optional[float] = None) -> float:
     if not currency or currency.upper() == "THB":
         return float(amount)
+    if ex_rate and ex_rate > 0:
+        return float(amount) * float(ex_rate)
     try:
         from managers.fx_manager import convert
         return convert(amount, currency, "THB")
@@ -32,18 +59,76 @@ def _convert_to_thb(amount: float, currency: str) -> float:
         return float(amount)
 
 
+def compute_line_tax_and_net(
+    qty: float,
+    unit_price: float,
+    tax_type: str = "VAT 7%",
+    wht_type: str = "None",
+    currency: str = "THB",
+    exchange_rate: float = 1.0,
+) -> Dict[str, float]:
+    """Computes amount, VAT, WHT, net payable/receivable, and THB conversions."""
+    amount = float(qty or 0) * float(unit_price or 0)
+    ex = float(exchange_rate or 1.0) if currency.upper() != "THB" else 1.0
+    amount_thb = _convert_to_thb(amount, currency, ex)
+
+    tax_t = str(tax_type or "VAT 7%").strip()
+    wht_t = str(wht_type or "None").strip()
+
+    # VAT computation
+    if "7%" in tax_t or tax_t == "VAT 7%":
+        vat_amount = amount * 0.07
+    else:
+        vat_amount = 0.0
+
+    # WHT computation (Advance is exempt from WHT)
+    if tax_t.lower() == "advance":
+        wht_amount = 0.0
+    elif "1%" in wht_t:
+        wht_amount = amount * 0.01
+    elif "3%" in wht_t:
+        wht_amount = amount * 0.03
+    elif "0.75%" in wht_t:
+        wht_amount = amount * 0.0075
+    elif "5%" in wht_t:
+        wht_amount = amount * 0.05
+    else:
+        wht_amount = 0.0
+
+    net_amount = amount + vat_amount - wht_amount
+    net_thb = net_amount * ex
+
+    return {
+        "amount": round(amount, 2),
+        "amount_thb": round(amount_thb, 2),
+        "vat_amount": round(vat_amount, 2),
+        "wht_amount": round(wht_amount, 2),
+        "net_amount": round(net_amount, 2),
+        "net_thb": round(net_thb, 2),
+        "exchange_rate": ex,
+    }
+
+
+# =========================================================
+# LINE-LEVEL CRUD
+# =========================================================
+
 def add_cost_line(data: Dict[str, Any]) -> int:
     tenant_id = get_current_tenant_id()
     qty = float(data.get("quantity") or 1)
     unit_price = float(data.get("unit_price") or 0)
-    amount = float(data.get("amount") or (qty * unit_price))
     currency = data.get("currency") or "THB"
-    amount_thb = _convert_to_thb(amount, currency)
+    ex_rate = float(data.get("exchange_rate") or 1.0)
+    tax_type = data.get("tax_type") or "VAT 7%"
+    wht_type = data.get("wht_type") or "None"
+
+    calcs = compute_line_tax_and_net(qty, unit_price, tax_type, wht_type, currency, ex_rate)
+
+    cost_type = str(data.get("cost_type") or "AP").upper()
     cost_status = str(data.get("cost_status") or "ESTIMATED").upper()
-    billable = bool(data.get("billable_to_customer", True) in (True, 1, "1", "true", "True"))
-    matched_code = data.get("matched_charge_code")
-    vendor_inv = data.get("vendor_invoice_no")
     payout_stat = str(data.get("payout_status") or "UNPAID").upper()
+    billing_stat = str(data.get("billing_status") or "UNBILLED").upper()
+    billable = bool(data.get("billable_to_customer", True) in (True, 1, "1", "true", "True"))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -51,19 +136,24 @@ def add_cost_line(data: Dict[str, Any]) -> int:
                 """
                 INSERT INTO job_costs (
                     shipment_id, tenant_id, cost_type, category, description, supplier,
-                    quantity, unit_price, amount, currency, amount_thb, remark,
-                    created_by, cost_status, billable_to_customer, matched_charge_code,
-                    vendor_invoice_no, payout_status
+                    quantity, unit, unit_price, amount, currency, exchange_rate, amount_thb,
+                    tax_type, vat_amount, wht_type, wht_amount, net_amount,
+                    cost_status, payout_status, billing_status, billable_to_customer,
+                    matched_charge_code, matched_ap_id, vendor_invoice_no, voucher_no, invoice_no,
+                    remark, created_by
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id
                 """,
                 (
-                    data["shipment_id"], tenant_id, str(data["cost_type"]).upper(),
+                    data["shipment_id"], tenant_id, cost_type,
                     data.get("category"), data.get("description"), data.get("supplier"),
-                    qty, unit_price, amount, currency, amount_thb,
-                    data.get("remark"), data.get("created_by"), cost_status,
-                    billable, matched_code, vendor_inv, payout_stat,
+                    qty, data.get("unit") or "UNIT", unit_price, calcs["amount"], currency, calcs["exchange_rate"], calcs["amount_thb"],
+                    tax_type, calcs["vat_amount"], wht_type, calcs["wht_amount"], calcs["net_amount"],
+                    cost_status, payout_stat, billing_stat, billable,
+                    data.get("matched_charge_code"), data.get("matched_ap_id"), data.get("vendor_invoice_no"),
+                    data.get("voucher_no"), data.get("invoice_no"),
+                    data.get("remark"), data.get("created_by"),
                 ),
             )
             row = cur.fetchone()
@@ -76,38 +166,67 @@ def update_cost_line(cost_id: int, data: Dict[str, Any]) -> bool:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT amount, currency FROM job_costs WHERE id=%s AND tenant_id=%s",
+                "SELECT * FROM job_costs WHERE id=%s AND tenant_id=%s",
                 (cost_id, tenant_id),
             )
-            row = cur.fetchone()
-            if not row:
+            existing = cur.fetchone()
+            if not existing:
                 return False
 
-            current_amount = row["amount"] if isinstance(row, dict) else row[0]
-            current_currency = row["currency"] if isinstance(row, dict) else row[1]
-            new_amt = float(data.get("amount", current_amount))
-            new_cur = data.get("currency", current_currency)
-            amount_thb = _convert_to_thb(new_amt, new_cur)
-            cost_status = str(data.get("cost_status", "ESTIMATED")).upper()
-            billable = bool(data.get("billable_to_customer", True) in (True, 1, "1", "true", "True"))
-            matched_code = data.get("matched_charge_code")
-            vendor_inv = data.get("vendor_invoice_no")
-            payout_stat = str(data.get("payout_status", "UNPAID")).upper()
+            ex_dict = dict(existing)
+            qty = float(data.get("quantity", ex_dict.get("quantity", 1)))
+            unit_price = float(data.get("unit_price", ex_dict.get("unit_price", 0)))
+            currency = data.get("currency", ex_dict.get("currency", "THB"))
+            ex_rate = float(data.get("exchange_rate", ex_dict.get("exchange_rate", 1.0)))
+            tax_type = data.get("tax_type", ex_dict.get("tax_type", "VAT 7%"))
+            wht_type = data.get("wht_type", ex_dict.get("wht_type", "None"))
+
+            calcs = compute_line_tax_and_net(qty, unit_price, tax_type, wht_type, currency, ex_rate)
+
+            cost_status = str(data.get("cost_status", ex_dict.get("cost_status", "ESTIMATED"))).upper()
+            payout_stat = str(data.get("payout_status", ex_dict.get("payout_status", "UNPAID"))).upper()
+            billing_stat = str(data.get("billing_status", ex_dict.get("billing_status", "UNBILLED"))).upper()
+            billable = bool(data.get("billable_to_customer", ex_dict.get("billable_to_customer", True)) in (True, 1, "1", "true", "True"))
 
             cur.execute(
                 """
                 UPDATE job_costs SET
-                    category=%s, description=%s, supplier=%s, quantity=%s,
-                    unit_price=%s, amount=%s, currency=%s, amount_thb=%s,
-                    remark=%s, cost_status=%s, billable_to_customer=%s,
-                    matched_charge_code=%s, vendor_invoice_no=%s, payout_status=%s
+                    category=%s, description=%s, supplier=%s, quantity=%s, unit=%s,
+                    unit_price=%s, amount=%s, currency=%s, exchange_rate=%s, amount_thb=%s,
+                    tax_type=%s, vat_amount=%s, wht_type=%s, wht_amount=%s, net_amount=%s,
+                    cost_status=%s, payout_status=%s, billing_status=%s, billable_to_customer=%s,
+                    matched_charge_code=%s, matched_ap_id=%s, vendor_invoice_no=%s,
+                    voucher_no=%s, invoice_no=%s, remark=%s
                 WHERE id=%s AND tenant_id=%s
                 """,
                 (
-                    data.get("category"), data.get("description"), data.get("supplier"),
-                    data.get("quantity"), data.get("unit_price"), new_amt, new_cur,
-                    amount_thb, data.get("remark"), cost_status, billable,
-                    matched_code, vendor_inv, payout_stat, cost_id, tenant_id,
+                    data.get("category", ex_dict.get("category")),
+                    data.get("description", ex_dict.get("description")),
+                    data.get("supplier", ex_dict.get("supplier")),
+                    qty,
+                    data.get("unit", ex_dict.get("unit", "UNIT")),
+                    unit_price,
+                    calcs["amount"],
+                    currency,
+                    calcs["exchange_rate"],
+                    calcs["amount_thb"],
+                    tax_type,
+                    calcs["vat_amount"],
+                    wht_type,
+                    calcs["wht_amount"],
+                    calcs["net_amount"],
+                    cost_status,
+                    payout_stat,
+                    billing_stat,
+                    billable,
+                    data.get("matched_charge_code", ex_dict.get("matched_charge_code")),
+                    data.get("matched_ap_id", ex_dict.get("matched_ap_id")),
+                    data.get("vendor_invoice_no", ex_dict.get("vendor_invoice_no")),
+                    data.get("voucher_no", ex_dict.get("voucher_no")),
+                    data.get("invoice_no", ex_dict.get("invoice_no")),
+                    data.get("remark", ex_dict.get("remark")),
+                    cost_id,
+                    tenant_id,
                 ),
             )
             conn.commit()
@@ -143,72 +262,563 @@ def get_cost_lines(shipment_id: int, cost_type: Optional[str] = None) -> List[Di
             return [dict(r) for r in cur.fetchall()]
 
 
-def get_profit_summary(shipment_id: int) -> Dict[str, Any]:
+# =========================================================
+# UNIFIED AP / AR MATRIX & ACCRUAL P&L LEDGER
+# =========================================================
+
+def get_unified_job_ledger(shipment_id: int) -> Dict[str, Any]:
+    """
+    Returns complete Unified AP/AR Financial Ledger with side-by-side pairing,
+    accrual summaries, line margins, and disbursement/billing status tracking.
+    """
+    tenant_id = get_current_tenant_id()
+    ap_lines = get_cost_lines(shipment_id, cost_type="AP")
+    ar_lines = get_cost_lines(shipment_id, cost_type="AR")
+
+    # Accrual P&L sums
+    tot_ap_amount = 0.0
+    tot_ap_advance = 0.0
+    tot_ap_vat = 0.0
+    tot_ap_wht = 0.0
+    tot_ap_net = 0.0
+
+    ap_unpaid = 0
+    ap_requested = 0
+    ap_paid = 0
+
+    for ap in ap_lines:
+        amt_thb = float(ap.get("amount_thb") or 0)
+        ex = float(ap.get("exchange_rate") or 1.0)
+        vat_thb = float(ap.get("vat_amount") or 0) * ex
+        wht_thb = float(ap.get("wht_amount") or 0) * ex
+        net_thb = float(ap.get("net_amount") or 0) * ex
+
+        tot_ap_amount += amt_thb
+        tot_ap_vat += vat_thb
+        tot_ap_wht += wht_thb
+        tot_ap_net += net_thb
+
+        if str(ap.get("tax_type", "")).lower() == "advance":
+            tot_ap_advance += amt_thb
+
+        p_stat = str(ap.get("payout_status", "UNPAID")).upper()
+        if p_stat == "PAID":
+            ap_paid += 1
+        elif p_stat == "REQUESTED":
+            ap_requested += 1
+        else:
+            ap_unpaid += 1
+
+    tot_ar_amount = 0.0
+    tot_ar_advance = 0.0
+    tot_ar_vat = 0.0
+    tot_ar_wht = 0.0
+    tot_ar_net = 0.0
+
+    ar_unbilled = 0
+    ar_invoiced = 0
+    ar_collected = 0
+
+    for ar in ar_lines:
+        amt_thb = float(ar.get("amount_thb") or 0)
+        ex = float(ar.get("exchange_rate") or 1.0)
+        vat_thb = float(ar.get("vat_amount") or 0) * ex
+        wht_thb = float(ar.get("wht_amount") or 0) * ex
+        net_thb = float(ar.get("net_amount") or 0) * ex
+
+        tot_ar_amount += amt_thb
+        tot_ar_vat += vat_thb
+        tot_ar_wht += wht_thb
+        tot_ar_net += net_thb
+
+        if str(ar.get("tax_type", "")).lower() == "advance":
+            tot_ar_advance += amt_thb
+
+        b_stat = str(ar.get("billing_status", "UNBILLED")).upper()
+        if b_stat in ["COLLECTED", "PAID"]:
+            ar_collected += 1
+        elif b_stat in ["INVOICED", "BILLED"]:
+            ar_invoiced += 1
+        else:
+            ar_unbilled += 1
+
+    gross_profit = tot_ar_amount - tot_ap_amount
+    margin_pct = (gross_profit / tot_ar_amount * 100) if tot_ar_amount > 0 else 0.0
+
+    # Side-by-side pairing
+    paired_rows = []
+    matched_ar_ids = set()
+
+    for idx, ap in enumerate(ap_lines, start=1):
+        # Look for explicitly matched AR first via matched_ap_id
+        matched_ar = next((ar for ar in ar_lines if ar.get("matched_ap_id") == ap["id"]), None)
+        
+        # Fallback to description or charge code matching if not explicitly linked
+        if not matched_ar:
+            ap_desc = (ap.get("description") or "").strip().lower()
+            ap_code = (ap.get("matched_charge_code") or "").strip().lower()
+            for ar in ar_lines:
+                if ar["id"] in matched_ar_ids:
+                    continue
+                ar_desc = (ar.get("description") or "").strip().lower()
+                ar_code = (ar.get("matched_charge_code") or "").strip().lower()
+                if (ap_code and ar_code and ap_code == ar_code) or (ap_desc and ar_desc and (ap_desc in ar_desc or ar_desc in ap_desc)):
+                    matched_ar = ar
+                    break
+
+        if matched_ar:
+            matched_ar_ids.add(matched_ar["id"])
+
+        ap_thb = float(ap.get("amount_thb") or 0)
+        ar_thb = float(matched_ar.get("amount_thb") or 0) if matched_ar else 0.0
+        line_profit = ar_thb - ap_thb
+        line_margin = (line_profit / ar_thb * 100) if ar_thb > 0 else 0.0
+
+        paired_rows.append({
+            "line_no": idx,
+            "ap_id": ap["id"],
+            "ap_category": ap.get("category"),
+            "ap_description": ap.get("description"),
+            "ap_supplier": ap.get("supplier") or "—",
+            "ap_currency": ap.get("currency", "THB"),
+            "ap_exchange_rate": float(ap.get("exchange_rate") or 1.0),
+            "ap_unit_price": float(ap.get("unit_price") or 0),
+            "ap_quantity": float(ap.get("quantity") or 1),
+            "ap_unit": ap.get("unit") or "UNIT",
+            "ap_amount": float(ap.get("amount") or 0),
+            "ap_amount_thb": ap_thb,
+            "ap_tax_type": ap.get("tax_type", "VAT 7%"),
+            "ap_vat_amount": float(ap.get("vat_amount") or 0),
+            "ap_wht_type": ap.get("wht_type", "None"),
+            "ap_wht_amount": float(ap.get("wht_amount") or 0),
+            "ap_net_amount": float(ap.get("net_amount") or 0),
+            "ap_payout_status": ap.get("payout_status", "UNPAID"),
+            "ap_voucher_no": ap.get("voucher_no") or "—",
+            "ap_vendor_inv": ap.get("vendor_invoice_no") or "—",
+            # AR side
+            "ar_id": matched_ar["id"] if matched_ar else None,
+            "ar_category": matched_ar.get("category") if matched_ar else "—",
+            "ar_description": matched_ar.get("description") if matched_ar else "— (Unbilled)",
+            "ar_customer": matched_ar.get("supplier") if matched_ar else "—",
+            "ar_currency": matched_ar.get("currency", "THB") if matched_ar else "THB",
+            "ar_exchange_rate": float(matched_ar.get("exchange_rate") or 1.0) if matched_ar else 1.0,
+            "ar_unit_price": float(matched_ar.get("unit_price") or 0) if matched_ar else 0.0,
+            "ar_quantity": float(matched_ar.get("quantity") or 1) if matched_ar else 0.0,
+            "ar_unit": matched_ar.get("unit") if matched_ar else "UNIT",
+            "ar_amount": float(matched_ar.get("amount") or 0) if matched_ar else 0.0,
+            "ar_amount_thb": ar_thb,
+            "ar_tax_type": matched_ar.get("tax_type", "VAT 7%") if matched_ar else "VAT 7%",
+            "ar_vat_amount": float(matched_ar.get("vat_amount") or 0) if matched_ar else 0.0,
+            "ar_wht_type": matched_ar.get("wht_type", "None") if matched_ar else "None",
+            "ar_wht_amount": float(matched_ar.get("wht_amount") or 0) if matched_ar else 0.0,
+            "ar_net_amount": float(matched_ar.get("net_amount") or 0) if matched_ar else 0.0,
+            "ar_billing_status": matched_ar.get("billing_status", "UNBILLED") if matched_ar else "UNBILLED",
+            "ar_invoice_no": matched_ar.get("invoice_no") if matched_ar else "—",
+            # Profit
+            "line_profit_thb": round(line_profit, 2),
+            "line_margin_pct": round(line_margin, 1),
+            "is_matched": bool(matched_ar),
+        })
+
+    # Unmatched standalone AR lines (Pure revenue)
+    standalone_idx = len(paired_rows) + 1
+    for ar in ar_lines:
+        if ar["id"] not in matched_ar_ids:
+            ar_thb = float(ar.get("amount_thb") or 0)
+            paired_rows.append({
+                "line_no": standalone_idx,
+                "ap_id": None,
+                "ap_category": "—",
+                "ap_description": "— (Direct Service Fee)",
+                "ap_supplier": "—",
+                "ap_currency": "THB",
+                "ap_exchange_rate": 1.0,
+                "ap_unit_price": 0.0,
+                "ap_quantity": 0.0,
+                "ap_unit": "UNIT",
+                "ap_amount": 0.0,
+                "ap_amount_thb": 0.0,
+                "ap_tax_type": "—",
+                "ap_vat_amount": 0.0,
+                "ap_wht_type": "—",
+                "ap_wht_amount": 0.0,
+                "ap_net_amount": 0.0,
+                "ap_payout_status": "—",
+                "ap_voucher_no": "—",
+                "ap_vendor_inv": "—",
+                # AR side
+                "ar_id": ar["id"],
+                "ar_category": ar.get("category"),
+                "ar_description": ar.get("description"),
+                "ar_customer": ar.get("supplier") or "—",
+                "ar_currency": ar.get("currency", "THB"),
+                "ar_exchange_rate": float(ar.get("exchange_rate") or 1.0),
+                "ar_unit_price": float(ar.get("unit_price") or 0),
+                "ar_quantity": float(ar.get("quantity") or 1),
+                "ar_unit": ar.get("unit") or "UNIT",
+                "ar_amount": float(ar.get("amount") or 0),
+                "ar_amount_thb": ar_thb,
+                "ar_tax_type": ar.get("tax_type", "VAT 7%"),
+                "ar_vat_amount": float(ar.get("vat_amount") or 0),
+                "ar_wht_type": ar.get("wht_type", "None"),
+                "ar_wht_amount": float(ar.get("wht_amount") or 0),
+                "ar_net_amount": float(ar.get("net_amount") or 0),
+                "ar_billing_status": ar.get("billing_status", "UNBILLED"),
+                "ar_invoice_no": ar.get("invoice_no") or "—",
+                # Profit
+                "line_profit_thb": round(ar_thb, 2),
+                "line_margin_pct": 100.0,
+                "is_matched": False,
+            })
+            standalone_idx += 1
+
+    return {
+        "shipment_id": shipment_id,
+        "ap_lines": ap_lines,
+        "ar_lines": ar_lines,
+        "matrix_rows": paired_rows,
+        "summary": {
+            "total_ap_amount": round(tot_ap_amount, 2),
+            "total_ap_advance": round(tot_ap_advance, 2),
+            "total_ap_vat": round(tot_ap_vat, 2),
+            "total_ap_wht": round(tot_ap_wht, 2),
+            "total_ap_net": round(tot_ap_net, 2),
+            "total_ar_amount": round(tot_ar_amount, 2),
+            "total_ar_advance": round(tot_ar_advance, 2),
+            "total_ar_vat": round(tot_ar_vat, 2),
+            "total_ar_wht": round(tot_ar_wht, 2),
+            "total_ar_net": round(tot_ar_net, 2),
+            "gross_profit": round(gross_profit, 2),
+            "margin_pct": round(margin_pct, 1),
+            "ap_counts": {"unpaid": ap_unpaid, "requested": ap_requested, "paid": ap_paid},
+            "ar_counts": {"unbilled": ar_unbilled, "invoiced": ar_invoiced, "collected": ar_collected},
+        },
+    }
+
+
+# =========================================================
+# PULL AP ➔ AR WITH CUSTOM MARKUP & DESCRIPTION
+# =========================================================
+
+def pull_ap_to_ar(
+    shipment_id: int,
+    ap_line_ids: List[int],
+    markup_pct: float = 0.0,
+    target_customer: Optional[str] = None,
+    custom_desc_map: Optional[Dict[int, str]] = None,
+    custom_rates_map: Optional[Dict[int, float]] = None,
+    user: Optional[Dict[str, Any]] = None,
+) -> List[int]:
+    """Pulls selected AP lines to create corresponding AR lines."""
+    user = user or {"username": "operation"}
+    tenant_id = get_current_tenant_id()
+    created_ar_ids = []
+    custom_desc_map = custom_desc_map or {}
+    custom_rates_map = custom_rates_map or {}
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            for ap_id in ap_line_ids:
+                cur.execute("SELECT * FROM job_costs WHERE id=%s AND tenant_id=%s", (ap_id, tenant_id))
+                ap = cur.fetchone()
+                if not ap:
+                    continue
+                ap_dict = dict(ap)
+
+                # Description: check custom or default
+                desc = custom_desc_map.get(ap_id) or ap_dict.get("description")
+                # Pricing: check custom rate or apply markup %
+                orig_rate = float(ap_dict.get("unit_price") or 0)
+                if ap_id in custom_rates_map:
+                    selling_rate = float(custom_rates_map[ap_id])
+                else:
+                    selling_rate = orig_rate * (1.0 + float(markup_pct or 0) / 100.0)
+
+                qty = float(ap_dict.get("quantity") or 1)
+                curr = ap_dict.get("currency") or "THB"
+                ex_rate = float(ap_dict.get("exchange_rate") or 1.0)
+                tax_type = ap_dict.get("tax_type") or "VAT 7%"
+                wht_type = ap_dict.get("wht_type") or "None"
+
+                ar_payload = {
+                    "shipment_id": shipment_id,
+                    "cost_type": "AR",
+                    "category": ap_dict.get("category"),
+                    "description": desc,
+                    "supplier": target_customer or ap_dict.get("supplier"),
+                    "quantity": qty,
+                    "unit": ap_dict.get("unit") or "UNIT",
+                    "unit_price": selling_rate,
+                    "currency": curr,
+                    "exchange_rate": ex_rate,
+                    "tax_type": tax_type,
+                    "wht_type": wht_type,
+                    "matched_charge_code": ap_dict.get("matched_charge_code"),
+                    "matched_ap_id": ap_id,
+                    "created_by": user.get("username", "operation"),
+                    "cost_status": "ESTIMATED",
+                    "billing_status": "UNBILLED",
+                }
+                ar_id = add_cost_line(ar_payload)
+                created_ar_ids.append(ar_id)
+
+    return created_ar_ids
+
+
+# =========================================================
+# BATCH AP PAYMENT VOUCHER / ADVANCE GENERATION
+# =========================================================
+
+def create_batch_payment_voucher(
+    shipment_id: int,
+    ap_line_ids: List[int],
+    payee_name: str,
+    voucher_type: str = "PAYMENT_VOUCHER",
+    due_date: Optional[str] = None,
+    user: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Groups selected AP lines into an AP Payment Voucher or Advance Request."""
+    user = user or {"username": "system", "id": 1}
+    tenant_id = get_current_tenant_id()
+    if not ap_line_ids:
+        raise ValueError("Please select at least one AP line to generate a Payment Voucher.")
+
+    # Determine prefix
+    prefix = "ADV" if "ADVANCE" in voucher_type.upper() else "PV"
+    voucher_no = generate_document_number(prefix)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # 1. Fetch Shipment job_no
+            cur.execute("SELECT job_no FROM shipments WHERE id=%s AND tenant_id=%s", (shipment_id, tenant_id))
+            s_row = cur.fetchone()
+            job_no = s_row["job_no"] if s_row else f"JOB-{shipment_id}"
+
+            # 2. Sum selected AP lines
+            cur.execute(
+                f"SELECT * FROM job_costs WHERE id IN ({','.join(['%s']*len(ap_line_ids))}) AND tenant_id=%s",
+                (*ap_line_ids, tenant_id)
+            )
+            selected_lines = [dict(r) for r in cur.fetchall()]
+
+            subtotal = sum(float(l.get("amount") or 0) for l in selected_lines)
+            vat_total = sum(float(l.get("vat_amount") or 0) for l in selected_lines)
+            wht_total = sum(float(l.get("wht_amount") or 0) for l in selected_lines)
+            total = subtotal + vat_total - wht_total
+            currency = selected_lines[0].get("currency", "THB") if selected_lines else "THB"
+            ex_rate = float(selected_lines[0].get("exchange_rate") or 1.0) if selected_lines else 1.0
+
+            # Resolve vendor_id if table requires it
+            vendor_id = None
+            if payee_name:
+                cur.execute("SELECT id FROM vendors WHERE (legal_name = %s OR vendor_code = %s) AND tenant_id = %s LIMIT 1", (payee_name, payee_name, tenant_id))
+                v_row = cur.fetchone()
+                if v_row:
+                    vendor_id = v_row["id"] if isinstance(v_row, dict) else v_row[0]
+            if not vendor_id:
+                cur.execute("SELECT id FROM vendors WHERE tenant_id = %s LIMIT 1", (tenant_id,))
+                v_row = cur.fetchone()
+                if v_row:
+                    vendor_id = v_row["id"] if isinstance(v_row, dict) else v_row[0]
+                else:
+                    v_code = f"V-{(payee_name or 'GEN')[:8].upper().replace(' ', '')}"
+                    cur.execute(
+                        "INSERT INTO vendors (tenant_id, vendor_code, legal_name, status) VALUES (%s, %s, %s, 'Active') RETURNING id",
+                        (tenant_id, v_code, payee_name or "General Vendor")
+                    )
+                    v_row = cur.fetchone()
+                    vendor_id = v_row["id"] if isinstance(v_row, dict) else v_row[0]
+
+            inv_no_val = selected_lines[0].get("vendor_invoice_no") if selected_lines else None
+            if not inv_no_val:
+                inv_no_val = voucher_no
+
+            # 3. Insert into ap_vouchers
+            cur.execute(
+                """
+                INSERT INTO ap_vouchers (
+                    tenant_id, voucher_no, voucher_type, job_no, vendor_id, payee_name,
+                    invoice_no, invoice_date, due_date, currency, exchange_rate,
+                    subtotal, tax, wht_total, total, status, created_by
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s, CURRENT_DATE, %s, %s,%s,%s,%s,%s,%s,'REQUESTED',%s)
+                RETURNING id
+                """,
+                (
+                    tenant_id, voucher_no, voucher_type, job_no, vendor_id, payee_name,
+                    inv_no_val, due_date or date.today().isoformat(), currency, ex_rate,
+                    subtotal, vat_total, wht_total, total, user.get("username", "accountant")
+                )
+            )
+
+            # 4. Update linked AP cost lines with voucher_no and status
+            cur.execute(
+                f"UPDATE job_costs SET payout_status='REQUESTED', voucher_no=%s WHERE id IN ({','.join(['%s']*len(ap_line_ids))}) AND tenant_id=%s",
+                (voucher_no, *ap_line_ids, tenant_id)
+            )
+            conn.commit()
+
+    return voucher_no
+
+
+# =========================================================
+# BATCH AR INVOICE GENERATION
+# =========================================================
+
+def create_batch_invoice_from_ar(
+    shipment_id: int,
+    ar_line_ids: List[int],
+    customer_id: Optional[int] = None,
+    user: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Groups selected AR lines into an official Customer Invoice / Billing Note."""
+    user = user or {"username": "system", "id": 1}
+    tenant_id = get_current_tenant_id()
+    if not ar_line_ids:
+        raise ValueError("Please select at least one AR line to generate an Invoice.")
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # 1. Fetch Shipment & Customer Info
+            cur.execute("SELECT * FROM shipments WHERE id=%s AND tenant_id=%s", (shipment_id, tenant_id))
+            ship = cur.fetchone()
+            if not ship:
+                raise ValueError("Shipment not found.")
+            ship_dict = dict(ship)
+
+            cust_id = customer_id or ship_dict.get("customer_id") or 1
+            cust_name = ship_dict.get("customer_name") or "Valued Customer"
+
+            # 2. Fetch selected AR lines
+            cur.execute(
+                f"SELECT * FROM job_costs WHERE id IN ({','.join(['%s']*len(ar_line_ids))}) AND tenant_id=%s",
+                (*ar_line_ids, tenant_id)
+            )
+            selected_lines = [dict(r) for r in cur.fetchall()]
+
+            # 3. Build Invoice payload
+            from managers.invoice_manager import create_invoice
+            inv_items = []
+            for l in selected_lines:
+                inv_items.append({
+                    "description": l.get("description") or "Freight Service",
+                    "quantity": float(l.get("quantity") or 1),
+                    "unit_price": float(l.get("unit_price") or 0),
+                    "tax_type": l.get("tax_type") or "VAT 7%",
+                    "wht_type": l.get("wht_type") or "None",
+                    "unit": l.get("unit") or "UNIT",
+                })
+
+            inv_data = {
+                "customer_id": cust_id,
+                "customer_name": cust_name,
+                "job_no": ship_dict.get("job_no"),
+                "booking_no": ship_dict.get("booking_no"),
+                "mbl_no": ship_dict.get("mbl_no"),
+                "hbl_no": ship_dict.get("hbl_no"),
+                "vessel": ship_dict.get("vessel"),
+                "voyage": ship_dict.get("voyage"),
+                "pol": ship_dict.get("pol"),
+                "pod": ship_dict.get("pod"),
+                "etd": ship_dict.get("etd"),
+                "eta": ship_dict.get("eta"),
+                "container_no": ship_dict.get("container_summary"),
+                "package_qty": ship_dict.get("package_quantity"),
+                "gross_weight": ship_dict.get("gross_weight"),
+                "measurement_cbm": ship_dict.get("cbm"),
+                "currency": selected_lines[0].get("currency", "THB") if selected_lines else "THB",
+                "exchange_rate": float(selected_lines[0].get("exchange_rate") or 1.0) if selected_lines else 1.0,
+                "created_by": user.get("username", "billing_specialist"),
+            }
+
+            doc_no = create_invoice(inv_data, inv_items)
+
+            # 4. Update linked AR cost lines
+            cur.execute(
+                f"UPDATE job_costs SET billing_status='INVOICED', invoice_no=%s WHERE id IN ({','.join(['%s']*len(ar_line_ids))}) AND tenant_id=%s",
+                (doc_no, *ar_line_ids, tenant_id)
+            )
+            conn.commit()
+
+    return doc_no
+
+
+# =========================================================
+# DOCUMENT AUDIT & TRACEABILITY
+# =========================================================
+
+def get_job_document_audit(shipment_id: int) -> Dict[str, Any]:
+    """
+    Retrieves all Payment Vouchers, Advance Requests, and Invoices linked to the job,
+    with an itemized breakdown of charges in each document.
+    """
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT cost_type, cost_status, COALESCE(SUM(amount_thb), 0) AS total
-                FROM job_costs
-                WHERE shipment_id=%s AND tenant_id=%s
-                GROUP BY cost_type, cost_status
-                """,
-                (shipment_id, tenant_id),
-            )
-            rows = cur.fetchall()
+            cur.execute("SELECT job_no FROM shipments WHERE id=%s AND tenant_id=%s", (shipment_id, tenant_id))
+            s_row = cur.fetchone()
+            job_no = s_row["job_no"] if s_row else ""
 
-            ar_estimated = ar_actual = 0.0
-            ap_estimated = ap_accrued = ap_actual = ap_posted = 0.0
+            # 1. Fetch Payment Vouchers
+            vouchers = []
+            if job_no:
+                cur.execute(
+                    "SELECT * FROM ap_vouchers WHERE (job_no=%s OR job_no LIKE %s) AND tenant_id=%s ORDER BY id DESC",
+                    (job_no, f"%{job_no}%", tenant_id)
+                )
+                v_rows = [dict(r) for r in cur.fetchall()]
+                for v in v_rows:
+                    v_no = v.get("voucher_no")
+                    # Fetch included AP lines
+                    cur.execute(
+                        "SELECT * FROM job_costs WHERE voucher_no=%s AND tenant_id=%s",
+                        (v_no, tenant_id)
+                    )
+                    v["items"] = [dict(r) for r in cur.fetchall()]
+                    vouchers.append(v)
 
-            for row in rows:
-                c_type = str(row["cost_type"] if isinstance(row, dict) else row[0]).upper()
-                c_status = str(row["cost_status"] if isinstance(row, dict) else row[1]).upper()
-                tot = float(row["total"] if isinstance(row, dict) else row[2])
+            # 2. Fetch Invoices
+            invoices = []
+            if job_no:
+                cur.execute(
+                    "SELECT * FROM invoices WHERE (job_no=%s OR job_no LIKE %s) AND tenant_id=%s ORDER BY id DESC",
+                    (job_no, f"%{job_no}%", tenant_id)
+                )
+                inv_rows = [dict(r) for r in cur.fetchall()]
+                for inv in inv_rows:
+                    doc_no = inv.get("doc_no")
+                    cur.execute(
+                        "SELECT * FROM job_costs WHERE invoice_no=%s AND tenant_id=%s",
+                        (doc_no, tenant_id)
+                    )
+                    inv["items"] = [dict(r) for r in cur.fetchall()]
+                    invoices.append(inv)
 
-                if c_type == "AR":
-                    if c_status == "ESTIMATED":
-                        ar_estimated += tot
-                    else:
-                        ar_actual += tot
-                elif c_type == "AP":
-                    if c_status == "ESTIMATED":
-                        ap_estimated += tot
-                    elif c_status == "ACCRUED":
-                        ap_accrued += tot
-                    elif c_status == "ACTUAL":
-                        ap_actual += tot
-                    elif c_status == "POSTED":
-                        ap_posted += tot
-
-            cur.execute(
-                """
-                SELECT COALESCE(SUM(ap.total * ap.exchange_rate), 0) AS total_ap_vouchers
-                FROM ap_vouchers ap
-                JOIN shipments s ON ap.job_no = s.job_no
-                WHERE s.id=%s
-                  AND ap.tenant_id=%s
-                  AND ap.status IN ('POSTED','PARTIALLY_PAID','PAID')
-                  AND s.tenant_id=%s
-                """,
-                (shipment_id, tenant_id, tenant_id),
-            )
-            ap_row = cur.fetchone()
-            voucher_total = ap_row["total_ap_vouchers"] if isinstance(ap_row, dict) else (ap_row[0] if ap_row else 0)
-            if voucher_total:
-                ap_posted += float(voucher_total)
-
-    est_net = ar_estimated - ap_estimated
-    act_net = ar_actual - (ap_accrued + ap_actual + ap_posted)
     return {
-        "ar_estimated": round(ar_estimated, 2),
-        "ar_actual": round(ar_actual, 2),
-        "ap_estimated": round(ap_estimated, 2),
-        "ap_accrued": round(ap_accrued, 2),
-        "ap_actual": round(ap_actual, 2),
-        "ap_posted": round(ap_posted, 2),
-        "estimated_net_profit": round(est_net, 2),
-        "actual_net_profit": round(act_net, 2),
+        "job_no": job_no,
+        "payment_vouchers": vouchers,
+        "invoices": invoices,
+    }
+
+
+# =========================================================
+# LEGACY COMPATIBILITY API
+# =========================================================
+
+def get_profit_summary(shipment_id: int) -> Dict[str, Any]:
+    ledger = get_unified_job_ledger(shipment_id)
+    summary = ledger["summary"]
+    return {
+        "total_ar": summary["total_ar_amount"],
+        "total_ap": summary["total_ap_amount"],
+        "net_profit": summary["gross_profit"],
+        "profit_margin": summary["margin_pct"],
+        "ar_actual": summary["total_ar_amount"],
+        "ap_actual": summary["total_ap_amount"],
+        "actual_net_profit": summary["gross_profit"],
+        "estimated_net_profit": summary["gross_profit"],
+        "ap_accrued": 0.0,
+        "ap_posted": 0.0,
     }
 
 
@@ -219,7 +829,7 @@ def create_profit_sheet(shipment_id: int, prepared_by: str = "System Engine") ->
 
     net_profit = summary["actual_net_profit"]
     total_ar = summary["ar_actual"]
-    total_ap = summary["ap_accrued"] + summary["ap_actual"] + summary["ap_posted"]
+    total_ap = summary["ap_actual"]
     margin = (net_profit / total_ar * 100) if total_ar > 0 else 0.0
 
     with get_connection() as conn:
@@ -264,243 +874,24 @@ def update_signoff(sheet_id: int, role: str, signer_name: str) -> bool:
             return cur.rowcount > 0
 
 
-# Functional domains for standard forwarding charges
-CHARGE_DOMAIN_MAP = {
-    # Ocean Freight
-    "ocean freight cost": "ocean_freight",
-    "ocean freight revenue": "ocean_freight",
-    "ocean freight": "ocean_freight",
-    "carrier sea freight": "ocean_freight",
-    "freight revenue": "ocean_freight",
-    "sea freight": "ocean_freight",
-    "of": "ocean_freight",
-    "oft": "ocean_freight",
-    # Air Freight
-    "air freight cost": "air_freight",
-    "air freight revenue": "air_freight",
-    "air freight": "air_freight",
-    "air": "air_freight",
-    "af": "air_freight",
-    # Port / Terminal / THC
-    "port terminal cost": "terminal",
-    "local terminal charges (ar)": "terminal",
-    "terminal handling charge": "terminal",
-    "thc": "terminal",
-    "port handling": "terminal",
-    "wharfage": "terminal",
-    # Customs
-    "customs duty paid": "customs",
-    "customs clearance service": "customs",
-    "customs clearance": "customs",
-    "customs duty": "customs",
-    "cus": "customs",
-    # Trucking
-    "inland carrier expenses": "trucking",
-    "inland trucking revenue": "trucking",
-    "inland trucking": "trucking",
-    "trucking": "trucking",
-    "transportation": "trucking",
-    "trk": "trucking",
-    # Warehousing & Storage
-    "warehousing": "warehousing",
-    "storage": "warehousing",
-    "demurrage": "warehousing",
-    "detention": "warehousing",
-    "cfs": "warehousing",
-    "cfs handling": "warehousing",
-    # Documentation
-    "documentation": "documentation",
-    "documentation fee": "documentation",
-    "doc": "documentation",
-    "bl fee": "documentation",
-    "bill of lading fee": "documentation",
-    # Handling / Agency / Misc
-    "agent handling fee": "handling",
-    "handling fee": "handling",
-    "miscellaneous cost": "miscellaneous",
-    "miscellaneous revenue": "miscellaneous",
-    "insurance": "insurance",
-    "ins": "insurance",
-}
-
-KEYWORD_GROUPS = [
-    ("ocean_freight", ["ocean", "sea", "freight", "oft", "vessel", "liner", "shipping line"]),
-    ("air_freight", ["air", "flight", "airline", "awb", "a/f"]),
-    ("terminal", ["terminal", "thc", "port", "wharfage", "gate", "lift"]),
-    ("trucking", ["truck", "transport", "inland", "delivery", "haulage", "trailer", "drop"]),
-    ("customs", ["customs", "duty", "clearance", "tax", "entry", "permit", "form"]),
-    ("documentation", ["doc", "documentation", "bl", "b/l", "waybill", "surrender", "amendment"]),
-    ("warehousing", ["warehous", "storage", "demurrage", "detention", "dem", "det", "cfs"]),
-    ("handling", ["handling", "service", "admin", "agent", "agency", "operation"]),
-    ("insurance", ["insurance", "insur", "survey", "claim"]),
-]
-
-
-def _resolve_charge_domain(code: str, category: str, description: str) -> str:
-    code_k = (code or "").strip().lower()
-    cat_k = (category or "").strip().lower()
-    desc_k = (description or "").strip().lower()
-
-    for k in (code_k, cat_k, desc_k):
-        if k and k in CHARGE_DOMAIN_MAP:
-            return CHARGE_DOMAIN_MAP[k]
-
-    combined = f"{code_k} {cat_k} {desc_k}"
-    for domain, kws in KEYWORD_GROUPS:
-        if any(kw in combined for kw in kws):
-            return domain
-
-    return cat_k or desc_k or "other"
-
-
 def get_cost_sell_audit_matrix(shipment_id: int) -> Dict[str, Any]:
-    """
-    Reconciles Cost (AP) vs. Sell (AR) charges line-by-line for Operation review.
-    Detects matched customer billings, unbilled/unmatched vendor costs, and pure service revenues.
-    """
-    tenant_id = get_current_tenant_id()
-    ap_lines = get_cost_lines(shipment_id, cost_type="AP")
-    ar_lines = get_cost_lines(shipment_id, cost_type="AR")
-
-    total_cost_thb = sum(float(x.get("amount_thb") or 0) for x in ap_lines)
-    total_sell_thb = sum(float(x.get("amount_thb") or 0) for x in ar_lines)
-    gross_profit = total_sell_thb - total_cost_thb
-    margin_pct = (gross_profit / total_sell_thb * 100) if total_sell_thb > 0 else 0.0
-
-    # Build comparison rows with smart domain & keyword matching
-    matrix_rows = []
-    matched_ar_ids = set()
-    unbilled_cost_count = 0
-    unbilled_cost_amount = 0.0
-
-    # Pre-calculate domain tags for all AR lines
-    ar_domains = {
-        ar["id"]: _resolve_charge_domain(
-            ar.get("matched_charge_code", ""),
-            ar.get("category", ""),
-            ar.get("description", ""),
-        )
-        for ar in ar_lines
-    }
-
-    for ap in ap_lines:
-        ap_desc = (ap.get("description") or ap.get("category") or "").strip().lower()
-        ap_cat = (ap.get("category") or "").strip().lower()
-        ap_code = (ap.get("matched_charge_code") or "").strip().lower()
-        is_billable = ap.get("billable_to_customer", 1) in (1, True, "1", "true")
-        ap_domain = _resolve_charge_domain(ap_code, ap_cat, ap_desc)
-
-        # Score all available AR lines to find the best match
-        best_ar = None
-        best_score = 0
-
-        for ar in ar_lines:
-            if ar["id"] in matched_ar_ids:
-                continue
-
-            ar_desc = (ar.get("description") or ar.get("category") or "").strip().lower()
-            ar_cat = (ar.get("category") or "").strip().lower()
-            ar_code = (ar.get("matched_charge_code") or "").strip().lower()
-            ar_domain = ar_domains.get(ar["id"], "")
-
-            score = 0
-            if ap_code and ar_code and ap_code == ar_code:
-                score = 100
-            elif ap_desc and ar_desc and ap_desc == ar_desc:
-                score = 95
-            elif ap_domain and ar_domain and ap_domain == ar_domain:
-                score = 85
-            elif (ap_desc and ar_desc) and (ap_desc in ar_desc or ar_desc in ap_desc):
-                score = 80
-            elif ap_cat and ar_cat and ap_cat == ar_cat:
-                score = 75
-
-            if score > best_score and score >= 75:
-                best_score = score
-                best_ar = ar
-
-        if best_ar:
-            matched_ar_ids.add(best_ar["id"])
-
-        if not is_billable:
-            status = "NON_BILLABLE"
-            badge = "⚪ Non-Billable (Internal)"
-        elif best_ar:
-            status = "MATCHED"
-            badge = "🟢 Matched & Billed"
-        else:
-            status = "UNBILLED_ALERT"
-            badge = "🔴 Unbilled Cost Alert!"
-            unbilled_cost_count += 1
-            unbilled_cost_amount += float(ap.get("amount_thb") or 0)
-
-        matrix_rows.append({
-            "cost_id": ap.get("id"),
-            "category": ap.get("category"),
-            "description": ap.get("description"),
-            "supplier": ap.get("supplier"),
-            "cost_amount": float(ap.get("amount") or 0),
-            "cost_currency": ap.get("currency", "THB"),
-            "cost_thb": float(ap.get("amount_thb") or 0),
-            "is_billable": is_billable,
-            "sell_id": best_ar.get("id") if best_ar else None,
-            "sell_description": best_ar.get("description") if best_ar else "—",
-            "sell_amount": float(best_ar.get("amount") or 0) if best_ar else 0.0,
-            "sell_currency": best_ar.get("currency", "THB") if best_ar else "THB",
-            "sell_thb": float(best_ar.get("amount_thb") or 0) if best_ar else 0.0,
-            "status": status,
-            "badge": badge,
-            "profit_thb": (float(best_ar.get("amount_thb") or 0) if best_ar else 0.0) - float(ap.get("amount_thb") or 0),
-        })
-
-    # Add standalone AR lines with no direct cost
-    for ar in ar_lines:
-        if ar["id"] not in matched_ar_ids:
-            matrix_rows.append({
-                "cost_id": None,
-                "category": ar.get("category"),
-                "description": ar.get("description"),
-                "supplier": "—",
-                "cost_amount": 0.0,
-                "cost_currency": "THB",
-                "cost_thb": 0.0,
-                "is_billable": True,
-                "sell_id": ar.get("id"),
-                "sell_description": ar.get("description"),
-                "sell_amount": float(ar.get("amount") or 0),
-                "sell_currency": ar.get("currency", "THB"),
-                "sell_thb": float(ar.get("amount_thb") or 0),
-                "status": "PURE_REVENUE",
-                "badge": "🔵 Service Revenue",
-                "profit_thb": float(ar.get("amount_thb") or 0),
-            })
-
+    ledger = get_unified_job_ledger(shipment_id)
     return {
         "shipment_id": shipment_id,
-        "total_cost_thb": round(total_cost_thb, 2),
-        "total_sell_thb": round(total_sell_thb, 2),
-        "gross_profit": round(gross_profit, 2),
-        "margin_pct": round(margin_pct, 2),
-        "unbilled_cost_count": unbilled_cost_count,
-        "unbilled_cost_amount": round(unbilled_cost_amount, 2),
-        "matrix_rows": matrix_rows,
+        "total_cost_thb": ledger["summary"]["total_ap_amount"],
+        "total_sell_thb": ledger["summary"]["total_ar_amount"],
+        "gross_profit": ledger["summary"]["gross_profit"],
+        "margin_pct": ledger["summary"]["margin_pct"],
+        "matrix_rows": ledger["matrix_rows"],
     }
 
 
 def lock_job_financials(shipment_id: int, user: Dict[str, Any]) -> bool:
-    """Lock Job Cost & Sell figures and handover to Accounting."""
-    tenant_id = get_current_tenant_id()
     uname = user.get("username", "operation")
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """
-                UPDATE shipments
-                SET financial_locked = TRUE,
-                    handover_to_accounting_at = CURRENT_TIMESTAMP,
-                    handover_by = %s
-                WHERE id = %s
-                """,
+                "UPDATE shipments SET financial_locked = TRUE, handover_to_accounting_at = CURRENT_TIMESTAMP, handover_by = %s WHERE id = %s",
                 (uname, shipment_id),
             )
             conn.commit()
@@ -508,17 +899,11 @@ def lock_job_financials(shipment_id: int, user: Dict[str, Any]) -> bool:
 
 
 def unlock_job_financials(shipment_id: int, user: Dict[str, Any]) -> bool:
-    """Unlock Job Cost & Sell figures for revision."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """
-                UPDATE shipments
-                SET financial_locked = FALSE
-                WHERE id = %s
-                """,
+                "UPDATE shipments SET financial_locked = FALSE WHERE id = %s",
                 (shipment_id,),
             )
             conn.commit()
             return cur.rowcount > 0
-
