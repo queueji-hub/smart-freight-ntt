@@ -54,15 +54,38 @@ def build_job_payload(quotation: Dict[str, Any], user: Optional[Dict[str, Any]] 
     quotation_no = str(quotation.get("quotation_no") or "").strip()
     if not quotation_no:
         raise ValueError("Quotation number is required.")
-    customer_id = quotation.get("customer_id")
-    sales_id = quotation.get("sales_id")
-    if customer_id is None:
-        raise ValueError("Quotation customer_id is required before handover.")
-    status = str(quotation.get("approval_status") or quotation.get("status") or "Draft").strip().lower()
-    if status not in {"approved", "accepted"}:
+    
+    # Check approval status from either status or approval_status field
+    status_raw = str(quotation.get("status") or "").strip().lower()
+    app_status_raw = str(quotation.get("approval_status") or "").strip().lower()
+    is_approved = any(s in {"approved", "accepted", "won", "active"} for s in (status_raw, app_status_raw))
+    if not is_approved:
         raise ValueError("Only approved quotations can be handed over to Operations.")
 
+    customer_id = quotation.get("customer_id")
+    sales_id = quotation.get("sales_id")
+    
+    # Auto-resolve customer_id from customer_name if not directly stored on quotation record
+    if customer_id is None and quotation.get("customer_name"):
+        tenant = _tenant()
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM customers WHERE company_name ILIKE %s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default') LIMIT 1",
+                (str(quotation.get("customer_name")).strip(), tenant),
+            )
+            row = cur.fetchone()
+            if row:
+                customer_id = row[0] if isinstance(row, (tuple, list)) else row["id"]
+
+    if customer_id is None:
+        raise ValueError("Quotation customer_id is required before handover.")
+
     customer_name, sales_name = _master_labels(customer_id, sales_id)
+    if not customer_name:
+        customer_name = quotation.get("customer_name")
+    if not sales_name:
+        sales_name = quotation.get("salesperson") or quotation.get("sales_person")
+
     return {
         "status": "Proceed",
         "job_type": quotation.get("job_type"),

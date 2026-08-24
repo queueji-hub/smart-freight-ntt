@@ -66,7 +66,25 @@ def list_parties(role_type: Optional[str] = None, active_only: bool = True) -> L
         where += " AND p.is_active=TRUE"
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(f"SELECT DISTINCT p.* FROM business_parties p {joins} WHERE {where} ORDER BY p.party_code", params)
-        return [dict(r) for r in cur.fetchall()]
+        rows = [dict(r) for r in cur.fetchall()]
+        for r in rows:
+            pid = r.get("id")
+            if pid:
+                cur.execute("SELECT role_type FROM party_roles WHERE party_id=%s AND tenant_id=%s AND is_active=TRUE", (pid, tenant))
+                r["roles"] = [x["role_type"] if isinstance(x, dict) or hasattr(x, "keys") else x[0] for x in cur.fetchall()]
+                cur.execute("SELECT * FROM party_finance WHERE party_id=%s AND tenant_id=%s LIMIT 1", (pid, tenant))
+                fin = cur.fetchone()
+                if fin:
+                    fdict = dict(fin)
+                    r["credit_limit"] = fdict.get("credit_limit")
+                    r["credit_currency"] = fdict.get("credit_currency")
+                    r["credit_days"] = fdict.get("credit_days")
+                    r["payment_term_code"] = fdict.get("payment_term_code")
+                    r["bank_name"] = fdict.get("bank_name")
+                    r["bank_account_name"] = fdict.get("bank_account_name")
+                    r["bank_account_no"] = fdict.get("bank_account_no")
+                    r["swift_code"] = fdict.get("swift_code")
+        return rows
 
 
 def upsert_party(data: Dict[str, Any], roles: List[str], finance: Optional[Dict[str, Any]] = None, user: Optional[Dict[str, Any]] = None) -> int:

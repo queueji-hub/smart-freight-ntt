@@ -148,9 +148,9 @@ def list_quotations() -> List[Dict[str, Any]]:
                 SELECT 
                     quotation_no, job_type, customer_name, subject,
                     quotation_date, validity_date, status, pol, pod, salesperson,
-                    service_type, incoterm
+                    service_type, incoterm, approval_status, customer_id, sales_id, customer_address
                 FROM quotations 
-                WHERE tenant_id = %s
+                WHERE (tenant_id = %s OR tenant_id IS NULL OR tenant_id = 'default')
                 ORDER BY id DESC;
             """, (tenant_id,))
             rows = cur.fetchall()
@@ -168,9 +168,19 @@ def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            # Fetch Header record (tenant-isolated)
+            # Fetch Header record joined with customer master for address fallback
             cur.execute("""
-                SELECT * FROM quotations WHERE quotation_no = %s AND tenant_id = %s LIMIT 1;
+                SELECT q.*, 
+                       c.address as cust_master_address, 
+                       c.billing_address as cust_master_billing_address,
+                       c.contact_person as cust_contact, 
+                       c.tel as cust_tel, 
+                       c.email as cust_email,
+                       c.id as resolved_customer_id
+                FROM quotations q
+                LEFT JOIN customers c ON (q.customer_id = c.id OR (q.customer_name = c.company_name AND (q.tenant_id = c.tenant_id OR c.tenant_id IS NULL OR c.tenant_id = 'default')))
+                WHERE q.quotation_no = %s AND (q.tenant_id = %s OR q.tenant_id IS NULL OR q.tenant_id = 'default') 
+                LIMIT 1;
             """, (quotation_no, tenant_id))
 
             row = cur.fetchone()
@@ -178,6 +188,18 @@ def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
                 return None
 
             q_data = dict(row)
+
+            # Fallback customer address and contact info from Customer Master if empty
+            if not (q_data.get("customer_address") or "").strip():
+                q_data["customer_address"] = (q_data.get("cust_master_address") or q_data.get("cust_master_billing_address") or "").strip()
+            if not (q_data.get("attention") or "").strip() and q_data.get("cust_contact"):
+                q_data["attention"] = q_data["cust_contact"]
+            if not (q_data.get("tel") or "").strip() and q_data.get("cust_tel"):
+                q_data["tel"] = q_data["cust_tel"]
+            if not (q_data.get("customer_email") or "").strip() and q_data.get("cust_email"):
+                q_data["customer_email"] = q_data["cust_email"]
+            if q_data.get("customer_id") is None and q_data.get("resolved_customer_id"):
+                q_data["customer_id"] = q_data["resolved_customer_id"]
 
             # Format dates seamlessly to strings for frontend engine compliance
             for date_key in ["quotation_date", "validity_date"]:
@@ -216,7 +238,7 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
             try:
                 tenant_id = get_current_tenant_id()
                 # 1. Row Lock Verification check (single fetch only, tenant-isolated)
-                cur.execute("SELECT id FROM quotations WHERE quotation_no = %s AND tenant_id = %s LIMIT 1;", (quotation_no, tenant_id))
+                cur.execute("SELECT id FROM quotations WHERE quotation_no = %s AND (tenant_id = %s OR tenant_id IS NULL OR tenant_id = 'default') LIMIT 1;", (quotation_no, tenant_id))
                 header = cur.fetchone()
                 if not header:
                     raise ValueError(f"Quotation '{quotation_no}' not found in database.")
@@ -234,8 +256,9 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                         shipper = %s, consignee = %s, service_type = %s, origin = %s, destination = %s,
                         incoterm = %s, freight_term = %s, hs_code = %s, quantity = %s, package_type = %s,
                         weight_kg = %s, volume_cbm = %s, container_type = %s, container_quantity = %s, is_dg = %s,
-                        status = COALESCE(%s, status)
-                    WHERE id = %s AND tenant_id = %s;
+                        status = COALESCE(%s, status),
+                        approval_status = COALESCE(%s, approval_status, status)
+                    WHERE id = %s AND (tenant_id = %s OR tenant_id IS NULL OR tenant_id = 'default');
                 """, (
                     data.get("job_type"), data.get("customer_name"), data.get("attention"), data.get("tel"),
                     data.get("carrier"), data.get("pol"), data.get("pod"), data.get("quotation_date"),
@@ -250,6 +273,7 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                     data.get("container_type", ""), int(data.get("container_quantity") or 0), 
                     bool(data.get("is_dg") or False),
                     data.get("status"),
+                    data.get("approval_status") or data.get("status"),
                     q_id, tenant_id
                 ))
 
@@ -294,9 +318,9 @@ def set_quotation_status(quotation_no: str, status: str) -> None:
         with conn.cursor() as cur:
             cur.execute("""
                 UPDATE quotations 
-                SET status = %s 
-                WHERE quotation_no = %s AND tenant_id = %s;
-            """, (status, quotation_no, tenant_id))
+                SET status = %s, approval_status = %s 
+                WHERE quotation_no = %s AND (tenant_id = %s OR tenant_id IS NULL OR tenant_id = 'default');
+            """, (status, status, quotation_no, tenant_id))
             conn.commit()
 
 

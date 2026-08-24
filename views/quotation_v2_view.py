@@ -72,6 +72,7 @@ def _master_data():
     carriers = list_parties("CARRIER", active_only=True) or []
     ports = list_ports(active_only=True) or []
     charges = list_charges(active_only=True) or []
+    customer_dict = {int(r["id"]): r for r in customers if r.get("id")}
     customer_map = {int(r["id"]): r.get("company_name", str(r["id"])) for r in customers if r.get("id")}
     sales_map = {int(r["id"]): (r.get("full_name") or r.get("username") or str(r["id"])) for r in sales if r.get("id")}
     carrier_map = {int(r["id"]): f"{r.get('party_code')} — {r.get('display_name') or r.get('legal_name')}" for r in carriers if r.get("id")}
@@ -83,35 +84,41 @@ def _master_data():
         code = str(r.get("charge_code") or "").strip().upper()
         if code:
             charge_map[code] = r
-    return customer_map, sales_map, carrier_map, port_map, charge_map
+    return customer_map, customer_dict, sales_map, carrier_map, port_map, charge_map
 
 
 def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | None = None, key: str = "qv2_items") -> list[dict]:
-    rows = []
-    # Build list of readable charge labels e.g. "OFR — Ocean Freight"
+    # Build comprehensive charge labels including all master codes + any custom codes in existing
     charge_labels = {code: f"{code} — {c.get('description', '')}" for code, c in charge_map.items()}
     if not charge_labels:
         charge_labels = {"FRT": "FRT — Freight Charge"}
 
+    rows = []
     for raw in existing or []:
         item = dict(raw or {})
         code = _s(item.get("charge_code")).upper()
         desc = _s(item.get("description"))
         if not code and desc:
             match = next((c for c in charge_map.values() if _s(c.get("description")).lower() == desc.lower()), None)
-            code = _s(match.get("charge_code")).upper() if match else "MISC"
+            code = _s(match.get("charge_code")).upper() if match else ""
+        if not code:
+            code = "MISC"
         if code not in charge_labels:
             charge_labels[code] = f"{code} — {desc or code}"
         
         qty = float(item.get("quantity") or 1.0)
         rate = float(item.get("unit_rate") or item.get("price") or 0.0)
-        unit = _s(item.get("unit"), "CONTAINER")
+        unit = _s(item.get("unit"), "CONTAINER").upper()
+        # Match unit with UNIT_OPTIONS
+        matched_unit = next((u for u in UNIT_OPTIONS if u.upper() == unit), "SHPMT")
         currency = _s(item.get("currency"), "USD").upper()
+        if currency not in CURRENCY_OPTIONS:
+            currency = "USD"
         
         rows.append({
             "charge_code": code,
             "description": desc or (charge_map.get(code, {}).get("description") or code),
-            "unit": unit,
+            "unit": matched_unit,
             "currency": currency,
             "quantity": qty,
             "unit_rate": rate,
@@ -182,14 +189,15 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
 
 
 def _create_form(user: Dict[str, Any]):
-    customer_map, sales_map, carrier_map, port_map, charge_map = _master_data()
+    customer_map, customer_dict, sales_map, carrier_map, port_map, charge_map = _master_data()
     today = date.today()
 
     with st.form("quotation_v2_create"):
-        section("1. Quotation Details (ข้อมูลทั่วไป)")
+        section("1. Quotation Details (ข้อมูลทั่วไป & ลูกค้า)")
         c1, c2, c3 = st.columns(3)
         with c1:
-            customer_id = st.selectbox("Customer * (ลูกค้า)", list(customer_map), format_func=lambda x: customer_map[x]) if customer_map else None
+            cust_keys = list(customer_map)
+            customer_id = st.selectbox("Customer * (ลูกค้า)", cust_keys, format_func=lambda x: customer_map[x]) if cust_keys else None
             attention = st.text_input("Attention (ผู้ติดต่อ)")
             tel = st.text_input("Telephone (เบอร์โทร)")
         with c2:
@@ -200,6 +208,13 @@ def _create_form(user: Dict[str, Any]):
             job_type = st.selectbox("Job Type * (ประเภทงาน)", list(JOB_TYPES.keys()), format_func=lambda x: JOB_TYPES.get(x, x))
             issue_date = st.date_input("Issue Date (วันที่ออก)", today)
             valid_until = st.date_input("Valid Until (ใช้ได้ถึง)", today + timedelta(days=30))
+
+        # Customer Address field (Auto-filled from database if available)
+        default_addr = ""
+        if customer_id and customer_id in customer_dict:
+            c_info = customer_dict[customer_id]
+            default_addr = _s(c_info.get("address") or c_info.get("billing_address"))
+        customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า - ดึงจากฐานข้อมูลลูกค้าอัตโนมัติ)", value=default_addr, height=70)
 
         section("2. Routing & Incoterms (เส้นทางและการส่งมอบ)")
         r1, r2, r3, r4 = st.columns(4)
@@ -278,10 +293,17 @@ def _create_form(user: Dict[str, Any]):
                 st.error(error)
             return
 
+        # Fallback address from customer master if field is left blank
+        final_addr = customer_address.strip()
+        if not final_addr and customer_id in customer_dict:
+            c_rec = customer_dict[customer_id]
+            final_addr = _s(c_rec.get("address") or c_rec.get("billing_address"))
+
         payload = {
             "job_type": job_type,
             "customer_id": customer_id,
             "customer_name": customer_map[customer_id],
+            "customer_address": final_addr,
             "sales_id": sales_id,
             "salesperson": sales_map.get(sales_id, "") if sales_id else "",
             "attention": attention.strip(),
@@ -327,52 +349,77 @@ def _create_form(user: Dict[str, Any]):
 
 def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
     qno = _s(selected.get("quotation_no"))
-    customer_map, sales_map, carrier_map, port_map, charge_map = _master_data()
+    customer_map, customer_dict, sales_map, carrier_map, port_map, charge_map = _master_data()
     today = date.today()
 
-    # Index resolution
+    # Index resolution with robust text-matching fallback
     cust_keys = list(customer_map)
     cur_cust = selected.get("customer_id")
     if cur_cust not in customer_map:
         c_name = _s(selected.get("customer_name")).lower()
-        cur_cust = next((cid for cid, name in customer_map.items() if name.lower() == c_name), cust_keys[0] if cust_keys else None)
+        cur_cust = next((cid for cid, name in customer_map.items() if name.lower() == c_name or c_name in name.lower()), cust_keys[0] if cust_keys else None)
     cust_idx = cust_keys.index(cur_cust) if cur_cust in cust_keys else 0
 
     sales_keys = list(sales_map)
     cur_sales = selected.get("sales_id")
     if cur_sales not in sales_map:
         s_name = _s(selected.get("salesperson") or selected.get("sales_person")).lower()
-        cur_sales = next((sid for sid, name in sales_map.items() if name.lower() == s_name), sales_keys[0] if sales_keys else None)
+        cur_sales = next((sid for sid, name in sales_map.items() if s_name and (s_name in name.lower() or name.lower() in s_name)), sales_keys[0] if sales_keys else None)
     sales_idx = sales_keys.index(cur_sales) if cur_sales in sales_keys else 0
 
     job_keys = list(JOB_TYPES.keys())
-    cur_job = _s(selected.get("job_type"), job_keys[0] if job_keys else "SEA_EXPORT")
+    raw_job = _s(selected.get("job_type"), "SE").upper()
+    job_aliases = {"SEA_EXP": "SE", "SEA_IMP": "SI", "AIR_EXP": "AE", "AIR_IMP": "AI", "TRK_EXP": "TE", "TRK_IMP": "TI", "SEA_EXPORT": "SE", "SEA_IMPORT": "SI", "AIR_EXPORT": "AE", "AIR_IMPORT": "AI"}
+    cur_job = job_aliases.get(raw_job, raw_job)
+    if cur_job not in job_keys and job_keys:
+        cur_job = job_keys[0]
     job_idx = job_keys.index(cur_job) if cur_job in job_keys else 0
 
     carrier_keys = list(carrier_map)
     cur_carrier = selected.get("carrier_id")
+    if cur_carrier not in carrier_map:
+        c_txt = _s(selected.get("carrier")).lower()
+        cur_carrier = next((cid for cid, label in carrier_map.items() if c_txt and (c_txt in label.lower() or label.lower() in c_txt)), carrier_keys[0] if carrier_keys else None)
     carrier_idx = carrier_keys.index(cur_carrier) if cur_carrier in carrier_keys else 0
 
     port_keys = list(port_map)
     cur_pol = selected.get("pol_id")
+    if cur_pol not in port_map:
+        pol_txt = _s(selected.get("pol")).lower()
+        cur_pol = next((pid for pid, label in port_map.items() if pol_txt and (pol_txt in label.lower() or label.lower().startswith(pol_txt[:5]))), port_keys[0] if port_keys else None)
     pol_idx = port_keys.index(cur_pol) if cur_pol in port_keys else 0
+
     cur_pod = selected.get("pod_id")
+    if cur_pod not in port_map:
+        pod_txt = _s(selected.get("pod")).lower()
+        cur_pod = next((pid for pid, label in port_map.items() if pod_txt and (pod_txt in label.lower() or label.lower().startswith(pod_txt[:5]))), port_keys[0] if port_keys else None)
     pod_idx = port_keys.index(cur_pod) if cur_pod in port_keys else 0
 
-    cur_mode = _s(selected.get("mode"), "SEA").upper()
+    raw_mode = _s(selected.get("mode"), "SEA").upper()
+    cur_mode = next((m for m in MODE_OPTIONS if m in raw_mode or raw_mode in m), "SEA")
     mode_idx = MODE_OPTIONS.index(cur_mode) if cur_mode in MODE_OPTIONS else 0
 
-    cur_serv = _s(selected.get("service_type"))
+    raw_serv = _s(selected.get("service_type")).upper()
+    cur_serv = next((s for s in SERVICE_OPTIONS if s.upper() == raw_serv), "")
     serv_idx = SERVICE_OPTIONS.index(cur_serv) if cur_serv in SERVICE_OPTIONS else 0
 
-    cur_inco = _s(selected.get("incoterm"))
+    raw_inco = _s(selected.get("incoterm")).upper()
+    cur_inco = next((i for i in INCOTERM_OPTIONS if i.upper() == raw_inco), "")
     inco_idx = INCOTERM_OPTIONS.index(cur_inco) if cur_inco in INCOTERM_OPTIONS else 0
 
-    cur_cont_type = _s(selected.get("container_type"))
+    raw_cont = _s(selected.get("container_type"))
+    cur_cont_type = next((c for c in CONTAINER_TYPE_OPTIONS if c.lower() == raw_cont.lower()), "")
     cont_type_idx = CONTAINER_TYPE_OPTIONS.index(cur_cont_type) if cur_cont_type in CONTAINER_TYPE_OPTIONS else 0
 
-    cur_pkg_type = _s(selected.get("package_type"))
+    raw_pkg = _s(selected.get("package_type"))
+    cur_pkg_type = next((p for p in PACKAGE_TYPE_OPTIONS if p.lower() == raw_pkg.lower()), "")
     pkg_type_idx = PACKAGE_TYPE_OPTIONS.index(cur_pkg_type) if cur_pkg_type in PACKAGE_TYPE_OPTIONS else 0
+
+    # Address fallback from customer database if empty
+    curr_addr = _s(selected.get("customer_address"))
+    if not curr_addr and cur_cust in customer_dict:
+        c_item = customer_dict[cur_cust]
+        curr_addr = _s(c_item.get("address") or c_item.get("billing_address"))
 
     issue_date_val = _date(selected.get("quotation_date"), today)
     valid_until_val = _date(selected.get("validity_date"), issue_date_val + timedelta(days=30))
@@ -393,6 +440,9 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
             issue_date = st.date_input("Issue Date", issue_date_val, key=f"edit_issue_{qno}")
             valid_until = st.date_input("Valid Until", valid_until_val, key=f"edit_valid_{qno}")
 
+        # Customer Address field in Edit form
+        customer_address = st.text_area("Customer Address (ที่อยู่ลูกค้า)", value=curr_addr, height=70, key=f"edit_addr_{qno}")
+
         section("2. Routing & Incoterms")
         r1, r2, r3, r4 = st.columns(4)
         with r1:
@@ -412,7 +462,10 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
         with r7:
             incoterm = st.selectbox("Incoterm", INCOTERM_OPTIONS, index=inco_idx, key=f"edit_inco_{qno}")
         with r8:
-            freight_term = st.selectbox("Freight Term", ["", "Prepaid", "Collect"], index=1 if _s(selected.get("freight_term")).lower() == "prepaid" else (2 if _s(selected.get("freight_term")).lower() == "collect" else 0), key=f"edit_frt_{qno}")
+            raw_frt = _s(selected.get("freight_term")).title()
+            frt_opts = ["", "Prepaid", "Collect"]
+            frt_idx = frt_opts.index(raw_frt) if raw_frt in frt_opts else (1 if raw_frt.lower() == "prepaid" else (2 if raw_frt.lower() == "collect" else 0))
+            freight_term = st.selectbox("Freight Term", frt_opts, index=frt_idx, key=f"edit_frt_{qno}")
 
         carrier_id = st.selectbox("Preferred Carrier", carrier_keys, index=carrier_idx, format_func=lambda x: carrier_map[x], key=f"edit_carr_{qno}") if carrier_keys else None
 
@@ -459,10 +512,16 @@ def _render_edit_form(selected: Dict[str, Any], user: Dict[str, Any]):
                 st.error(error)
             return
 
+        final_edit_addr = customer_address.strip()
+        if not final_edit_addr and customer_id in customer_dict:
+            c_rec = customer_dict[customer_id]
+            final_edit_addr = _s(c_rec.get("address") or c_rec.get("billing_address"))
+
         payload = {
             "job_type": job_type,
             "customer_id": customer_id,
             "customer_name": customer_map[customer_id],
+            "customer_address": final_edit_addr,
             "sales_id": sales_id,
             "salesperson": sales_map.get(sales_id, "") if sales_id else "",
             "attention": attention.strip(),

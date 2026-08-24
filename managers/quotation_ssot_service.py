@@ -70,14 +70,41 @@ def _assert_customer_scope(customer_id: Any) -> None:
         pass
 
 
+def _enrich_customer_data(data: Dict[str, Any], customer_id: Any) -> Dict[str, Any]:
+    enriched = dict(data)
+    if not customer_id:
+        return enriched
+    try:
+        tenant = get_current_tenant_id() or "default"
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT company_name, address, billing_address, contact_person, tel, email FROM customers WHERE id=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default') LIMIT 1", (customer_id, tenant))
+            row = cur.fetchone()
+            if row:
+                cust = dict(row)
+                if not (enriched.get("customer_name") or "").strip():
+                    enriched["customer_name"] = cust.get("company_name", "")
+                if not (enriched.get("customer_address") or "").strip():
+                    enriched["customer_address"] = (cust.get("address") or cust.get("billing_address") or "").strip()
+                if not (enriched.get("attention") or "").strip() and cust.get("contact_person"):
+                    enriched["attention"] = cust.get("contact_person")
+                if not (enriched.get("tel") or "").strip() and cust.get("tel"):
+                    enriched["tel"] = cust.get("tel")
+                if not (enriched.get("customer_email") or "").strip() and cust.get("email"):
+                    enriched["customer_email"] = cust.get("email")
+    except Exception:
+        pass
+    return enriched
+
+
 def create_quotation_ssot(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
     customer_id = data.get("customer_id")
     sales_id = data.get("sales_id")
     if customer_id is None:
         raise ValueError("customer_id is required for new quotations.")
     _assert_customer_scope(customer_id)
+    enriched_data = _enrich_customer_data(data, customer_id)
     normalized_items = _normalize_items(items)
-    quotation_no = _legacy_create_quotation(data, normalized_items)
+    quotation_no = _legacy_create_quotation(enriched_data, normalized_items)
     sync_quotation_master_ids(quotation_no, customer_id=customer_id, sales_id=sales_id)
     return quotation_no
 
@@ -88,8 +115,9 @@ def update_quotation_ssot(quotation_no: str, data: Dict[str, Any], items: List[D
     if customer_id is None:
         raise ValueError("customer_id is required for quotation updates.")
     _assert_customer_scope(customer_id)
+    enriched_data = _enrich_customer_data(data, customer_id)
     normalized_items = _normalize_items(items)
-    _legacy_update_quotation(quotation_no, data, normalized_items)
+    _legacy_update_quotation(quotation_no, enriched_data, normalized_items)
     sync_quotation_master_ids(quotation_no, customer_id=customer_id, sales_id=sales_id)
 
 

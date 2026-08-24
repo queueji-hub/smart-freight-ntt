@@ -80,13 +80,19 @@ def set_approval_status(entity: str, doc_no: str, status: str) -> None:
     if status not in APPROVAL_STATES:
         raise ValueError("Invalid approval status")
     table, key = _table(entity)
-    tenant = get_current_tenant_id()
+    tenant = get_current_tenant_id() or "default"
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                f"UPDATE {table} SET approval_status=%s WHERE {key}=%s AND tenant_id=%s",
-                (status, doc_no, tenant),
-            )
+            if table == "quotations":
+                cur.execute(
+                    f"UPDATE {table} SET approval_status=%s, status=%s WHERE {key}=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default')",
+                    (status, status, doc_no, tenant),
+                )
+            else:
+                cur.execute(
+                    f"UPDATE {table} SET approval_status=%s WHERE {key}=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default')",
+                    (status, doc_no, tenant),
+                )
             if cur.rowcount == 0:
                 raise ValueError(f"{entity} '{doc_no}' not found")
         conn.commit()

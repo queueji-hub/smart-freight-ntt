@@ -16,7 +16,8 @@ ROLE_OPTIONS = ["CUSTOMER", "CARRIER", "VENDOR", "AGENT", "CO_LOADER", "SHIPPER"
 def _party_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
     record = record or {}
     section("Business Party")
-    roles = st.multiselect("Roles", ROLE_OPTIONS, default=["CUSTOMER"], key=f"party_roles_{record.get('id','new')}")
+    existing_roles = [r for r in record.get("roles", []) if r in ROLE_OPTIONS]
+    roles = st.multiselect("Roles", ROLE_OPTIONS, default=existing_roles or ["CUSTOMER"], key=f"party_roles_{record.get('id','new')}")
     c1, c2, c3 = st.columns(3)
     with c1:
         code = st.text_input("Code *", value=str(record.get("party_code") or ""), max_chars=5).upper()
