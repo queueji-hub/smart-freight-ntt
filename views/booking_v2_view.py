@@ -5,6 +5,12 @@ Supports dynamic transport modes:
 - Sea Freight - CFS/CFS (LCL)
 - Air Freight
 - Truck / Cross-Border Freight
+
+Features:
+- Instant Job Conversion without restrictive multi-step gating
+- Duplicate Booking for quick cloning of recurring freight orders
+- Lock / Unlock control to safeguard against accidental data revisions
+- Seamless synchronization of revised booking dates/vessels to linked operational jobs
 """
 from __future__ import annotations
 
@@ -22,6 +28,10 @@ from managers.booking_manager import (
     can_transition_booking_status,
     convert_booking_to_job,
     create_booking,
+    duplicate_booking,
+    lock_booking,
+    unlock_booking,
+    delete_booking,
     get_booking,
     list_bookings,
     update_booking,
@@ -530,6 +540,9 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
     current_status = _s(selected.get("status"), "DRAFT").upper()
     mode = _s(selected.get("mode") or ("AIR" if "AE" in str(selected.get("job_type")) or "AI" in str(selected.get("job_type")) else ("TRUCK" if "TE" in str(selected.get("job_type")) or "TI" in str(selected.get("job_type")) else "SEA")))
     cargo_type = _s(selected.get("cargo_type"), "FCL" if mode == "SEA" else mode)
+    is_locked = bool(selected.get("is_locked"))
+    lock_badge = "🔒 LOCKED" if is_locked else "🔓 UNLOCKED"
+    linked_job = selected.get("job_no")
 
     section(f"Booking Control Center: {booking_no}")
     summary = st.columns(5)
@@ -537,7 +550,7 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
     summary[1].metric("Carrier Booking Ref", _s(selected.get("carrier_booking_no") or selected.get("mawb_no"), "—"))
     summary[2].metric("Customer", _s(selected.get("customer_name"), "—"))
     summary[3].metric("Mode / Term", f"{mode} ({_s(selected.get('service_term') or cargo_type)})")
-    summary[4].metric("Status", current_status)
+    summary[4].metric("Control / Status", f"{lock_badge} · {current_status}")
 
     section("Routing & Transport Execution")
     cols = st.columns(5)
@@ -593,107 +606,197 @@ def _render_selected(selected: Dict[str, Any], user: Dict[str, Any], can_edit: b
         trk_cols[2].metric("Loading Date", _s(selected.get("loading_date") or selected.get("etd"), "—"))
         trk_cols[3].metric("Delivery Date", _s(selected.get("delivery_date") or selected.get("eta"), "—"))
 
-    section("Action Toolbar")
-    act = st.columns(5)
+    section("Action Toolbar (การดำเนินการ)")
+    act = st.columns([2, 2, 2, 2, 2])
     with act[0]:
         _render_pdf_action(selected, f"booking_{booking_no}")
+    
     with act[1]:
-        if can_edit and st.button("📤 Submit", key=f"submit_{booking_no}", width="stretch", help="ส่งบุ๊คกิ้งเพื่อยืนยัน") and current_status == "DRAFT":
-            ok, reason = can_transition_booking_status(current_status, "SUBMITTED")
-            if ok:
-                update_booking(booking_no, {"status": "SUBMITTED"}, user.get("tenant_id"))
-                st.success("Booking status changed to SUBMITTED.")
-                st.rerun()
-            else:
-                st.error(reason)
-    with act[2]:
-        if can_edit and st.button("✅ Confirm", key=f"confirm_{booking_no}", type="secondary", width="stretch", help="ยืนยันบุ๊คกิ้ง (พร้อมเปิด Job)") and current_status in {"SUBMITTED", "DRAFT"}:
-            ok, reason = can_transition_booking_status(current_status, "CONFIRMED")
-            if not ok and current_status == "DRAFT":
-                update_booking(booking_no, {"status": "SUBMITTED"}, user.get("tenant_id"))
-                ok, reason = can_transition_booking_status("SUBMITTED", "CONFIRMED")
-            if ok:
-                update_booking(booking_no, {"status": "CONFIRMED"}, user.get("tenant_id"))
-                st.success("Booking CONFIRMED!")
-                st.rerun()
-            else:
-                st.error(reason)
-    with act[3]:
-        if can_edit and st.button("🚀 Convert to Job", key=f"convert_{booking_no}", type="primary", width="stretch", help="เปิด Job จากข้อมูล Booking นี้") and current_status in {"CONFIRMED", "SUBMITTED", "DRAFT"}:
-            try:
-                if current_status != "CONFIRMED":
-                    update_booking(booking_no, {"status": "SUBMITTED"}, user.get("tenant_id"))
-                    update_booking(booking_no, {"status": "CONFIRMED"}, user.get("tenant_id"))
-                job_no = convert_booking_to_job(booking_no, user)
-                st.success(f"🎉 Job {job_no} created successfully from Booking {booking_no}.")
+        if linked_job:
+            if st.button(f"📂 View Job {linked_job}", key=f"view_job_{booking_no}", type="primary", width="stretch", help="เปิดดู Job 360 ที่เชื่อมโยง"):
+                st.session_state["job_control_selector"] = linked_job
                 st.session_state["current_navigation"] = "job_control"
                 st.query_params["page"] = "job_control"
                 st.rerun()
-            except Exception as exc:
-                st.error(str(exc))
+        else:
+            if can_edit and st.button("🚀 Convert to Job", key=f"convert_{booking_no}", type="primary", width="stretch", help="เปิด Job จากข้อมูล Booking นี้ทันที"):
+                try:
+                    job_no = convert_booking_to_job(booking_no, user)
+                    st.success(f"🎉 Job {job_no} created successfully from Booking {booking_no}.")
+                    st.session_state["job_control_selector"] = job_no
+                    st.session_state["current_navigation"] = "job_control"
+                    st.query_params["page"] = "job_control"
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
+    
+    with act[2]:
+        if can_edit:
+            if st.button("📑 Duplicate", key=f"dup_{booking_no}", width="stretch", help="คัดลอกบุ๊คกิ้งเป็นฉบับร่างใหม่เพื่อเปิดงานที่คล้ายกัน"):
+                try:
+                    new_bk = duplicate_booking(booking_no, user)
+                    st.success(f"🎉 Created duplicate booking {new_bk} as Draft.")
+                    st.session_state["booking_v2_selected"] = new_bk
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
+    
+    with act[3]:
+        if can_edit:
+            if is_locked:
+                if st.button("🔓 Unlock to Edit", key=f"unlock_{booking_no}", width="stretch", help="ปลดล็อคเพื่ออนุญาตให้แก้ไขข้อมูล"):
+                    unlock_booking(booking_no, user)
+                    st.success("Booking unlocked for editing.")
+                    st.rerun()
+            else:
+                if st.button("🔒 Lock Booking", key=f"lock_{booking_no}", width="stretch", help="ล็อคบุ๊คกิ้งเพื่อป้องกันการแก้ไขข้อมูลโดยไม่ตั้งใจ"):
+                    lock_booking(booking_no, user)
+                    st.success("Booking locked.")
+                    st.rerun()
+    
     with act[4]:
-        st.write("")
+        if can_edit and not is_locked:
+            if st.button("🗑️ Delete Booking", key=f"del_{booking_no}", width="stretch", type="secondary", help="ลบบุ๊คกิ้งนี้"):
+                delete_booking(booking_no, user.get("tenant_id"))
+                st.success(f"Booking {booking_no} deleted.")
+                st.session_state.pop("booking_v2_selected", None)
+                st.rerun()
 
     if can_edit:
-        with st.expander("✏️ Edit Booking Details & Transport Schedule", expanded=False):
-            section("Edit Transport & Schedule")
-            with st.form(f"edit_booking_{booking_no}"):
-                c_bno_col, _ = st.columns(2)
-                new_carrier_bno = c_bno_col.text_input("Carrier Booking No. / Reference No.", value=_s(selected.get("carrier_booking_no")))
+        with st.expander("✏️ Edit & Revise Booking Schedule (แก้ไข / Revise ข้อมูลบุ๊คกิ้ง)", expanded=not is_locked and bool(linked_job)):
+            if is_locked:
+                st.warning("🔒 This booking is currently **LOCKED** to prevent accidental modifications. Click **'🔓 Unlock to Edit'** above to enable editing.")
+            else:
+                if linked_job:
+                    st.info(f"💡 **Sync Notice:** This booking is linked to Job **{linked_job}**. Any revised dates, vessel, carrier, or routing saved here will automatically synchronize to Job Control.")
 
-                r1, r2, r3 = st.columns(3)
-                new_pol = r1.text_input("Origin / POL (ต้นทาง)", value=_s(selected.get("pol")))
-                new_trans = r2.text_input("Transshipment Port / Airport / Border (ถ่ายลำ/ด่าน)", value=_s(selected.get("transhipment_port")))
-                new_pod = r3.text_input("Destination / POD (ปลายทาง)", value=_s(selected.get("pod")))
+                with st.form(f"edit_booking_{booking_no}"):
+                    section("Edit Transport & Schedule")
+                    c_bno_col, quot_col = st.columns(2)
+                    with c_bno_col:
+                        new_carrier_bno = st.text_input("Carrier Booking No. / Reference No.", value=_s(selected.get("carrier_booking_no")))
+                    with quot_col:
+                        new_quot_no = st.text_input("Quotation Ref", value=_s(selected.get("quotation_no")))
 
-                l1, v1, v2 = st.columns(3)
-                new_liner = l1.text_input("Liner / Airline / Transporter (ผู้ให้บริการ)", value=_s(selected.get("liner") or selected.get("carrier")))
-                new_vessel = v1.text_input("Vessel / Flight No / Truck Type", value=_s(selected.get("vessel")))
-                new_voyage = v2.text_input("Voyage No / Flight Date / Plate No", value=_s(selected.get("voyage")))
+                    r1, r2, r3, r4 = st.columns(4)
+                    with r1:
+                        new_pol = st.text_input("Origin / POL (ต้นทาง)", value=_s(selected.get("pol")))
+                    with r2:
+                        new_trans = st.text_input("Transshipment Port / Airport / Border (ถ่ายลำ/ด่าน)", value=_s(selected.get("transhipment_port")))
+                    with r3:
+                        new_pod = st.text_input("Destination / POD (ปลายทาง)", value=_s(selected.get("pod")))
+                    with r4:
+                        new_dest = st.text_input("Final Destination / Place of Delivery", value=_s(selected.get("final_destination")))
 
-                if mode == "SEA" and cargo_type == "FCL":
-                    mv1, mv2 = st.columns(2)
-                    new_mother = mv1.text_input("Mother Vessel (เรือแม่)", value=_s(selected.get("mother_vessel") or selected.get("m_vessel")))
-                    new_mother_voyage = mv2.text_input("Mother Voyage No. (เที่ยวเรือแม่)", value=_s(selected.get("mother_voyage") or selected.get("m_voyage")))
-                    
-                    sc1, sc2 = st.columns(2)
-                    new_cy_place = sc1.text_input("CY Return Terminal (ลานคืนตู้หนัก)", value=_s(selected.get("cy_place")))
-                    new_return_place = sc2.text_input("Empty Pickup Depot (ลานรับตู้เปล่า)", value=_s(selected.get("return_place")))
-                else:
+                    l1, v1, v2 = st.columns(3)
+                    with l1:
+                        new_liner = st.text_input("Liner / Airline / Transporter (ผู้ให้บริการ)", value=_s(selected.get("liner") or selected.get("carrier")))
+                    with v1:
+                        new_vessel = st.text_input("Vessel / Flight No / Truck Type", value=_s(selected.get("vessel")))
+                    with v2:
+                        new_voyage = st.text_input("Voyage No / Flight Date / Plate No", value=_s(selected.get("voyage")))
+
                     new_mother = _s(selected.get("mother_vessel") or selected.get("m_vessel"))
                     new_mother_voyage = _s(selected.get("mother_voyage") or selected.get("m_voyage"))
                     new_cy_place = _s(selected.get("cy_place"))
                     new_return_place = _s(selected.get("return_place"))
+                    new_cy_date = _date(selected.get("cy_date"))
+                    new_return_date = _date(selected.get("customer_return_date"))
+                    new_cfs_place = _s(selected.get("cfs_place"))
+                    new_cfs_date = _date(selected.get("cfs_date"))
 
-                new_remark = st.text_area("Remarks (หมายเหตุ)", value=_s(selected.get("remark")))
-                save = st.form_submit_button("💾 Save Changes", type="primary", width="stretch")
-            if save:
-                try:
-                    update_booking(
-                        booking_no,
-                        {
-                            "carrier_booking_no": new_carrier_bno.strip() or None,
-                            "pol": new_pol.strip(),
-                            "pod": new_pod.strip(),
-                            "liner": new_liner.strip() or None,
-                            "carrier": new_liner.strip() or None,
-                            "vessel": new_vessel.strip() or None,
-                            "voyage": new_voyage.strip() or None,
-                            "m_vessel": new_mother.strip() or None,
-                            "mother_vessel": new_mother.strip() or None,
-                            "m_voyage": new_mother_voyage.strip() or None,
-                            "mother_voyage": new_mother_voyage.strip() or None,
-                            "transhipment_port": new_trans.strip() or None,
-                            "cy_place": new_cy_place.strip() or None,
-                            "return_place": new_return_place.strip() or None,
-                            "remark": new_remark.strip() or None,
-                        },
-                        user.get("tenant_id"),
-                    )
-                    st.success("Booking updated successfully.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Unable to modify booking: {exc}")
+                    if mode == "SEA" and cargo_type == "FCL":
+                        mv1, mv2 = st.columns(2)
+                        with mv1:
+                            new_mother = st.text_input("Mother Vessel (เรือแม่)", value=new_mother)
+                        with mv2:
+                            new_mother_voyage = st.text_input("Mother Voyage No. (เที่ยวเรือแม่)", value=new_mother_voyage)
+                        
+                        sc1, sc2 = st.columns(2)
+                        with sc1:
+                            new_cy_place = st.text_input("CY Return Terminal (ลานคืนตู้หนัก)", value=new_cy_place)
+                            new_cy_date = st.date_input("CY Cut-off Date", value=new_cy_date)
+                        with sc2:
+                            new_return_place = st.text_input("Empty Pickup Depot (ลานรับตู้เปล่า)", value=new_return_place)
+                            new_return_date = st.date_input("Container Return Free Time", value=new_return_date)
+                    elif mode == "SEA" and cargo_type == "LCL":
+                        cfs1, cfs2 = st.columns(2)
+                        with cfs1:
+                            new_cfs_place = st.text_input("CFS Receiving Warehouse", value=new_cfs_place)
+                        with cfs2:
+                            new_cfs_date = st.date_input("CFS Cut-off Date", value=new_cfs_date)
+                    elif mode == "AIR":
+                        air1, air2 = st.columns(2)
+                        with air1:
+                            new_cfs_place = st.text_input("Airport Cargo Terminal", value=new_cfs_place)
+                        with air2:
+                            new_cfs_date = st.date_input("Airport Cut-off Date", value=new_cfs_date)
+
+                    section("Edit Dates & Cargo Specs")
+                    d1, d2 = st.columns(2)
+                    with d1:
+                        new_etd = st.date_input("ETD / Departure Date", value=_date(selected.get("etd")) or date.today())
+                    with d2:
+                        new_eta = st.date_input("ETA / Arrival Date", value=_date(selected.get("eta")) or date.today())
+
+                    cg1, cg2, cg3, cg4 = st.columns(4)
+                    with cg1:
+                        new_gw = st.number_input("Gross Weight (KG)", min_value=0.0, step=1.0, value=float(selected.get("gross_weight") or 0))
+                    with cg2:
+                        new_cbm = st.number_input("Volume (CBM)", min_value=0.0, step=0.01, value=float(selected.get("measurement_cbm") or 0))
+                    with cg3:
+                        new_ch_wt = st.number_input("Chargeable Weight (KG)", min_value=0.0, step=0.1, value=float(selected.get("chargeable_weight") or 0))
+                    with cg4:
+                        new_pkgs = st.number_input("Package Qty", min_value=0, step=1, value=int(selected.get("package_qty") or 0))
+
+                    new_containers = st.text_input("Container Summary (สรุปตู้ เช่น 40'HC x 2 | 20'GP x 1)", value=_s(selected.get("container_summary")))
+                    new_commodity = st.text_input("Commodity / Cargo Description", value=_s(selected.get("commodity")))
+                    new_remark = st.text_area("Remarks & Operational Instructions", value=_s(selected.get("remark")))
+                    
+                    save = st.form_submit_button("💾 Save Changes & Synchronize", type="primary", width="stretch")
+                
+                if save:
+                    try:
+                        update_booking(
+                            booking_no,
+                            {
+                                "carrier_booking_no": new_carrier_bno.strip() or None,
+                                "quotation_no": new_quot_no.strip() or None,
+                                "pol": new_pol.strip(),
+                                "pod": new_pod.strip(),
+                                "final_destination": new_dest.strip() or None,
+                                "liner": new_liner.strip() or None,
+                                "carrier": new_liner.strip() or None,
+                                "vessel": new_vessel.strip() or None,
+                                "voyage": new_voyage.strip() or None,
+                                "m_vessel": new_mother.strip() or None,
+                                "mother_vessel": new_mother.strip() or None,
+                                "m_voyage": new_mother_voyage.strip() or None,
+                                "mother_voyage": new_mother_voyage.strip() or None,
+                                "transhipment_port": new_trans.strip() or None,
+                                "cy_place": new_cy_place.strip() if new_cy_place else None,
+                                "cy_date": new_cy_date.isoformat() if new_cy_date else None,
+                                "return_place": new_return_place.strip() if new_return_place else None,
+                                "customer_return_date": new_return_date.isoformat() if new_return_date else None,
+                                "cfs_place": new_cfs_place.strip() if new_cfs_place else None,
+                                "cfs_date": new_cfs_date.isoformat() if new_cfs_date else None,
+                                "etd": new_etd.isoformat() if new_etd else None,
+                                "eta": new_eta.isoformat() if new_eta else None,
+                                "gross_weight": new_gw or None,
+                                "measurement_cbm": new_cbm or None,
+                                "chargeable_weight": new_ch_wt or None,
+                                "package_qty": new_pkgs or None,
+                                "container_summary": new_containers.strip() or None,
+                                "commodity": new_commodity.strip() or None,
+                                "remark": new_remark.strip() or None,
+                            },
+                            user.get("tenant_id"),
+                        )
+                        sync_msg = f" (Linked Job {linked_job} updated)" if linked_job else ""
+                        st.success(f"🎉 Booking {booking_no} updated successfully{sync_msg}.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Unable to modify booking: {exc}")
 
 
 def render():
@@ -741,6 +844,7 @@ def render():
             "Vessel / Flight / Vehicle": resolve_vessel(r.get("mother_vessel") or r.get("m_vessel"), r.get("vessel") or r.get("flight_no")) or "—",
             "ETD": _s(r.get("etd"), "—"),
             "ETA": _s(r.get("eta"), "—"),
+            "Lock": "🔒 Locked" if r.get("is_locked") else "🔓 Open",
             "Status": _s(r.get("status"), "—").upper(),
         }
         for r in records

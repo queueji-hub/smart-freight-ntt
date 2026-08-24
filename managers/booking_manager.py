@@ -332,29 +332,22 @@ def can_transition_booking_status(current_status: str, new_status: str) -> tuple
 
 
 def update_booking(booking_no: str, data: Dict[str, Any], tenant_id: str = None) -> bool:
-    
     tenant_id = get_current_tenant_id()
     existing = get_booking(booking_no, tenant_id)
     if not existing:
         return False
-        
-    current_status = existing.get("status", "DRAFT").upper()
-    
-    # Block editing if locked
-    if current_status in ["CONVERTED", "CONVERTED TO JOB", "CANCELLED"]:
-        # If the only field being updated is status, check transition (which will fail anyway due to transition rules, but let it proceed to status check)
-        if set(data.keys()) - {"status"} and not (len(data.keys()) == 1 and "status" in data):
-            raise ValueError(f"Booking is LOCKED (Status: {current_status}). Modifications are not permitted.")
+
+    # Check if booking is locked
+    is_locked = bool(existing.get("is_locked"))
+    if is_locked and "is_locked" not in data:
+        raise ValueError("Booking is LOCKED to prevent accidental changes. Please click 'Unlock' before modifying.")
 
     if "status" in data:
         new_status = data["status"].upper()
+        current_status = existing.get("status", "DRAFT").upper()
         allowed, reason = can_transition_booking_status(current_status, new_status)
-        if not allowed:
+        if not allowed and new_status not in ["DRAFT", "ACTIVE", "CONFIRMED", "CONVERTED TO JOB", "CANCELLED"]:
             raise ValueError(reason)
-
-    # Restrict fields for CONFIRMED (Require Controlled Revision for field changes)
-    if current_status == "CONFIRMED" and set(data.keys()) - {"status", "job_no"}:
-        raise ValueError("Cannot modify fields on a CONFIRMED booking directly. Create a Controlled Revision first.")
 
     allowed_fields = {
         "carrier_booking_no", "quotation_no", "customer_id", "customer_name", "sales_id", "sales_person",
@@ -368,7 +361,8 @@ def update_booking(booking_no: str, data: Dict[str, Any], tenant_id: str = None)
         "truck_type", "truck_plate", "driver_name", "driver_phone", "loading_date", "delivery_date",
         "closing_time", "cargo_type", "container_summary",
         "gross_weight", "measurement_cbm", "chargeable_weight", "package_qty", "quantity",
-        "package_unit", "commodity", "freight_term", "remark", "status", "quotation_id"
+        "package_unit", "commodity", "freight_term", "remark", "status", "quotation_id",
+        "is_locked", "locked_by", "locked_at"
     }
 
     sets = []
@@ -396,6 +390,115 @@ def update_booking(booking_no: str, data: Dict[str, Any], tenant_id: str = None)
 
             conn.commit()
 
+            # Sync shared revised fields to linked Job if already converted
+            linked_job = existing.get("job_no")
+            if linked_job:
+                try:
+                    from managers.shipment_manager import update_shipment
+                    shipment_sync = {}
+                    field_map = {
+                        "carrier_booking_no": "carrier_booking_no",
+                        "vessel": "vessel",
+                        "voyage": "voyage",
+                        "mother_vessel": "mother_vessel",
+                        "mother_voyage": "mother_voyage",
+                        "feeder_vessel": "feeder_vessel",
+                        "feeder_voyage": "feeder_voyage",
+                        "pol": "pol",
+                        "pod": "pod",
+                        "transhipment_port": "transshipment_port",
+                        "liner": "carrier",
+                        "carrier": "carrier",
+                        "etd": "etd",
+                        "eta": "eta",
+                        "gross_weight": "gross_weight",
+                        "measurement_cbm": "cbm",
+                        "chargeable_weight": "chargeable_weight",
+                        "commodity": "commodity",
+                        "shipper": "shipper",
+                        "consignee": "consignee",
+                        "notify_party": "notify_party",
+                    }
+                    for b_key, s_key in field_map.items():
+                        if b_key in data and data[b_key] is not None:
+                            shipment_sync[s_key] = data[b_key]
+                    if shipment_sync:
+                        update_shipment(linked_job, shipment_sync)
+                except Exception:
+                    pass
+
+            return cur.rowcount > 0
+
+
+# =========================================================
+# DUPLICATE BOOKING
+# =========================================================
+
+def duplicate_booking(booking_no: str, user: Dict[str, Any] = None) -> str:
+    """Duplicate an existing booking into a new draft booking."""
+    user = user or {"username": "system", "id": 1}
+    tenant_id = get_current_tenant_id()
+    original = get_booking(booking_no, tenant_id)
+    if not original:
+        raise ValueError(f"Booking '{booking_no}' not found.")
+
+    from managers.document_numbering_service import generate_document_number
+    new_booking_no = generate_document_number("BK", original.get("etd"))
+
+    data = dict(original)
+    data["booking_no"] = new_booking_no
+    data["status"] = "DRAFT"
+    data["job_no"] = None
+    data["is_locked"] = False
+    data["locked_by"] = None
+    data["locked_at"] = None
+    data["created_by"] = user.get("username", "system")
+
+    new_no = create_booking(data, user)
+    log_action(
+        user.get("id", 1),
+        tenant_id,
+        "booking",
+        new_no,
+        "DUPLICATE",
+        f"Duplicated from {booking_no}"
+    )
+    return new_no
+
+
+# =========================================================
+# LOCK / UNLOCK BOOKING
+# =========================================================
+
+def lock_booking(booking_no: str, user: Dict[str, Any] = None) -> bool:
+    """Locks a booking to protect against accidental edits."""
+    user = user or {"username": "system", "id": 1}
+    tenant_id = get_current_tenant_id()
+    from datetime import datetime
+    now_str = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE bookings 
+                SET is_locked = TRUE, locked_by = %s, locked_at = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE booking_no = %s AND tenant_id = %s
+            """, (user.get("username", "user"), now_str, booking_no, tenant_id))
+            conn.commit()
+            return cur.rowcount > 0
+
+
+def unlock_booking(booking_no: str, user: Dict[str, Any] = None) -> bool:
+    """Unlocks a booking to allow authorized edits."""
+    user = user or {"username": "system", "id": 1}
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE bookings 
+                SET is_locked = FALSE, locked_by = NULL, locked_at = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE booking_no = %s AND tenant_id = %s
+            """, (booking_no, tenant_id))
+            conn.commit()
             return cur.rowcount > 0
 
 
@@ -404,7 +507,6 @@ def update_booking(booking_no: str, data: Dict[str, Any], tenant_id: str = None)
 # =========================================================
 
 def delete_booking(booking_no: str, tenant_id: str = None) -> bool:
-    
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -426,7 +528,7 @@ def delete_booking(booking_no: str, tenant_id: str = None) -> bool:
 
 def convert_booking_to_job(booking_no: str, user: dict) -> str:
     """
-    Converts a confirmed booking into a billable operational job (shipment).
+    Converts a booking into an operational job (shipment).
     Copies all relevant routing and cargo fields.
     Updates the booking status to 'CONVERTED TO JOB'.
     """
@@ -436,7 +538,7 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
     existing = get_booking(booking_no, tenant_id)
     if not existing:
         raise ValueError("Booking not found.")
-    if existing.get("status") in ["CONVERTED", "CONVERTED TO JOB"]:
+    if existing.get("status") in ["CONVERTED", "CONVERTED TO JOB"] and existing.get("job_no"):
         # Find existing job_no if already converted
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -445,10 +547,6 @@ def convert_booking_to_job(booking_no: str, user: dict) -> str:
                 if ship_row:
                     return ship_row["job_no"]
         return existing.get("job_no", "")
-
-    cur_status = str(existing.get("status", "")).upper()
-    if cur_status not in ["CONFIRMED", "SUBMITTED"]:
-        raise ValueError(f"Booking status is {cur_status}. Please confirm or submit the booking before converting to a Job.")
 
     from managers.document_numbering_service import generate_document_number
     job_no = generate_document_number(
