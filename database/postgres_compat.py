@@ -21,7 +21,7 @@ def _safe_commit(conn) -> None:
 
 
 def ensure_phase30_quotation_schema(conn) -> None:
-    """Ensure all quotation columns exist in PostgreSQL."""
+    """Ensure all quotation and quotation item columns exist in PostgreSQL."""
     with conn.cursor() as cur:
         columns = {
             "customer_id": "INTEGER",
@@ -57,10 +57,101 @@ def ensure_phase30_quotation_schema(conn) -> None:
             "updated_by": "TEXT",
         }
         _add_columns(cur, "quotations", columns)
+        item_columns = {
+            "charge_code": "TEXT",
+            "basis": "TEXT",
+            "quantity": "NUMERIC(15,3) DEFAULT 1",
+            "unit_rate": "NUMERIC(15,2) DEFAULT 0",
+            "amount": "NUMERIC(15,2) DEFAULT 0",
+        }
+        _add_columns(cur, "quotation_items", item_columns)
         try:
             cur.execute("UPDATE quotations SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''")
             cur.execute("UPDATE quotations SET status='Draft' WHERE status IS NULL OR btrim(status)=''")
             cur.execute("UPDATE quotations SET approval_status='Draft' WHERE approval_status IS NULL OR btrim(approval_status)=''")
+        except Exception:
+            pass
+    _safe_commit(conn)
+
+
+def ensure_phase30_shipment_schema(conn) -> None:
+    """Ensure all required shipment columns exist in PostgreSQL."""
+    with conn.cursor() as cur:
+        columns = {
+            "status": "TEXT DEFAULT 'Proceed'",
+            "job_type": "TEXT",
+            "booking_no": "TEXT",
+            "customer_id": "INTEGER",
+            "customer_name": "TEXT",
+            "notify_party": "TEXT",
+            "sales_person": "TEXT",
+            "operations_owner": "TEXT",
+            "customer_reference": "TEXT",
+            "quotation_no": "TEXT",
+            "shipper": "TEXT",
+            "consignee": "TEXT",
+            "cargo_type": "TEXT",
+            "carrier": "TEXT",
+            "place_of_receipt": "TEXT",
+            "pol": "TEXT",
+            "transshipment_port": "TEXT",
+            "pod": "TEXT",
+            "place_of_delivery": "TEXT",
+            "final_destination": "TEXT",
+            "origin_country": "TEXT",
+            "destination_country": "TEXT",
+            "etd": "DATE",
+            "eta": "DATE",
+            "actual_departure": "DATE",
+            "actual_arrival": "DATE",
+            "mbl_no": "TEXT",
+            "hbl_no": "TEXT",
+            "bl_no": "TEXT",
+            "invoice_no": "TEXT",
+            "vessel": "TEXT",
+            "voyage": "TEXT",
+            "mother_vessel": "TEXT",
+            "mother_voyage": "TEXT",
+            "feeder_vessel": "TEXT",
+            "feeder_voyage": "TEXT",
+            "incoterm": "TEXT",
+            "service_type": "TEXT",
+            "freight_term": "TEXT",
+            "commodity": "TEXT",
+            "hs_code": "TEXT",
+            "package_type": "TEXT",
+            "package_quantity": "INTEGER DEFAULT 0",
+            "gross_weight": "NUMERIC(15,2) DEFAULT 0",
+            "net_weight": "NUMERIC(15,2) DEFAULT 0",
+            "cbm": "NUMERIC(15,2) DEFAULT 0",
+            "chargeable_weight": "NUMERIC(15,2) DEFAULT 0",
+            "is_dg": "BOOLEAN DEFAULT FALSE",
+            "is_temp_controlled": "BOOLEAN DEFAULT FALSE",
+            "special_cargo_remarks": "TEXT",
+            "customs_declaration_no": "TEXT",
+            "customs_status": "TEXT",
+            "customs_broker": "TEXT",
+            "customs_clearance_date": "DATE",
+            "customer_paid": "BOOLEAN DEFAULT FALSE",
+            "remark": "TEXT",
+            "reporting_date": "DATE",
+            "reporting_month": "TEXT",
+            "reporting_year": "TEXT",
+            "financial_status": "TEXT DEFAULT 'OPEN'",
+            "document_status": "TEXT DEFAULT 'PENDING'",
+            "mode": "TEXT",
+            "closed_at": "TIMESTAMP",
+            "closed_by": "TEXT",
+            "created_by": "TEXT",
+            "updated_by": "TEXT",
+            "financial_locked": "BOOLEAN DEFAULT FALSE",
+            "handover_to_accounting_at": "TIMESTAMP",
+            "handover_by": "TEXT",
+            "tenant_id": "TEXT DEFAULT 'default'",
+        }
+        _add_columns(cur, "shipments", columns)
+        try:
+            cur.execute("UPDATE shipments SET tenant_id='default' WHERE tenant_id IS NULL OR btrim(tenant_id)=''")
         except Exception:
             pass
     _safe_commit(conn)

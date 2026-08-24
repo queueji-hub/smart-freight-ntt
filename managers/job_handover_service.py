@@ -58,7 +58,7 @@ def build_job_payload(quotation: Dict[str, Any], user: Optional[Dict[str, Any]] 
     # Check approval status from either status or approval_status field
     status_raw = str(quotation.get("status") or "").strip().lower()
     app_status_raw = str(quotation.get("approval_status") or "").strip().lower()
-    is_approved = any(s in {"approved", "accepted", "won", "active"} for s in (status_raw, app_status_raw))
+    is_approved = any(s in {"approved", "accepted"} for s in (status_raw, app_status_raw))
     if not is_approved:
         raise ValueError("Only approved quotations can be handed over to Operations.")
 

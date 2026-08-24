@@ -21,8 +21,8 @@ def render() -> None:
     rows = list_quotations() or []
     approved = [
         r for r in rows
-        if str(r.get("approval_status") or "").strip().lower() in {"approved", "accepted", "won", "active"}
-        or str(r.get("status") or "").strip().lower() in {"approved", "accepted", "won", "active"}
+        if str(r.get("approval_status") or "").strip().lower() in {"approved", "accepted"}
+        or str(r.get("status") or "").strip().lower() in {"approved", "accepted"}
     ]
 
     section("Approved Quotations")

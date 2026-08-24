@@ -88,19 +88,53 @@ def _master_data():
 
 
 def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | None = None, key: str = "qv2_items") -> list[dict]:
-    # Build comprehensive charge labels including all master codes + any custom codes in existing
+    # Default standard charge dictionary to ensure all standard freight charges exist
+    default_charges = {
+        "OF": "Ocean Freight",
+        "OFR": "Ocean Freight",
+        "THC": "Terminal Handling Charge",
+        "DOC": "Documentation Fee",
+        "CUS": "Customs Clearance",
+        "TRK": "Trucking / Transport",
+        "CFS": "CFS Handling",
+        "AIR": "Air Freight",
+        "INS": "Insurance",
+        "FRT": "Freight Charge",
+        "LCL": "LCL Ocean Freight",
+        "FCL": "FCL Ocean Freight",
+        "MISC": "Miscellaneous / Custom Charge",
+    }
+    # Build comprehensive charge labels including master codes + defaults + existing
     charge_labels = {code: f"{code} — {c.get('description', '')}" for code, c in charge_map.items()}
-    if not charge_labels:
-        charge_labels = {"FRT": "FRT — Freight Charge"}
+    for def_code, def_desc in default_charges.items():
+        if def_code not in charge_labels:
+            charge_labels[def_code] = f"{def_code} — {def_desc}"
 
     rows = []
     for raw in existing or []:
         item = dict(raw or {})
         code = _s(item.get("charge_code")).upper()
         desc = _s(item.get("description"))
+        
         if not code and desc:
+            # 1. Exact match with charge master description
             match = next((c for c in charge_map.values() if _s(c.get("description")).lower() == desc.lower()), None)
-            code = _s(match.get("charge_code")).upper() if match else ""
+            if match:
+                code = _s(match.get("charge_code")).upper()
+            else:
+                # 2. Check if description starts with any code prefix (e.g. "THC — ..." or "DOC: ...")
+                for k in list(charge_labels.keys()):
+                    if desc.upper().startswith(k + " ") or desc.upper().startswith(k + "—") or desc.upper().startswith(k + "-") or desc.upper().startswith(k + ":"):
+                        code = k
+                        break
+                if not code:
+                    # 3. Partial keyword matching against master descriptions
+                    for c in charge_map.values():
+                        cd = _s(c.get("description")).lower()
+                        if cd and (cd in desc.lower() or desc.lower() in cd):
+                            code = _s(c.get("charge_code")).upper()
+                            break
+
         if not code:
             code = "MISC"
         if code not in charge_labels:
@@ -109,7 +143,6 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
         qty = float(item.get("quantity") or 1.0)
         rate = float(item.get("unit_rate") or item.get("price") or 0.0)
         unit = _s(item.get("unit"), "CONTAINER").upper()
-        # Match unit with UNIT_OPTIONS
         matched_unit = next((u for u in UNIT_OPTIONS if u.upper() == unit), "SHPMT")
         currency = _s(item.get("currency"), "USD").upper()
         if currency not in CURRENCY_OPTIONS:
@@ -117,7 +150,7 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
         
         rows.append({
             "charge_code": code,
-            "description": desc or (charge_map.get(code, {}).get("description") or code),
+            "description": desc or (charge_map.get(code, {}).get("description") or default_charges.get(code) or code),
             "unit": matched_unit,
             "currency": currency,
             "quantity": qty,
@@ -127,11 +160,11 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
         })
 
     if not rows:
-        default_code = next(iter(charge_labels), "OFR")
+        default_code = "OFR" if "OFR" in charge_labels else ("OF" if "OF" in charge_labels else next(iter(charge_labels), "FRT"))
         master_def = charge_map.get(default_code, {})
         rows = [{
             "charge_code": default_code,
-            "description": master_def.get("description") or "Ocean Freight",
+            "description": master_def.get("description") or default_charges.get(default_code) or "Ocean Freight",
             "unit": master_def.get("default_unit") or "CONTAINER",
             "currency": master_def.get("default_currency") or "USD",
             "quantity": 1.0,
@@ -165,8 +198,8 @@ def _item_editor(charge_map: dict[str, dict[str, Any]], existing: list[dict] | N
         if not code and not _s(row.get("description")):
             continue
         desc = _s(row.get("description"))
-        if not desc and code in charge_map:
-            desc = charge_map[code].get("description") or code
+        if not desc:
+            desc = charge_map.get(code, {}).get("description") or default_charges.get(code) or code
         
         qty = float(row.get("quantity") or 1.0)
         rate = float(row.get("unit_rate") or 0.0)

@@ -143,8 +143,12 @@ def _new(user: Dict[str, Any]) -> None:
         items = []
         for i, row in enumerate(st.session_state["finance_v2_items"]):
             a, b, c, d, e = st.columns([4, 1, 1.5, 1.2, 1.2])
+            row_code = str(row.get("charge_code") or "").strip().upper()
             codes = [""] + list(charge_map)
-            code = a.selectbox("Charge", codes, index=codes.index(row.get("charge_code", "")) if row.get("charge_code", "") in codes else 0, format_func=lambda x: f"{x} — {charge_map[x].get('description', '')}" if x else "Select charge", key=f"fin_code_{i}")
+            if row_code and row_code not in codes:
+                codes.append(row_code)
+            idx = codes.index(row_code) if row_code in codes else 0
+            code = a.selectbox("Charge", codes, index=idx, format_func=lambda x: f"{x} — {charge_map.get(x, {}).get('description', x)}" if x else "Select charge", key=f"fin_code_{i}")
             qty = b.number_input("Qty", min_value=0.01, value=float(row.get("quantity", 1)), key=f"fin_qty_{i}")
             rate = c.number_input("Unit Price", min_value=0.0, value=float(row.get("unit_price", 0)), step=100.0, key=f"fin_rate_{i}")
             tax = d.selectbox("VAT", TAX_TYPES, index=TAX_TYPES.index(row.get("tax")) if row.get("tax") in TAX_TYPES else 0, key=f"fin_tax_{i}")

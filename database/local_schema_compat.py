@@ -8,6 +8,7 @@ from __future__ import annotations
 from database.connection import get_connection
 from database.postgres_compat import (
     ensure_phase30_quotation_schema,
+    ensure_phase30_shipment_schema,
     ensure_phase30_profitability_schema,
     ensure_phase30_master_data_schema,
     ensure_phase30_charge_master_schema,
@@ -29,6 +30,7 @@ def ensure_phase30_local_schema() -> None:
     with get_connection() as conn:
         if not _is_sqlite(conn):
             ensure_phase30_quotation_schema(conn)
+            ensure_phase30_shipment_schema(conn)
             ensure_phase30_charge_master_schema(conn)
             ensure_phase30_master_data_schema(conn)
             ensure_phase30_profitability_schema(conn)
@@ -39,8 +41,9 @@ def ensure_phase30_local_schema() -> None:
         with conn.cursor() as cur:
             table_columns = {
                 "quotations": {"sales_id": "INTEGER", "approval_status": "TEXT DEFAULT 'Draft'"},
+                "quotation_items": {"charge_code": "TEXT", "basis": "TEXT", "quantity": "REAL DEFAULT 1", "unit_rate": "REAL DEFAULT 0", "amount": "REAL DEFAULT 0"},
                 "bookings": {"sales_id": "INTEGER", "approval_status": "TEXT DEFAULT 'Draft'", "carrier_booking_no": "TEXT", "mother_vessel": "TEXT", "m_vessel": "TEXT", "mother_voyage": "TEXT", "m_voyage": "TEXT", "feeder_vessel": "TEXT", "feeder_voyage": "TEXT", "booking_date": "TEXT"},
-                "shipments": {"mother_vessel": "TEXT", "mother_voyage": "TEXT", "feeder_vessel": "TEXT", "feeder_voyage": "TEXT", "financial_locked": "INTEGER DEFAULT 0", "handover_to_accounting_at": "TEXT", "handover_by": "TEXT", "mbl_no": "TEXT", "hbl_no": "TEXT"},
+                "shipments": {"service_type": "TEXT", "mother_vessel": "TEXT", "mother_voyage": "TEXT", "feeder_vessel": "TEXT", "feeder_voyage": "TEXT", "financial_locked": "INTEGER DEFAULT 0", "handover_to_accounting_at": "TEXT", "handover_by": "TEXT", "mbl_no": "TEXT", "hbl_no": "TEXT"},
                 "invoices": {"approval_status": "TEXT DEFAULT 'Draft'"},
                 "bills_of_lading": {"tenant_id": "TEXT DEFAULT 'default'", "approval_status": "TEXT DEFAULT 'Draft'", "consol_no": "TEXT", "consol_seq": "INTEGER DEFAULT 1", "bl_type": "TEXT DEFAULT 'BL'", "delivery_agent": "TEXT", "pre_carriage_by": "TEXT", "freight_payable_at": "TEXT", "place_of_issue": "TEXT", "number_of_originals": "INTEGER DEFAULT 3"},
                 "job_costs": {"tenant_id": "TEXT DEFAULT 'default'", "cost_status": "TEXT DEFAULT 'ESTIMATED'", "billable_to_customer": "INTEGER DEFAULT 1", "matched_charge_code": "TEXT", "vendor_invoice_no": "TEXT", "payout_status": "TEXT DEFAULT 'UNPAID'"},

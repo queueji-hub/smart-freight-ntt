@@ -97,14 +97,33 @@ def create_shipment(data: Dict[str, Any], company_prefix: str = None) -> str:
 
     data = {k: v for k, v in data.items() if k in SHIPMENT_FIELDS}
 
-    cols = ["job_no", "tenant_id"] + list(data.keys())
-    vals = [job_no, tenant_id] + list(data.values())
-
-    placeholders = ", ".join(["%s"] * len(cols))
-    columns = ", ".join(cols)
-
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # Query existing table columns dynamically to prevent UndefinedColumn errors
+            table_cols: set[str] = set()
+            try:
+                cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='shipments'")
+                table_cols = {row["column_name"] if isinstance(row, dict) or hasattr(row, "keys") else row[0] for row in cur.fetchall()}
+            except Exception:
+                pass
+            if not table_cols:
+                try:
+                    cur.execute("PRAGMA table_info(shipments)")
+                    table_cols = {row[1] for row in cur.fetchall()}
+                except Exception:
+                    pass
+
+            if table_cols:
+                filtered_data = {k: v for k, v in data.items() if k in table_cols}
+            else:
+                filtered_data = data
+
+            cols = ["job_no", "tenant_id"] + [k for k in filtered_data.keys() if k not in {"job_no", "tenant_id"}]
+            vals = [job_no, tenant_id] + [filtered_data[k] for k in cols[2:]]
+
+            placeholders = ", ".join(["%s"] * len(cols))
+            columns = ", ".join(cols)
+
             cur.execute(
                 f"INSERT INTO shipments ({columns}) VALUES ({placeholders})",
                 tuple(vals)

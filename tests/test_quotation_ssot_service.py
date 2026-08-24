@@ -74,18 +74,20 @@ def test_handover_accepts_approved_status_and_resolves_customer():
     assert payload["customer_id"] == 1
 
 
-def test_handover_accepts_approval_status_approved():
+def test_handover_rejects_unapproved_status():
     from managers.job_handover_service import build_job_payload
+    import pytest
     q_data = {
-        "quotation_no": "QT-TEST-100",
+        "quotation_no": "QT-TEST-101",
         "status": "Draft",
-        "approval_status": "Approved",
+        "approval_status": "Draft",
         "customer_id": 2,
-        "customer_name": "Test Co 2",
-        "sales_id": 1,
     }
-    payload = build_job_payload(q_data, {"username": "admin"})
-    assert payload["quotation_no"] == "QT-TEST-100"
-    assert payload["status"] == "Proceed"
+    try:
+        build_job_payload(q_data, {"username": "admin"})
+    except ValueError as exc:
+        assert "Only approved quotations" in str(exc)
+    else:
+        raise AssertionError("Draft quotation must be rejected")
 
 

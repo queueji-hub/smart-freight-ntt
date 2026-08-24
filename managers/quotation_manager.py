@@ -104,13 +104,14 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                     qty = float(item.get("quantity") or 1.0)
                     unit_rate = float(item.get("unit_rate") or item.get("price") or 0.0)
                     amount = qty * unit_rate
+                    code = str(item.get("charge_code") or "").strip().upper()
                     
                     cur.execute("""
                         INSERT INTO quotation_items (
                             quotation_id, description, currency, price, unit, remark, sort_order,
-                            basis, quantity, unit_rate, amount
+                            basis, quantity, unit_rate, amount, charge_code
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                     """, (
                         quotation_id,
                         item.get("description", ""),
@@ -122,7 +123,8 @@ def create_quotation(data: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
                         item.get("basis", ""),
                         qty,
                         unit_rate,
-                        amount
+                        amount,
+                        code
                     ))
 
                 conn.commit()
@@ -205,14 +207,23 @@ def get_quotation_by_no(quotation_no: str) -> Optional[Dict[str, Any]]:
 
             # Fetch Child Item Array rows
             cur.execute("""
-                SELECT id, description, currency, price, unit, remark,
-                       basis, quantity, unit_rate, amount 
+                SELECT *
                 FROM quotation_items 
                 WHERE quotation_id = %s 
                 ORDER BY sort_order ASC;
             """, (q_data["id"],))
 
-            q_data["items"] = [dict(r) for r in cur.fetchall()]
+            items_rows = [dict(r) for r in cur.fetchall()]
+            for it in items_rows:
+                if not (it.get("charge_code") or "").strip() and it.get("description"):
+                    desc = str(it.get("description")).strip()
+                    for sep in [" — ", " - ", " : ", " ", ":", "-"]:
+                        if sep in desc:
+                            candidate = desc.split(sep)[0].strip().upper()
+                            if len(candidate) <= 6 and candidate.isalnum():
+                                it["charge_code"] = candidate
+                                break
+            q_data["items"] = items_rows
 
             return q_data
 
@@ -282,13 +293,14 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                     qty = float(item.get("quantity") or 1.0)
                     unit_rate = float(item.get("unit_rate") or item.get("price") or 0.0)
                     amount = qty * unit_rate
+                    code = str(item.get("charge_code") or "").strip().upper()
                     
                     cur.execute("""
                         INSERT INTO quotation_items (
                             quotation_id, description, currency, price, unit, remark, sort_order,
-                            basis, quantity, unit_rate, amount
+                            basis, quantity, unit_rate, amount, charge_code
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                     """, (
                         q_id,
                         item.get("description", ""),
@@ -300,7 +312,8 @@ def update_quotation(quotation_no: str, data: Dict[str, Any], items: List[Dict[s
                         item.get("basis", ""),
                         qty,
                         unit_rate,
-                        amount
+                        amount,
+                        code
                     ))
                 conn.commit()
             except Exception as e:
