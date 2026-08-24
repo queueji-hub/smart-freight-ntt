@@ -136,7 +136,7 @@ def _create_form(user: Dict[str, Any]):
     port_options = [""] + ports
 
     section("Booking Details")
-    with st.form("booking_v2_create"):
+    with st.form("booking_v2_create_form"):
         customer_id = st.selectbox("Customer *", customer_ids, format_func=lambda x: customer_map[x]) if customer_ids else None
         sales_id = st.selectbox("Sales", sales_ids, format_func=lambda x: sales_map[x]) if sales_ids else None
         job_type = st.selectbox("Job Type *", list(JOB_TYPES.keys()), format_func=lambda x: JOB_TYPES.get(x, x))
@@ -434,12 +434,12 @@ def render():
         records = [r for r in records if q in str(r).lower()]
 
     if create_new:
-        st.session_state["booking_v2_create"] = True
+        st.session_state["booking_v2_create_mode"] = True
 
-    if st.session_state.get("booking_v2_create") and can_edit:
+    if st.session_state.get("booking_v2_create_mode") and can_edit:
         _create_form(user)
         if st.button("Close", key="booking_v2_close_create"):
-            st.session_state.pop("booking_v2_create", None)
+            st.session_state.pop("booking_v2_create_mode", None)
             st.rerun()
         return
 
