@@ -20,6 +20,11 @@ from views import finance_v2_view as finance
 DOC_TYPES = finance.DOC_TYPES
 
 
+def _safe(value: Any, default: str = "—") -> str:
+    text = str(value or "").strip()
+    return default if not text or text.lower() in {"none", "nan", "nat"} else text
+
+
 def _customer(customer_id: Any) -> Dict[str, Any]:
     try:
         target = int(customer_id)
@@ -42,30 +47,30 @@ def _fmt_money(value: Any, currency: str = "THB") -> str:
 
 
 def _document_preview(invoice: Dict[str, Any], items: list[dict]) -> None:
-    """Screen preview using the same information hierarchy as the A4 PDF."""
     doc_type = str(invoice.get("doc_type") or "INV").upper()
     title = DOC_TYPES.get(doc_type, doc_type)
     customer = _customer(invoice.get("customer_id"))
-    status = finance._status(invoice.get("doc_no") or invoice.get("invoice_no"), invoice.get("status"))
-    accent_note = "Original / Copy" if doc_type == "INV" else "Original"
+    selected_no = invoice.get("doc_no") or invoice.get("invoice_no")
+    status = finance._status(selected_no, invoice.get("status"))
+    copy_label = "ต้นฉบับ / Original + สำเนา / Copy" if doc_type == "INV" else "Original"
 
     section("Document Preview")
-    st.caption(f"{title} · {accent_note} · Status: {status}")
+    st.caption(f"{title} · {copy_label} · Status: {status}")
 
     head_left, head_right = st.columns([2, 1])
     with head_left:
         st.markdown(
-            f"**{finance._safe(customer.get('company_name') if customer else invoice.get('customer_name'), 'Customer')}**\n\n"
-            f"Tax ID: {finance._safe(customer.get('tax_id') if customer else invoice.get('customer_tax_id'), '—')}\n\n"
-            f"Billing Address: {finance._safe(customer.get('address') if customer else invoice.get('customer_address'), '—')}"
+            f"**{_safe(customer.get('company_name') or invoice.get('customer_name'), 'Customer')}**\n\n"
+            f"Tax ID: {_safe(customer.get('tax_id') or invoice.get('customer_tax_id'))}\n\n"
+            f"Billing Address: {_safe(customer.get('address') or invoice.get('customer_address'))}"
         )
     with head_right:
         st.markdown(
             f"**{title}**\n\n"
-            f"Document No.: `{invoice.get('doc_no') or invoice.get('invoice_no') or '—'}`\n\n"
-            f"Issue Date: {invoice.get('issue_date') or '—'}\n\n"
-            f"Due Date: {invoice.get('due_date') or '—'}\n\n"
-            f"Reference: {invoice.get('ref_doc_no') or invoice.get('job_no') or '—'}"
+            f"Document No.: `{_safe(selected_no)}`\n\n"
+            f"Issue Date: {_safe(invoice.get('issue_date'))}\n\n"
+            f"Due Date: {_safe(invoice.get('due_date'))}\n\n"
+            f"Reference: {_safe(invoice.get('ref_doc_no') or invoice.get('job_no'))}"
         )
 
     shipping = invoice.get("shipping_address") or invoice.get("delivery_address")
@@ -95,20 +100,19 @@ def _document_preview(invoice: Dict[str, Any], items: list[dict]) -> None:
     left, right = st.columns([1.4, 1])
     with left:
         st.text_area("Remarks", value=str(invoice.get("remark") or ""), disabled=True, height=85)
-        st.caption("Thai tax/document rules, approval status and PDF rendering are enforced by the finance/PDF layers.")
+        st.caption("Official document validation and tax rules are enforced by the finance/PDF layers.")
     with right:
         st.metric("Subtotal", _fmt_money(total_before, currency))
         st.metric("VAT", _fmt_money(vat, currency))
         if float(wht or 0) > 0:
             st.metric("WHT", _fmt_money(wht, currency))
         st.metric("Grand Total", _fmt_money(total, currency))
-        if float(invoice.get("outstanding") or 0) >= 0:
-            st.metric("Outstanding", _fmt_money(invoice.get("outstanding"), currency))
+        st.metric("Outstanding", _fmt_money(invoice.get("outstanding"), currency))
 
     sig1, sig2, sig3 = st.columns(3)
     sig1.info("Payer / Receiver\n\n__________________\nDate: ____ / ____ / ______")
     sig2.info("Customer / Received by\n\n__________________\nDate: ____ / ____ / ______")
-    sig3.info(f"Authorized Signature\n\n__________________\n{finance._s(finance.COMPANY.get('signer_name', ''), '')}")
+    sig3.info("Authorized Signature\n\n__________________\nNATTAYARAAT CO., LTD.")
 
 
 def render() -> None:
