@@ -136,13 +136,25 @@ def _render_pts_pv_create():
     col_sup, col_ref = st.columns([1.3, 1.0])
 
     with col_sup:
-        st.markdown("##### 🏢 Supplier Information (ข้อมูลเจ้าหนี้/สายเรือ)")
+        st.markdown("##### 🏢 Supplier / Payee (ข้อมูลเจ้าหนี้ / สายเรือ / ค่าหัวลาก / ท่าเรือ)")
         if v_opts:
-            sel_v_key = st.selectbox("Supplier ID & Name*", list(v_opts.keys()), key="pts_pv_vendor_select")
+            sel_v_key = st.selectbox(
+                "Select Supplier / Carrier / Transporter *",
+                list(v_opts.keys()),
+                format_func=lambda k: f"{v_opts[k].get('party_code') or v_opts[k].get('vendor_code')} — {v_opts[k].get('display_name') or v_opts[k].get('legal_name')} ({', '.join(v_opts[k].get('roles', [])) if isinstance(v_opts[k].get('roles'), list) else v_opts[k].get('roles', '')})",
+                key="pts_pv_vendor_select"
+            )
             chosen_vendor = v_opts[sel_v_key]
             v_id = chosen_vendor["id"]
-            v_name = chosen_vendor.get("legal_name", "")
+            v_name = chosen_vendor.get("legal_name") or chosen_vendor.get("display_name", "")
             v_tax_id = chosen_vendor.get("tax_id", "")
+            v_branch = chosen_vendor.get("branch_no", "00000")
+            v_bank = chosen_vendor.get("bank_name", "")
+            v_acc = chosen_vendor.get("bank_account_no", "")
+            v_payterm = chosen_vendor.get("payment_term_code", "Net 30")
+
+            # Display metadata chip
+            st.caption(f"📌 **Tax ID:** {v_tax_id or '—'} | **Branch:** {v_branch} | **Term:** {v_payterm}" + (f" | **Bank:** {v_bank} ({v_acc})" if v_bank else ""))
         else:
             st.warning("No vendors registered in Master Data.")
             v_id = None

@@ -268,7 +268,7 @@ def _master_data():
         sales_map["default_admin"] = "ADMIN — Admin Sales"
 
     # 3. Master carriers, ports, charges
-    carriers = list_parties("CARRIER", active_only=True) or []
+    carriers = list_parties(["CARRIER", "LINER"], active_only=True) or []
     ports = list_ports(active_only=True) or []
     charges = list_charges(active_only=True) or []
     

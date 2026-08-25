@@ -4,17 +4,21 @@ from database.connection import get_connection
 
 
 def list_customers() -> List[Dict[str, Any]]:
-    """List active tenant customers across boolean/integer legacy schemas."""
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT *
-                FROM customers
-                WHERE LOWER(COALESCE(is_active::text, '0')) IN ('1','true','t')
-                  AND tenant_id = %s
-                ORDER BY LOWER(company_name) ASC
-            """, (get_current_tenant_id(),))
-            return [dict(r) for r in cur.fetchall()]
+    """List active tenant customers across unified business_parties and customers."""
+    from managers.customer_master_manager import list_customers as unified_list_customers
+    try:
+        return unified_list_customers(active_only=True)
+    except Exception:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT *
+                    FROM customers
+                    WHERE LOWER(COALESCE(is_active::text, '0')) IN ('1','true','t')
+                      AND tenant_id = %s
+                    ORDER BY LOWER(company_name) ASC
+                """, (get_current_tenant_id(),))
+                return [dict(r) for r in cur.fetchall()]
 
 
 def get_customer(customer_id: int) -> Optional[Dict[str, Any]]:

@@ -185,11 +185,20 @@ def generate_company_bl_pdf(payload: Dict[str, Any], output_path: Optional[str] 
     job = dict(payload.get("job") or {})
     booking = dict(payload.get("booking") or {})
     containers = list(payload.get("containers") or [])
+    doc_title = resolve_document_title(payload, job=job, booking=booking)
+
+    # Multi-Modal Dispatching to Dedicated Layout Renderers
+    if doc_title == "AIR WAYBILL":
+        from pdf.air_waybill_pdf import generate_air_waybill_pdf
+        return generate_air_waybill_pdf(payload, output_path)
+    elif doc_title == "TRUCK WAYBILL":
+        from pdf.truck_waybill_pdf import generate_truck_waybill_pdf
+        return generate_truck_waybill_pdf(payload, output_path)
+
     styles = _styles()
 
     bl_no = _s(bl.get("bl_no"), "NATTA-BKKSGN2608001")
     approval_status = _s(bl.get("approval_status") or bl.get("status"), "Draft")
-    doc_title = resolve_document_title(payload, job=job, booking=booking)
 
     shipper = _s(bl.get("shipper"))
     consignee = _s(bl.get("consignee"))

@@ -124,7 +124,10 @@ def _create_form(user: Dict[str, Any]) -> None:
     with c1:
         doc_type = st.selectbox("Document Type", list(DOC_TYPES), format_func=lambda x: DOC_TYPES[x], key="fin_new_type")
         customers = list_customers() or []
-        options = [(0, "Select customer")] + [(c.get("id"), c.get("company_name", "Unknown")) for c in customers]
+        options = [(0, "Select customer")] + [
+            (c.get("id"), f"{c.get('customer_code') or c.get('party_code') or 'C'} — {c.get('display_name') or c.get('company_name', 'Unknown')}")
+            for c in customers if c.get("id")
+        ]
         idx = st.selectbox("Customer", range(len(options)), format_func=lambda i: options[i][1], key="fin_new_customer")
         customer_id, _customer_label = options[idx]
         jobs = list_shipments() or []

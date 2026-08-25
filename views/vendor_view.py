@@ -4,14 +4,15 @@ from managers.vendor_manager import get_vendors, create_vendor, update_vendor
 from views.document_ui import render_document_section
 
 def render_vendor_list():
-    st.subheader("Vendor Master / ทะเบียนผู้ขาย")
+    st.subheader("Vendor & Supplier Master / ทะเบียนเจ้าหนี้และผู้ให้บริการ")
     
     vendors = get_vendors()
     if not vendors:
         st.info("No vendors found. Please create one.")
     else:
         df = pd.DataFrame(vendors)
-        st.dataframe(df[['id', 'vendor_code', 'legal_name', 'country', 'status', 'created_at']], use_container_width=True)
+        display_cols = [c for c in ['id', 'vendor_code', 'legal_name', 'roles', 'tax_id', 'country', 'status'] if c in df.columns]
+        st.dataframe(df[display_cols], use_container_width=True)
 
 def render_vendor_create():
     st.subheader("Add New Vendor / เพิ่มผู้ขาย")

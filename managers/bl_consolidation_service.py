@@ -82,6 +82,64 @@ def generate_company_bl_no(pol: Any, pod: Any, ref_date: Any = None) -> str:
     return f"{route_key}{yymm}{int(seq):03d}"
 
 
+def generate_air_waybill_no(pol: Any = None, pod: Any = None, ref_date: Any = None) -> str:
+    """Generate HAWB-{YYMM}-{SEQ4} for Air Freight."""
+    tenant = get_current_tenant_id()
+    if not tenant:
+        raise RuntimeError("tenant_id is required for AWB numbering")
+    d = _resolve_date(ref_date)
+    yymm = d.strftime("%y%m")
+    doc_key = "HAWB"
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO document_counters (tenant_id, doc_type, yymm, last_running)
+                VALUES (%s, %s, %s, 1)
+                ON CONFLICT (tenant_id, doc_type, yymm)
+                DO UPDATE SET last_running = document_counters.last_running + 1
+                RETURNING last_running
+                """,
+                (tenant, doc_key, yymm),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise RuntimeError("Unable to allocate AWB sequence")
+            seq = row["last_running"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
+            conn.commit()
+    return f"HAWB-{yymm}-{int(seq):04d}"
+
+
+def generate_truck_waybill_no(pol: Any = None, pod: Any = None, ref_date: Any = None) -> str:
+    """Generate TWB-{YYMM}-{SEQ4} for Truck Freight."""
+    tenant = get_current_tenant_id()
+    if not tenant:
+        raise RuntimeError("tenant_id is required for Truck Waybill numbering")
+    d = _resolve_date(ref_date)
+    yymm = d.strftime("%y%m")
+    doc_key = "TWB"
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO document_counters (tenant_id, doc_type, yymm, last_running)
+                VALUES (%s, %s, %s, 1)
+                ON CONFLICT (tenant_id, doc_type, yymm)
+                DO UPDATE SET last_running = document_counters.last_running + 1
+                RETURNING last_running
+                """,
+                (tenant, doc_key, yymm),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise RuntimeError("Unable to allocate TWB sequence")
+            seq = row["last_running"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
+            conn.commit()
+    return f"TWB-{yymm}-{int(seq):04d}"
+
+
 def next_consol_sequence(job_no: str) -> int:
     """Atomically allocate the next B/L sequence within one Shipment/Job."""
     tenant = get_current_tenant_id()

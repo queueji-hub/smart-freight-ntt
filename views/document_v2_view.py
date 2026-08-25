@@ -101,13 +101,15 @@ def render() -> None:
             with c3:
                 _approval_actions("booking", booking_no, status, user, f"booking_{booking_no}")
 
-    # B/L
+    # B/L / Waybill
     bls = list_bls(job_no=selected_job_no) or []
     for bl in bls:
         bl_no = bl.get("bl_no")
         status = get_approval_status("bl", bl_no)
+        doc_title = bl.get("doc_title") or "BILL OF LADING"
+        mode_emoji = "✈️" if "AIR" in doc_title else "🚚" if "TRUCK" in doc_title else "🚢"
         c1, c2, c3 = st.columns([5, 1, 1])
-        c1.write(f"**{bl.get('bl_type', 'B/L')}** · `{bl_no}` · {status}")
+        c1.write(f"**{mode_emoji} {doc_title.title()}** · `{bl_no}` · {status}")
         with c2:
             def bl_pdf(record=bl):
                 from pdf.bl_pdf import generate_bl_pdf

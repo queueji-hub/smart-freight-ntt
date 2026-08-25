@@ -10,7 +10,20 @@ from managers.master_data_crud_manager import list_parties, upsert_party, delete
 from managers.salesperson_manager import list_salespersons, save_salesperson, delete_salesperson, get_salesperson
 from ui.design_system import page_header, section
 
-ROLE_OPTIONS = ["CUSTOMER", "CARRIER", "VENDOR", "AGENT", "CO_LOADER", "SHIPPER", "CONSIGNEE"]
+ROLE_OPTIONS = [
+    "CUSTOMER",
+    "CARRIER",
+    "LINER",
+    "VENDOR",
+    "TRANSPORTER",
+    "PORT_OPERATOR",
+    "AGENT",
+    "CO_LOADER",
+    "SHIPPER",
+    "CONSIGNEE",
+    "CUSTOMS_BROKER",
+    "WAREHOUSE",
+]
 
 
 def _party_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
@@ -22,12 +35,12 @@ def _party_form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> N
         ROLE_OPTIONS,
         default=existing_roles or ["CUSTOMER"],
         key=f"party_roles_{record.get('id','new')}",
-        help="เลือกว่าเป็น CUSTOMER (ลูกค้า), CARRIER (สายเรือ/สายการบิน), VENDOR (ผู้ให้บริการ), AGENT หรืออื่นๆ"
+        help="เลือกว่าเป็น CUSTOMER (ลูกค้า), CARRIER (สายเรือ/สายการบิน), VENDOR (ผู้ให้บริการ), TRANSPORTER (หัวลาก/ขนส่ง), PORT_OPERATOR (ท่าเรือ), AGENT หรืออื่นๆ"
     )
     
     c1, c2, c3 = st.columns(3)
     with c1:
-        code = st.text_input("Party Code (รหัสคู่ค้า/ลูกค้า)", value=str(record.get("party_code") or ""), placeholder="Auto (ระบบ gen ให้อัตโนมัติ)", max_chars=10, key=f"party_code_{record.get('id','new')}").upper()
+        code = st.text_input("Party Code (รหัสคู่ค้า/ลูกค้า)", value=str(record.get("party_code") or ""), placeholder="Auto (ระบบ gen ให้อัตโนมัติ เช่น C0001, CR001, TR001, VD001)", max_chars=20, key=f"party_code_{record.get('id','new')}").upper()
         legal = st.text_input("Legal / Company Name (ชื่อบริษัท/นิติบุคคล) *", value=str(record.get("legal_name") or record.get("company_name") or ""), key=f"party_legal_{record.get('id','new')}")
         display = st.text_input("Display Name (ชื่อทางการค้า/ชื่อย่อ)", value=str(record.get("display_name") or record.get("company_name") or ""), key=f"party_disp_{record.get('id','new')}")
     with c2:
@@ -255,7 +268,17 @@ def render() -> None:
         with filter_col:
             role_type = st.selectbox(
                 "Filter by Role (กรองตามประเภท)",
-                ["ALL (ทั้งหมด)", "CUSTOMER (ลูกค้า)", "CARRIER (สายเรือ / สายการบิน)", "VENDOR (ผู้ให้บริการ)", "AGENT (ตัวแทน)", "SHIPPER (ผู้ส่งสินค้า)", "CONSIGNEE (ผู้รับสินค้า)"],
+                [
+                    "ALL (ทั้งหมด)",
+                    "CUSTOMER (ลูกค้า)",
+                    "CARRIER / LINER (สายเรือ / สายการบิน)",
+                    "VENDOR (ผู้ให้บริการ / ซัพพลายเออร์)",
+                    "TRANSPORTER (ผู้ให้บริการขนส่งทางบก / รถหัวลาก)",
+                    "PORT_OPERATOR (ท่าเรือ / ลานตู้)",
+                    "AGENT / CO_LOADER (ตัวแทน / Co-Loader)",
+                    "SHIPPER (ผู้ส่งสินค้า)",
+                    "CONSIGNEE (ผู้รับสินค้า)",
+                ],
                 key="party_role_filter"
             )
         with action_col:
@@ -269,18 +292,22 @@ def render() -> None:
         if "CUSTOMER" in role_type:
             selected_role = "CUSTOMER"
         elif "CARRIER" in role_type:
-            selected_role = "CARRIER"
+            selected_role = ["CARRIER", "LINER"]
         elif "VENDOR" in role_type:
             selected_role = "VENDOR"
+        elif "TRANSPORTER" in role_type:
+            selected_role = "TRANSPORTER"
+        elif "PORT_OPERATOR" in role_type:
+            selected_role = "PORT_OPERATOR"
         elif "AGENT" in role_type:
-            selected_role = "AGENT"
+            selected_role = ["AGENT", "CO_LOADER"]
         elif "SHIPPER" in role_type:
             selected_role = "SHIPPER"
         elif "CONSIGNEE" in role_type:
             selected_role = "CONSIGNEE"
 
         if action == "➕ New Party / Customer":
-            default_rec = {"roles": [selected_role]} if selected_role else {"roles": ["CUSTOMER"]}
+            default_rec = {"roles": [selected_role] if isinstance(selected_role, str) else (selected_role or ["CUSTOMER"])}
             _party_form(user, default_rec)
             return
 

@@ -263,18 +263,75 @@ def _documents(j):
         except Exception as exc:
             st.error(f"PDF unavailable: {exc}")
 
-    # 2. Shipping Instruction (S/I)
+    # 2. House Bill of Lading / Air Waybill / Truck Waybill
     st.markdown("---")
-    st.markdown("##### 📄 Shipping Instruction (S/I) / ใบแจ้งรายละเอียดออก Master B/L")
-    si_c1, si_c2 = st.columns([3, 2])
-    with si_c1:
-        si_mode_choice = st.radio(
-            "B/L Issuance Type on S/I",
-            ["Direct B/L (Direct Master B/L to Customer)", "Agent B/L (HBL Mode — Nattayaarat Shipper & Agent Consignee)"],
-            index=1 if j.get("mode") in {"SEA", "OCEAN"} else 0,
-            key=f"shipment_si_mode_{j['id']}",
-            horizontal=True
-        )
+    from managers.bl_workflow_service import list_job_bls, create_bl_from_job, detect_transport_mode
+    from managers.booking_manager import get_booking
+
+    bk_data = get_booking(j.get("booking_no")) if j.get("booking_no") else {}
+    t_mode, d_type, d_title = detect_transport_mode(job=j, booking=bk_data)
+    mode_emoji = "✈️" if t_mode == "AIR" else "🚚" if t_mode == "TRUCK" else "🚢"
+    
+    st.markdown(f"##### {mode_emoji} Company {d_title.title()} ({t_mode} Freight)")
+    
+    job_bls = list_job_bls(j["job_no"]) or []
+    if job_bls:
+        for bl in job_bls:
+            b_col1, b_col2, b_col3 = st.columns([4, 1, 1])
+            bl_no = _s(bl.get("bl_no"))
+            bl_status = _s(bl.get("approval_status"), "Draft")
+            b_col1.write(f"**{mode_emoji} {d_title.title()}** · `{bl_no}` · Status: `{bl_status}` (#{bl.get('consol_seq', 1)})")
+            with b_col2:
+                if st.button("Workspace", key=f"open_bl_{bl['id']}", use_container_width=True):
+                    st.session_state["target_job_no"] = j["job_no"]
+                    st.session_state["bl_v2_selected"] = bl["id"]
+                    st.session_state["current_navigation"] = "bl"
+                    st.query_params["page"] = "bl"
+                    st.rerun()
+            with b_col3:
+                if st.button("PDF", key=f"pdf_bl_{bl['id']}", type="primary", use_container_width=True):
+                    try:
+                        from pdf.bl_pdf import generate_bl_pdf
+                        pdf_file = generate_bl_pdf(bl["id"])
+                        if pdf_file and os.path.exists(pdf_file):
+                            with open(pdf_file, "rb") as fh:
+                                st.download_button(
+                                    "Download PDF",
+                                    fh.read(),
+                                    file_name=os.path.basename(pdf_file),
+                                    mime="application/pdf",
+                                    key=f"dl_bl_{bl['id']}",
+                                    use_container_width=True
+                                )
+                    except Exception as e:
+                        st.error(f"PDF failed: {e}")
+        
+        if can_write(st.session_state.get("role", "admin"), "bl"):
+            if st.button(f"＋ Issue Another {d_title.title()} (Consolidation)", key=f"add_consol_bl_{j['id']}"):
+                try:
+                    user = st.session_state.get("user", {})
+                    new_bid = create_bl_from_job(j["job_no"], user)
+                    st.session_state["bl_v2_selected"] = new_bid
+                    st.session_state["current_navigation"] = "bl"
+                    st.query_params["page"] = "bl"
+                    st.success(f"New {d_title.title()} created.")
+                    st.rerun()
+                except Exception as ex:
+                    st.error(str(ex))
+    else:
+        st.info(f"No {d_title.title()} has been issued for this Job yet.")
+        if can_write(st.session_state.get("role", "admin"), "bl"):
+            if st.button(f"🚀 Issue {d_title.title()} for this Job", key=f"issue_first_bl_{j['id']}", type="primary"):
+                try:
+                    user = st.session_state.get("user", {})
+                    new_bid = create_bl_from_job(j["job_no"], user)
+                    st.session_state["bl_v2_selected"] = new_bid
+                    st.session_state["current_navigation"] = "bl"
+                    st.query_params["page"] = "bl"
+                    st.success(f"{d_title.title()} issued successfully!")
+                    st.rerun()
+                except Exception as ex:
+                    st.error(str(ex))
     si_mode = "hbl" if "Agent B/L" in si_mode_choice else "direct"
 
     from managers.si_service import assemble_si_payload
