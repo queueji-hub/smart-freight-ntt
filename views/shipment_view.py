@@ -332,6 +332,19 @@ def _documents(j):
                     st.rerun()
                 except Exception as ex:
                     st.error(str(ex))
+
+    # 3. Shipping Instruction (S/I)
+    st.markdown("---")
+    st.markdown("##### 📄 Shipping Instruction (S/I) / ใบแจ้งรายละเอียดออก Master B/L")
+    si_c1, si_c2 = st.columns([3, 2])
+    with si_c1:
+        si_mode_choice = st.radio(
+            "B/L Issuance Type on S/I",
+            ["Direct B/L (Direct Master B/L to Customer)", "Agent B/L (HBL Mode — Nattayaarat Shipper & Agent Consignee)"],
+            index=1 if j.get("mode") in {"SEA", "OCEAN"} else 0,
+            key=f"shipment_si_mode_{j['id']}",
+            horizontal=True
+        )
     si_mode = "hbl" if "Agent B/L" in si_mode_choice else "direct"
 
     from managers.si_service import assemble_si_payload
