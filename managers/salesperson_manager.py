@@ -73,7 +73,7 @@ def list_salespersons(active_only: bool = False, user: Optional[Dict[str, Any]] 
                     WHERE (tenant_id = {param_placeholder} OR tenant_id IS NULL OR tenant_id = 'default')
                 """
                 if active_only:
-                    sql += " AND (is_active = 1 OR is_active = '1' OR is_active IS NULL)" if is_sqlite else " AND (is_active = TRUE OR is_active = 1)"
+                    sql += " AND (is_active = 1 OR is_active = '1' OR is_active IS NULL)" if is_sqlite else " AND (is_active IS NOT FALSE)"
                 sql += " ORDER BY sales_code ASC, name ASC"
                 cur.execute(sql, (tenant,))
                 sales = [dict(r) for r in cur.fetchall()]

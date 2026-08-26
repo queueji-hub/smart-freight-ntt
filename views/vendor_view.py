@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from managers.vendor_manager import get_vendors, create_vendor, update_vendor
 from views.document_ui import render_document_section
+from views.navigation_helper import get_active_tab, redirect_to_tab
 
 def render_vendor_list():
     st.subheader("Vendor & Supplier Master / ทะเบียนเจ้าหนี้และผู้ให้บริการ")
@@ -38,7 +39,7 @@ def render_vendor_create():
                     "tax_id": v_tax,
                     "country": v_country
                 }, st.session_state.get('user'))
-                st.session_state["vendor_active_tab"] = "Vendor List"
+                redirect_to_tab("vendor_active_tab", "Vendor List")
                 st.success(f"Vendor {v_code} created successfully!")
                 st.rerun()
             except Exception as e:
@@ -48,8 +49,7 @@ def render():
     st.title("🏢 Vendor Management")
     
     tab_opts = ["Vendor List", "Add Vendor", "Vendor Documents"]
-    if "vendor_active_tab" not in st.session_state or st.session_state["vendor_active_tab"] not in tab_opts:
-        st.session_state["vendor_active_tab"] = tab_opts[0]
+    get_active_tab("vendor_active_tab", tab_opts)
         
     active_tab = st.radio(
         "Vendor Navigation",

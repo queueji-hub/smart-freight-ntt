@@ -10,7 +10,7 @@ from managers.document_numbering_service import generate_document_number, normal
 SHIPMENT_FIELDS = [
     "status", "job_type", "booking_no", 
     "customer_id", "customer_name",
-    "notify_party", "sales_person", "operations_owner", 
+    "sales_id", "notify_party", "sales_person", "operations_owner", 
     "customer_reference", "quotation_no",
     "shipper", "consignee", "cargo_type", "carrier",
     "place_of_receipt", "pol", "transshipment_port", "pod", 

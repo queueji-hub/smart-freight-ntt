@@ -23,6 +23,7 @@ from managers.invoice_manager import (
     record_payment,
     get_outstanding_summary,
 )
+from views.navigation_helper import get_active_tab, redirect_to_tab
 from managers.shipment_manager import list_shipments
 from managers.document_duplicate_service import (
     duplicate_invoice,
@@ -109,8 +110,7 @@ def render() -> None:
     st.divider()
 
     tab_opts = ["Documents", "Payments"] + (["New Document"] if can_edit else [])
-    if "billing_active_tab" not in st.session_state or st.session_state["billing_active_tab"] not in tab_opts:
-        st.session_state["billing_active_tab"] = tab_opts[0]
+    get_active_tab("billing_active_tab", tab_opts)
 
     active_tab = st.radio(
         "Billing Navigation",
@@ -189,7 +189,7 @@ def _create_form(user: Dict[str, Any]) -> None:
                 "created_by": user.get("username", "System"), "status": "DRAFT",
             }
             doc_no = create_invoice(payload, st.session_state["billing_items"])
-            st.session_state["billing_active_tab"] = "Documents"
+            redirect_to_tab("billing_active_tab", "Documents")
             st.session_state["fin_action_doc"] = doc_no
             st.session_state["billing_items"] = [_empty_item()]
             st.success(f"Created {doc_no}")

@@ -1,5 +1,6 @@
 """Smart Freight NTT — Job Control / Job 360 workspace."""
 from datetime import date
+from typing import Any, Dict, List, Optional
 import os
 import pandas as pd
 import streamlit as st
@@ -45,6 +46,22 @@ def _dt(v):
 def _idx(opts, value):
     value = _s(value, "")
     return opts.index(value) if value in opts else 0
+
+
+def _idx_sales(opts: List[str], value: Any) -> int:
+    if not value:
+        return 0
+    v_str = str(value).strip().lower()
+    for i, opt in enumerate(opts):
+        opt_str = opt.strip().lower()
+        if opt_str == v_str:
+            return i
+        parts = [p.strip() for p in opt_str.split("—")]
+        if any(p == v_str for p in parts):
+            return i
+        if v_str in opt_str or opt_str in v_str:
+            return i
+    return 0
 
 
 def _opts(column):
@@ -137,12 +154,18 @@ def _operations(j):
     customers = list_customers() or []
     sales = list_sales_users() or []
     customer_options = [x.get("company_name") for x in customers if x.get("company_name")]
-    sales_options = [_s(x.get("full_name"), x.get("username")) for x in sales]
+    sales_options = [_s(x.get("full_name"), x.get("username")) for x in sales if (x.get("full_name") or x.get("username"))]
+    if not sales_options:
+        sales_options = ["Unassigned"]
+    cur_sp = _s(j.get("sales_person"))
+    if cur_sp and cur_sp != "—" and not any(cur_sp.lower() == opt.lower() or cur_sp.lower() in opt.lower() or opt.lower() in cur_sp.lower() for opt in sales_options):
+        sales_options.insert(0, cur_sp)
+
     current_customer = j.get("customer_name") or j.get("customer")
     with st.form(f'ops_{j["job_no"]}', clear_on_submit=False):
         c1, c2, c3 = st.columns(3)
         customer = c1.selectbox("Customer", customer_options or [""], index=_idx(customer_options, current_customer))
-        sales_person = c2.selectbox("Sales", sales_options or [""], index=_idx(sales_options, j.get("sales_person")))
+        sales_person = c2.selectbox("Sales", sales_options, index=_idx_sales(sales_options, j.get("sales_person")))
         status = c3.selectbox("Status", STATUS_FLOW, index=_idx(STATUS_FLOW, j.get("status")))
         c4, c5, c6 = st.columns(3)
         pol = c4.text_input("POL (Port of Loading)", value=_s(j.get("pol")))
@@ -680,8 +703,8 @@ def _new_job():
             cname = r.get("display_name") or r.get("company_name") or str(cid)
             customer_dict[cid] = f"{r.get('customer_code', '')} — {cname}".strip(" —")
 
-    sales_list = list_salespersons(active_only=True) or []
-    sales_options = [f"{s.get('sales_code')} — {s.get('name')}".strip(" —") for s in sales_list if s.get("name")]
+    sales_list = list_sales_users() or []
+    sales_options = [_s(s.get("full_name"), s.get("username")) for s in sales_list if (s.get("full_name") or s.get("username"))]
     if not sales_options:
         sales_options = ["Unassigned"]
 

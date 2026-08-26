@@ -61,31 +61,55 @@ def list_sales_users() -> List[Dict[str, Any]]:
     """Return active salespersons and sales-capable users."""
     try:
         from managers.salesperson_manager import list_salespersons
-        sales_records = list_salespersons(active_only=True)
+        sales_records = list_salespersons(active_only=False)
         if sales_records:
             return [
                 {
                     "id": r["id"],
                     "username": r.get("sales_code") or str(r["id"]),
-                    "full_name": r.get("name") or r.get("sales_code"),
+                    "full_name": f"{r.get('sales_code')} — {r.get('name')}".strip(" —") if r.get("sales_code") else r.get("name"),
+                    "name": r.get("name"),
+                    "sales_code": r.get("sales_code"),
                     "email": r.get("email"),
                     "role": "sales",
                 }
-                for r in sales_records
+                for r in sales_records if r.get("name")
             ]
     except Exception:
         pass
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT id, username, full_name, email, role
-                FROM users
-                WHERE LOWER(COALESCE(is_active::text, '0')) IN ('1','true','t')
-                  AND LOWER(COALESCE(role, '')) IN ('sales','admin','manager')
-                ORDER BY LOWER(COALESCE(full_name, username))
-            """)
-            return [dict(r) for r in cur.fetchall()]
+            is_sqlite = type(conn).__name__ == "SQLiteConnAdapter" or "sqlite" in str(type(conn)).lower()
+            if is_sqlite:
+                cur.execute("""
+                    SELECT id, username, full_name, email, role
+                    FROM users
+                    WHERE (is_active = 1 OR is_active IS NULL)
+                      AND LOWER(COALESCE(role, '')) IN ('sales','admin','manager','operation')
+                    ORDER BY LOWER(COALESCE(full_name, username))
+                """)
+            else:
+                cur.execute("""
+                    SELECT id, username, full_name, email, role
+                    FROM users
+                    WHERE (is_active IS NOT FALSE)
+                      AND LOWER(COALESCE(role, '')) IN ('sales','admin','manager','operation')
+                    ORDER BY LOWER(COALESCE(full_name, username))
+                """)
+            return [
+                {
+                    "id": r["id"],
+                    "username": r.get("username"),
+                    "full_name": r.get("full_name") or r.get("username"),
+                    "name": r.get("full_name") or r.get("username"),
+                    "sales_code": (r.get("username") or "").upper()[:10],
+                    "email": r.get("email"),
+                    "role": r.get("role") or "sales",
+                }
+                for r in cur.fetchall()
+            ]
+
 
 
 def list_distinct_job_values(column: str) -> List[str]:

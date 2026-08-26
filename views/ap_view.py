@@ -20,6 +20,7 @@ from managers.profit_manager import get_cost_lines
 from managers.charge_master_manager import list_charges
 from views.document_ui import render_document_section
 from ui.design_system import page_header, section
+from views.navigation_helper import get_active_tab, redirect_to_tab
 
 PAYMENT_TYPES = [
     "General Payment",
@@ -370,8 +371,8 @@ def _render_pts_pv_create():
 
             st.session_state.pop("pts_pv_items", None)
             st.session_state["last_ap_id"] = new_id
-            st.session_state["ap_active_tab"] = "📑 AP Voucher Register (ทะเบียนใบสำคัญจ่าย)"
             st.session_state["ap_sel_voucher_reg"] = new_id
+            redirect_to_tab("ap_active_tab", "📑 AP Voucher Register (ทะเบียนใบสำคัญจ่าย)")
             st.success(f"🎉 Payment Voucher created successfully! (ID: {new_id})")
             st.rerun()
         except Exception as exc:
@@ -379,7 +380,7 @@ def _render_pts_pv_create():
 
     if b_clr.button("🔄 Reset Form", use_container_width=True, key="pts_pv_reset_btn"):
         st.session_state.pop("pts_pv_items", None)
-        st.session_state["ap_active_tab"] = "📑 AP Voucher Register (ทะเบียนใบสำคัญจ่าย)"
+        redirect_to_tab("ap_active_tab", "📑 AP Voucher Register (ทะเบียนใบสำคัญจ่าย)")
         st.rerun()
 
 
@@ -391,8 +392,7 @@ def render():
         "➕ Create Payment Voucher (ออกใบสำคัญจ่าย)",
         "🛡️ Approval & Documents"
     ]
-    if "ap_active_tab" not in st.session_state or st.session_state["ap_active_tab"] not in tab_opts:
-        st.session_state["ap_active_tab"] = tab_opts[0]
+    get_active_tab("ap_active_tab", tab_opts)
 
     active_tab = st.radio(
         "AP Navigation",

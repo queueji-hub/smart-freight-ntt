@@ -21,6 +21,7 @@ from managers.invoice_manager import (
 )
 from managers.shipment_manager import list_shipments
 from ui.design_system import page_header, section
+from views.navigation_helper import get_active_tab, redirect_to_tab
 
 CURRENCIES = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
 SERVICES = [
@@ -419,7 +420,7 @@ def _render_pts_receipt_form(user: Dict[str, Any], doc_type_default: str = "RC")
                 "payments": p_items
             }, items_to_save)
             
-            st.session_state["finance_v2_active_tab"] = "📑 Receipt & Invoice Register (ทะเบียนเอกสาร)"
+            redirect_to_tab("finance_v2_active_tab", "📑 Receipt & Invoice Register (ทะเบียนเอกสาร)")
             st.session_state["fin_v2_doc_actions_select"] = created_doc
             st.session_state["finance_last_doc"] = created_doc
             st.session_state.pop("pts_rc_items", None)
@@ -432,7 +433,7 @@ def _render_pts_receipt_form(user: Dict[str, Any], doc_type_default: str = "RC")
     if btn_reset.button("🔄 Reset Form", use_container_width=True, key="pts_rc_reset_btn"):
         st.session_state.pop("pts_rc_items", None)
         st.session_state.pop("pts_collection_parts", None)
-        st.session_state["finance_v2_active_tab"] = "📑 Receipt & Invoice Register (ทะเบียนเอกสาร)"
+        redirect_to_tab("finance_v2_active_tab", "📑 Receipt & Invoice Register (ทะเบียนเอกสาร)")
         st.rerun()
 
 
@@ -443,8 +444,7 @@ def render() -> None:
     invoices = list_invoices() or []
 
     tab_opts = ["📑 Receipt & Invoice Register (ทะเบียนเอกสาร)", "➕ Create Receipt & Tax Receipt (ออกใบเสร็จ)"]
-    if "finance_v2_active_tab" not in st.session_state or st.session_state["finance_v2_active_tab"] not in tab_opts:
-        st.session_state["finance_v2_active_tab"] = tab_opts[0]
+    get_active_tab("finance_v2_active_tab", tab_opts)
 
     active_tab = st.radio(
         "Finance Navigation",

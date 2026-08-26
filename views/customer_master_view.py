@@ -6,6 +6,7 @@ import streamlit as st
 from managers.auth_manager import can_write
 from managers.customer_master_manager import list_customers, save_customer, get_credit_snapshot
 from ui.design_system import page_header, section
+from views.navigation_helper import get_active_tab, redirect_to_tab
 
 
 def _form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
@@ -48,7 +49,7 @@ def _form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
             "credit_days": credit_days, "payment_term_code": payment_term, "credit_status": status,
             "credit_hold": credit_hold, "is_active": active,
         }, user)
-        st.session_state["customer_master_action"] = "Browse"
+        redirect_to_tab("customer_master_action", "Browse")
         st.session_state.pop("customer_edit_id", None)
         st.success("Customer updated." if record.get("id") else "Customer saved.")
         st.rerun()
@@ -63,6 +64,7 @@ def render() -> None:
         st.warning("Customer Master access is restricted.")
         return
 
+    get_active_tab("customer_master_action", ["Browse", "New"])
     action = st.radio("Customers", ["Browse", "New"], horizontal=True, key="customer_master_action")
     rows = list_customers(active_only=False, user=user)
     if action == "New":
