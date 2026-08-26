@@ -470,12 +470,13 @@ def _financial(j):
                 "Description": r.get("description"),
                 "Payee / Supplier": r.get("supplier"),
                 "Qty": f"{r.get('quantity', 1):g} {r.get('unit', 'UNIT')}",
-                "Unit Rate": f"{float(r.get('unit_price',0)):,.2f} {r.get('currency','THB')}",
+                "Unit Rate": f"{float(r.get('unit_price',0)):,.2f} {r.get('currency','THB')}" + (f" (Ex: {float(r.get('exchange_rate',1)):g})" if r.get('currency') != 'THB' else ""),
                 "Amount (THB)": _money(r.get("amount_thb")),
                 "Tax / WHT": f"{r.get('tax_type', 'VAT 7%')} / {r.get('wht_type', 'None')}",
-                "Net Payable": _money(r.get("net_amount")),
+                "Net Payable": f"{float(r.get('net_amount',0)):,.2f} {r.get('currency','THB')}" + (f" (฿ {float(r.get('net_amount',0))*float(r.get('exchange_rate',1)):,.2f})" if r.get('currency') != 'THB' else ""),
                 "Payout Status": f"{r.get('payout_status', 'UNPAID')} ({_s(r.get('voucher_no'))})",
             } for r in ap_lines]
+
             st.dataframe(pd.DataFrame(ap_display), use_container_width=True, hide_index=True)
 
             if can_edit and not is_locked:
@@ -554,12 +555,13 @@ def _financial(j):
                 "Description": r.get("description"),
                 "Customer": r.get("supplier") or _s(j.get("customer_name")),
                 "Qty": f"{r.get('quantity', 1):g} {r.get('unit', 'UNIT')}",
-                "Selling Rate": f"{float(r.get('unit_price',0)):,.2f} {r.get('currency','THB')}",
+                "Selling Rate": f"{float(r.get('unit_price',0)):,.2f} {r.get('currency','THB')}" + (f" (Ex: {float(r.get('exchange_rate',1)):g})" if r.get('currency') != 'THB' else ""),
                 "Amount (THB)": _money(r.get("amount_thb")),
                 "Tax / WHT": f"{r.get('tax_type', 'VAT 7%')} / {r.get('wht_type', 'None')}",
-                "Net Receivable": _money(r.get("net_amount")),
+                "Net Receivable": f"{float(r.get('net_amount',0)):,.2f} {r.get('currency','THB')}" + (f" (฿ {float(r.get('net_amount',0))*float(r.get('exchange_rate',1)):,.2f})" if r.get('currency') != 'THB' else ""),
                 "Billing Status": f"{r.get('billing_status', 'UNBILLED')} ({_s(r.get('invoice_no'))})",
             } for r in ar_lines]
+
             st.dataframe(pd.DataFrame(ar_display), use_container_width=True, hide_index=True)
 
             if can_edit and not is_locked:

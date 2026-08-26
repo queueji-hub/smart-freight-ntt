@@ -38,6 +38,7 @@ def render_vendor_create():
                     "tax_id": v_tax,
                     "country": v_country
                 }, st.session_state.get('user'))
+                st.session_state["vendor_active_tab"] = "Vendor List"
                 st.success(f"Vendor {v_code} created successfully!")
                 st.rerun()
             except Exception as e:
@@ -46,15 +47,25 @@ def render_vendor_create():
 def render():
     st.title("🏢 Vendor Management")
     
-    tab1, tab2, tab3 = st.tabs(["Vendor List", "Add Vendor", "Vendor Documents"])
+    tab_opts = ["Vendor List", "Add Vendor", "Vendor Documents"]
+    if "vendor_active_tab" not in st.session_state or st.session_state["vendor_active_tab"] not in tab_opts:
+        st.session_state["vendor_active_tab"] = tab_opts[0]
+        
+    active_tab = st.radio(
+        "Vendor Navigation",
+        tab_opts,
+        horizontal=True,
+        key="vendor_active_tab",
+        label_visibility="collapsed"
+    )
     
-    with tab1:
+    if active_tab == tab_opts[0]:
         render_vendor_list()
         
-    with tab2:
+    elif active_tab == tab_opts[1]:
         render_vendor_create()
         
-    with tab3:
+    elif active_tab == tab_opts[2]:
         st.subheader("Vendor Document Center")
         vendors = get_vendors()
         if vendors:
@@ -65,3 +76,4 @@ def render():
                 render_document_section("vendor", str(vid))
         else:
             st.warning("Please create a vendor first.")
+

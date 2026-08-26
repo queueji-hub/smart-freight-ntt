@@ -77,9 +77,11 @@ def calculate_summary(
         qty = Decimal(str(item.get("quantity") or item.get("qty") or 1))
         price = Decimal(str(item.get("unit_price") or item.get("price") or 0.0))
         exch = Decimal(str(item.get("exch_rate") or item.get("exchange_rate") or 1.0))
+        if exch <= Decimal('0'):
+            exch = Decimal('1.0')
         
         # Base THB line amount
-        amount_thb = qty * price * exch
+        amount_thb = (qty * price * exch).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
         tax = str(item.get("tax_type") or item.get("tax") or "VAT 7%").strip()
         wht = str(item.get("wht_type") or item.get("wht") or "None").strip()
@@ -88,23 +90,30 @@ def calculate_summary(
             advance_calc += amount_thb
         elif tax in ("VAT 7%", "07", "7%"):
             amount_vat += amount_thb
-            vat_total += amount_thb * Decimal('0.07')
+            vat_total += (amount_thb * Decimal('0.07')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         else:
             amount_no_vat += amount_thb
 
         if wht in ("WHT 1%", "1", "1%"):
-            wht_1 += amount_thb * Decimal('0.01')
+            wht_1 += (amount_thb * Decimal('0.01')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         elif wht in ("WHT 3%", "3", "3%"):
-            wht_3 += amount_thb * Decimal('0.03')
+            wht_3 += (amount_thb * Decimal('0.03')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        elif wht in ("WHT 5%", "5", "5%"):
+            wht_3 += (amount_thb * Decimal('0.05')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     subtotal = amount_no_vat + amount_vat
-    vat_total = max(Decimal('0.0'), vat_total - Decimal(str(less_vat_sub or 0.0)))
-    wht_total = wht_1 + wht_3 + Decimal(str(plus_wht_diff or 0.0))
-    total_amount = subtotal + vat_total + Decimal(str(diff_amount or 0.0))
+    d_less_vat = Decimal(str(less_vat_sub or 0.0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    d_plus_wht = Decimal(str(plus_wht_diff or 0.0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    d_diff = Decimal(str(diff_amount or 0.0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    vat_total = max(Decimal('0.00'), vat_total - d_less_vat)
+    wht_total = wht_1 + wht_3 + d_plus_wht
+    total_amount = subtotal + vat_total + d_diff
     net_payable = total_amount - wht_total + advance_calc
 
     def _r(d: Decimal) -> Decimal:
         return d.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
 
     res = {
         "amount_no_vat": _r(amount_no_vat),

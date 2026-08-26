@@ -18,7 +18,7 @@ def get_vendors() -> List[Dict[str, Any]]:
                            pf.bank_name, pf.bank_account_name, pf.bank_account_no, pf.swift_code
                     FROM business_parties p
                     LEFT JOIN party_finance_profiles pf ON pf.party_id = p.id AND pf.tenant_id = p.tenant_id
-                    WHERE p.tenant_id = %s AND p.is_active = TRUE
+                    WHERE p.tenant_id = %s AND (p.is_active IS NOT FALSE)
                     ORDER BY p.party_code, p.legal_name ASC
                 """, (tenant_id,))
                 bp_rows = [dict(r) for r in cur.fetchall()]
@@ -26,8 +26,10 @@ def get_vendors() -> List[Dict[str, Any]]:
                 # Fetch roles for each party
                 for bp in bp_rows:
                     pid = bp.get("id")
-                    cur.execute("SELECT role_type FROM party_roles WHERE party_id = %s AND tenant_id = %s AND is_active = TRUE", (pid, tenant_id))
+                    cur.execute("SELECT role_type FROM party_roles WHERE party_id = %s AND tenant_id = %s AND (is_active IS NOT FALSE)", (pid, tenant_id))
                     bp["roles"] = [r["role_type"] if isinstance(r, dict) or hasattr(r, "keys") else r[0] for r in cur.fetchall()]
+
+
 
                 # Filter parties that have at least one payable role
                 payable_parties = [

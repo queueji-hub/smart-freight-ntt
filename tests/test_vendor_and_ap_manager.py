@@ -17,10 +17,11 @@ from managers.ap_manager import (
 )
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def setup_db():
     init_database()
     ensure_phase30_local_schema()
+
 
 
 def test_vendor_lifecycle_and_multi_tenant():

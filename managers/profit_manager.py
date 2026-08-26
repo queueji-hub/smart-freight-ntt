@@ -74,6 +74,20 @@ def _convert_to_thb(amount: float, currency: str, ex_rate: Optional[float] = Non
         return float(amount)
 
 
+from decimal import Decimal, ROUND_HALF_UP
+
+
+def _dec(val: Any) -> Decimal:
+    try:
+        return Decimal(str(val or 0))
+    except Exception:
+        return Decimal('0')
+
+
+def _round_cur(d: Decimal) -> float:
+    return float(d.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+
+
 def compute_line_tax_and_net(
     qty: float,
     unit_price: float,
@@ -82,46 +96,53 @@ def compute_line_tax_and_net(
     currency: str = "THB",
     exchange_rate: float = 1.0,
 ) -> Dict[str, float]:
-    """Computes amount, VAT, WHT, net payable/receivable, and THB conversions."""
-    amount = float(qty or 0) * float(unit_price or 0)
-    ex = float(exchange_rate or 1.0) if currency.upper() != "THB" else 1.0
-    amount_thb = _convert_to_thb(amount, currency, ex)
+    """Computes exact amount, VAT, WHT, net payable/receivable with Thai Revenue Dept ROUND_HALF_UP standard."""
+    d_qty = _dec(qty)
+    d_price = _dec(unit_price)
+    d_amount = (d_qty * d_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    d_ex = _dec(exchange_rate if str(currency).upper() != "THB" else 1.0)
+    if d_ex <= 0:
+        d_ex = Decimal('1.0')
 
     tax_t = str(tax_type or "VAT 7%").strip()
     wht_t = str(wht_type or "None").strip()
 
-    # VAT computation
-    if "7%" in tax_t or tax_t == "VAT 7%":
-        vat_amount = amount * 0.07
+    # VAT computation (7% or 0%)
+    if "7%" in tax_t or tax_t in ("VAT 7%", "07", "7%"):
+        d_vat = (d_amount * Decimal('0.07')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     else:
-        vat_amount = 0.0
+        d_vat = Decimal('0.00')
 
-    # WHT computation (Advance is exempt from WHT)
-    if tax_t.lower() == "advance":
-        wht_amount = 0.0
-    elif "1%" in wht_t:
-        wht_amount = amount * 0.01
-    elif "3%" in wht_t:
-        wht_amount = amount * 0.03
+    # WHT computation (Advance & Non-taxable exempt from WHT)
+    if tax_t.lower() == "advance" or "ADV" in tax_t.upper():
+        d_wht = Decimal('0.00')
+    elif "1%" in wht_t or wht_t in ("1", "1%"):
+        d_wht = (d_amount * Decimal('0.01')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    elif "3%" in wht_t or wht_t in ("3", "3%"):
+        d_wht = (d_amount * Decimal('0.03')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     elif "0.75%" in wht_t:
-        wht_amount = amount * 0.0075
-    elif "5%" in wht_t:
-        wht_amount = amount * 0.05
+        d_wht = (d_amount * Decimal('0.0075')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    elif "5%" in wht_t or wht_t in ("5", "5%"):
+        d_wht = (d_amount * Decimal('0.05')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     else:
-        wht_amount = 0.0
+        d_wht = Decimal('0.00')
 
-    net_amount = amount + vat_amount - wht_amount
-    net_thb = net_amount * ex
+    # Strict mathematical identity: Net = Amount + VAT - WHT (zero 0.01 drift)
+    d_net = d_amount + d_vat - d_wht
+    d_amount_thb = (d_amount * d_ex).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    d_net_thb = (d_net * d_ex).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     return {
-        "amount": round(amount, 2),
-        "amount_thb": round(amount_thb, 2),
-        "vat_amount": round(vat_amount, 2),
-        "wht_amount": round(wht_amount, 2),
-        "net_amount": round(net_amount, 2),
-        "net_thb": round(net_thb, 2),
-        "exchange_rate": ex,
+        "amount": _round_cur(d_amount),
+        "amount_thb": _round_cur(d_amount_thb),
+        "vat_amount": _round_cur(d_vat),
+        "wht_amount": _round_cur(d_wht),
+        "net_amount": _round_cur(d_net),
+        "net_thb": _round_cur(d_net_thb),
+        "exchange_rate": float(d_ex),
     }
+
 
 
 # =========================================================
@@ -177,7 +198,21 @@ def add_cost_line(data: Dict[str, Any]) -> int:
             return row["id"] if isinstance(row, dict) else row[0]
 
 
+def get_cost_line(cost_id: int) -> Optional[Dict[str, Any]]:
+    """Retrieves a single cost line by ID."""
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM job_costs WHERE id=%s AND tenant_id=%s",
+                (cost_id, tenant_id),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+
 def update_cost_line(cost_id: int, data: Dict[str, Any]) -> bool:
+
     tenant_id = get_current_tenant_id()
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -527,11 +562,12 @@ def pull_ap_to_ar(
     ap_line_ids: List[int],
     markup_pct: float = 0.0,
     target_customer: Optional[str] = None,
+    target_currency: Optional[str] = "ORIGINAL",
     custom_desc_map: Optional[Dict[int, str]] = None,
     custom_rates_map: Optional[Dict[int, float]] = None,
     user: Optional[Dict[str, Any]] = None,
 ) -> List[int]:
-    """Pulls selected AP lines to create corresponding AR lines."""
+    """Pulls selected AP lines to create corresponding AR lines with optional currency conversion."""
     user = user or {"username": "operation"}
     tenant_id = get_current_tenant_id()
     created_ar_ids = []
@@ -555,16 +591,28 @@ def pull_ap_to_ar(
 
                 # Description: check custom or default
                 desc = custom_desc_map.get(ap_id) or ap_dict.get("description")
-                # Pricing: check custom rate or apply markup %
+                
+                ap_curr = ap_dict.get("currency") or "THB"
+                ap_ex = float(ap_dict.get("exchange_rate") or 1.0)
                 orig_rate = float(ap_dict.get("unit_price") or 0)
+                
+                # Check if converting to THB or keeping original currency
+                if target_currency == "THB" and ap_curr != "THB":
+                    base_rate = orig_rate * ap_ex
+                    curr = "THB"
+                    ex_rate = 1.0
+                else:
+                    base_rate = orig_rate
+                    curr = ap_curr
+                    ex_rate = ap_ex
+
+                # Pricing: check custom rate or apply markup %
                 if ap_id in custom_rates_map:
                     selling_rate = float(custom_rates_map[ap_id])
                 else:
-                    selling_rate = orig_rate * (1.0 + float(markup_pct or 0) / 100.0)
+                    selling_rate = base_rate * (1.0 + float(markup_pct or 0) / 100.0)
 
                 qty = float(ap_dict.get("quantity") or 1)
-                curr = ap_dict.get("currency") or "THB"
-                ex_rate = float(ap_dict.get("exchange_rate") or 1.0)
                 tax_type = ap_dict.get("tax_type") or "VAT 7%"
                 wht_type = ap_dict.get("wht_type") or "None"
 
@@ -576,7 +624,7 @@ def pull_ap_to_ar(
                     "supplier": target_customer or ap_dict.get("supplier"),
                     "quantity": qty,
                     "unit": ap_dict.get("unit") or "UNIT",
-                    "unit_price": selling_rate,
+                    "unit_price": round(selling_rate, 2),
                     "currency": curr,
                     "exchange_rate": ex_rate,
                     "tax_type": tax_type,
@@ -593,6 +641,7 @@ def pull_ap_to_ar(
     return created_ar_ids
 
 
+
 # =========================================================
 # BATCH AP PAYMENT VOUCHER / ADVANCE GENERATION
 # =========================================================
@@ -600,11 +649,12 @@ def pull_ap_to_ar(
 def create_batch_payment_voucher(
     shipment_id: int,
     ap_line_ids: List[int],
-    payee_name: str,
+    payee_name: Optional[str] = None,
     voucher_type: str = "PAYMENT_VOUCHER",
     due_date: Optional[str] = None,
     user: Optional[Dict[str, Any]] = None,
 ) -> str:
+
     """Groups selected AP lines into an AP Payment Voucher or Advance Request."""
     user = user or {"username": "system", "id": 1}
     tenant_id = get_current_tenant_id()
@@ -632,10 +682,21 @@ def create_batch_payment_voucher(
                 if l.get("voucher_no") and str(l.get("voucher_no")).strip() not in ("—", "None", ""):
                     raise ValueError(f"AP line #{l.get('id')} ({l.get('description')}) is already attached to Voucher {l.get('voucher_no')}.")
 
-            subtotal = sum(float(l.get("amount") or 0) for l in selected_lines)
-            vat_total = sum(float(l.get("vat_amount") or 0) for l in selected_lines)
-            wht_total = sum(float(l.get("wht_amount") or 0) for l in selected_lines)
-            total = subtotal + vat_total - wht_total
+            # Auto-inherit payee from selected AP line if not passed or generic
+            if not payee_name or str(payee_name).strip() in ("", "— Custom / Freeform —", "—", "None"):
+                payee_name = selected_lines[0].get("supplier") or "General Vendor"
+
+            d_subtotal = sum(_dec(l.get("amount")) for l in selected_lines).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            d_vat = sum(_dec(l.get("vat_amount")) for l in selected_lines).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            d_wht = sum(_dec(l.get("wht_amount")) for l in selected_lines).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            d_total = (d_subtotal + d_vat).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            d_net = (d_total - d_wht).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+            subtotal = float(d_subtotal)
+            vat_total = float(d_vat)
+            wht_total = float(d_wht)
+            total = float(d_total)
+            net_payable = float(d_net)
             currency = selected_lines[0].get("currency", "THB") if selected_lines else "THB"
             ex_rate = float(selected_lines[0].get("exchange_rate") or 1.0) if selected_lines else 1.0
 
@@ -690,17 +751,39 @@ def create_batch_payment_voucher(
                 INSERT INTO ap_vouchers (
                     tenant_id, party_id, voucher_no, voucher_type, job_no, vendor_id, payee_name,
                     payee_tax_id, vendor_invoice_refs, invoice_no, invoice_date, due_date,
-                    currency, exchange_rate, subtotal, tax, wht_total, total, status, created_by
+                    currency, exchange_rate, subtotal, tax, wht_total, total, net_payable, status, created_by
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, CURRENT_DATE, %s, %s,%s,%s,%s,%s,%s,'REQUESTED',%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, CURRENT_DATE, %s, %s,%s,%s,%s,%s,%s,%s,'REQUESTED',%s)
                 RETURNING id
                 """,
                 (
                     tenant_id, party_id, voucher_no, voucher_type, job_no, vendor_id, payee_name,
                     payee_tax_id, vendor_invoice_refs, inv_no_val, due_date or date.today().isoformat(),
-                    currency, ex_rate, subtotal, vat_total, wht_total, total, user.get("username", "accountant")
+                    currency, ex_rate, subtotal, vat_total, wht_total, total, net_payable, user.get("username", "accountant")
                 )
             )
+            v_row = cur.fetchone()
+            v_id = v_row["id"] if isinstance(v_row, dict) else v_row[0]
+
+            # Insert line items into ap_voucher_items
+            for s_idx, it_line in enumerate(selected_lines, start=1):
+                cur.execute(
+                    """
+                    INSERT INTO ap_voucher_items (tenant_id, voucher_id, service_id, service_text, amount, vat_rate, has_tax, wht_rate, pr_no, master_job, sort_order)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        tenant_id, v_id, it_line.get("matched_charge_code") or "EXP",
+                        it_line.get("description") or "Operation Cost",
+                        float(it_line.get("amount") or 0),
+                        7.0 if "7%" in str(it_line.get("tax_type", "")) else 0.0,
+                        1 if "7%" in str(it_line.get("tax_type", "")) else 0,
+                        1.0 if "1%" in str(it_line.get("wht_type", "")) else (3.0 if "3%" in str(it_line.get("wht_type", "")) else (5.0 if "5%" in str(it_line.get("wht_type", "")) else 0.0)),
+                        it_line.get("vendor_invoice_no") or f"PR-{job_no}",
+                        job_no,
+                        s_idx
+                    )
+                )
 
             # 4. Update linked AP cost lines with voucher_no and status
             cur.execute(
@@ -708,6 +791,7 @@ def create_batch_payment_voucher(
                 (voucher_no, *ap_line_ids, tenant_id)
             )
             conn.commit()
+
 
     return voucher_no
 

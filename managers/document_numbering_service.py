@@ -79,8 +79,45 @@ def generate_document_number(doc_type: str, ref_date=None, digits: int = 4, sepa
             
             running_val = row['last_running'] if isinstance(row, dict) or hasattr(row, 'keys') else row[0]
         
-    seq = f"{running_val:0{digits}d}"
-    if separator:
-        return f"{doc_type.upper()}{separator}{yymm}{separator}{seq}"
-    return f"{doc_type.upper()}{d.strftime('%y')}{running_val:06d}"
+    table_field_map = {
+        "JOB": ("shipments", "job_no"),
+        "QT": ("quotations", "quotation_no"),
+        "INV": ("invoices", "doc_no"),
+        "RC": ("invoices", "doc_no"),
+        "PV": ("ap_vouchers", "voucher_no"),
+        "BOOK": ("bookings", "booking_no"),
+        "BL": ("bills_of_lading", "bl_no"),
+    }
+
+    tf = table_field_map.get(doc_type.upper())
+
+    while True:
+        seq = f"{running_val:0{digits}d}"
+        if separator:
+            candidate = f"{doc_type.upper()}{separator}{yymm}{separator}{seq}"
+        else:
+            candidate = f"{doc_type.upper()}{d.strftime('%y')}{running_val:06d}"
+
+        if tf:
+            tbl, col = tf
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    try:
+                        cur.execute(f"SELECT 1 FROM {tbl} WHERE {col} = %s LIMIT 1", (candidate,))
+                        if cur.fetchone():
+                            # Collision with existing record, increment and advance sequence
+                            cur.execute("""
+                                UPDATE document_counters 
+                                SET last_running = last_running + 1 
+                                WHERE tenant_id=%s AND doc_type=%s AND yymm=%s 
+                                RETURNING last_running
+                            """, (tenant_id, doc_type, yymm))
+                            row2 = cur.fetchone()
+                            conn.commit()
+                            running_val = (row2['last_running'] if isinstance(row2, dict) or hasattr(row2, 'keys') else row2[0]) if row2 else running_val + 1
+                            continue
+                    except Exception:
+                        pass
+        return candidate
+
 

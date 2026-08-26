@@ -19,10 +19,11 @@ from managers.auth_manager import (
 )
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def setup_db():
     init_database()
     ensure_phase30_local_schema()
+
 
 
 def test_rbac_permission_matrix():

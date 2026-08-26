@@ -1,9 +1,13 @@
 import os
 import sys
 
-def main():
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def test_unified_ap_ar_ledger_full_flow():
     from database.local_schema_compat import ensure_phase30_local_schema
     ensure_phase30_local_schema()
+
 
     from managers.shipment_manager import create_shipment, get_shipment
     from managers.profit_manager import (
@@ -27,10 +31,12 @@ def main():
     assert any(c['charge_code'] == 'CUS' for c in charges)
 
     # 2. Create a Business Party (Liner / Vendor)
+    import time
+    uid = int(time.time() * 1000) % 1000000
     party_id = upsert_party(
         data={
-            "party_code": "BP001",
-            "legal_name": "Ocean Network Express (Thailand) Ltd.",
+            "party_code": f"BP{uid}",
+            "legal_name": f"Ocean Network Express (Thailand) Ltd. {uid}",
             "display_name": "ONE Line",
             "tax_id": "0105560123456",
             "country_code": "TH",
@@ -39,6 +45,7 @@ def main():
         roles=["CARRIER", "LINER", "VENDOR"],
         user=user
     )
+
     print(f'2. Registered Business Party: ID={party_id} (ONE Line)')
 
     # 3. Create a test Shipment / Job
@@ -253,4 +260,5 @@ def main():
     print('\n*** ALL MASTER DATA CHARGES, DUPLICATE LOCKING, AND MULTI-CURRENCY BILLING TESTS PASSED! ***')
 
 if __name__ == '__main__':
-    main()
+    test_unified_ap_ar_ledger_full_flow()
+

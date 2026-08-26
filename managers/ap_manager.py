@@ -17,44 +17,49 @@ def _r(val: Any) -> float:
 
 
 def calculate_ap_summary(items: List[Dict[str, Any]], less_vat_diff: float = 0.0, plus_wht_diff: float = 0.0, diff_amount: float = 0.0) -> Dict[str, float]:
-    """Calculates AP Payment Voucher figures matching PTS standard."""
-    amount_no_vat = 0.0
-    amount_vat = 0.0
-    total_vat = 0.0
-    total_wht = 0.0
+    """Calculates AP Payment Voucher figures matching PTS and Thai Revenue Dept standard."""
+    d_amount_no_vat = Decimal('0.00')
+    d_amount_vat = Decimal('0.00')
+    d_total_vat = Decimal('0.00')
+    d_total_wht = Decimal('0.00')
 
     for item in items:
-        amt = _r(item.get("amount", 0.0))
-        vat_rate = float(item.get("vat_rate", 7.0) if item.get("has_tax", 1) else 0.0)
-        wht_rate = float(item.get("wht_rate", 0.0) or 0.0)
+        amt = Decimal(str(item.get("amount", 0.0) or 0.0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        vat_rate = Decimal(str(item.get("vat_rate", 7.0) if item.get("has_tax", 1) else 0.0))
+        wht_rate = Decimal(str(item.get("wht_rate", 0.0) or 0.0))
 
-        if vat_rate > 0:
-            amount_vat += amt
-            total_vat += amt * (vat_rate / 100.0)
+        if vat_rate > Decimal('0.0'):
+            d_amount_vat += amt
+            d_total_vat += (amt * (vat_rate / Decimal('100.0'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         else:
-            amount_no_vat += amt
+            d_amount_no_vat += amt
 
-        if wht_rate > 0:
-            total_wht += amt * (wht_rate / 100.0)
+        if wht_rate > Decimal('0.0'):
+            d_total_wht += (amt * (wht_rate / Decimal('100.0'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
-    subtotal = amount_no_vat + amount_vat
-    total_vat = _r(total_vat) - _r(less_vat_diff)
-    total_wht = _r(total_wht) + _r(plus_wht_diff)
-    total_amount = subtotal + total_vat + _r(diff_amount)
-    net_payable = total_amount - total_wht
+    d_subtotal = d_amount_no_vat + d_amount_vat
+    d_less_vat = Decimal(str(less_vat_diff or 0.0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    d_plus_wht = Decimal(str(plus_wht_diff or 0.0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    d_diff = Decimal(str(diff_amount or 0.0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    d_total_vat = max(Decimal('0.00'), d_total_vat - d_less_vat)
+    d_total_wht = max(Decimal('0.00'), d_total_wht + d_plus_wht)
+    d_total = d_subtotal + d_total_vat + d_diff
+    d_net_payable = d_total - d_total_wht
 
     return {
-        "amount_no_vat": _r(amount_no_vat),
-        "amount_vat": _r(amount_vat),
-        "subtotal": _r(subtotal),
-        "tax": _r(total_vat),
-        "wht_total": _r(total_wht),
-        "less_vat_diff": _r(less_vat_diff),
-        "plus_wht_diff": _r(plus_wht_diff),
-        "diff_amount": _r(diff_amount),
-        "total": _r(total_amount),
-        "net_payable": _r(net_payable),
+        "amount_no_vat": float(d_amount_no_vat),
+        "amount_vat": float(d_amount_vat),
+        "subtotal": float(d_subtotal),
+        "tax": float(d_total_vat),
+        "wht_total": float(d_total_wht),
+        "less_vat_diff": float(d_less_vat),
+        "plus_wht_diff": float(d_plus_wht),
+        "diff_amount": float(d_diff),
+        "total": float(d_total),
+        "net_payable": float(d_net_payable),
     }
+
 
 
 def get_ap_vouchers() -> List[Dict[str, Any]]:

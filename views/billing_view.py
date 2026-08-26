@@ -108,14 +108,24 @@ def render() -> None:
     _render_kpis()
     st.divider()
 
-    tabs = st.tabs(["Documents", "Payments"] + (["New Document"] if can_edit else []))
-    with tabs[0]:
+    tab_opts = ["Documents", "Payments"] + (["New Document"] if can_edit else [])
+    if "billing_active_tab" not in st.session_state or st.session_state["billing_active_tab"] not in tab_opts:
+        st.session_state["billing_active_tab"] = tab_opts[0]
+
+    active_tab = st.radio(
+        "Billing Navigation",
+        tab_opts,
+        horizontal=True,
+        key="billing_active_tab",
+        label_visibility="collapsed"
+    )
+
+    if active_tab == "Documents":
         _list_view(user, can_edit)
-    with tabs[1]:
+    elif active_tab == "Payments":
         _payment_view()
-    if can_edit:
-        with tabs[2]:
-            _create_form(user)
+    elif active_tab == "New Document" and can_edit:
+        _create_form(user)
 
 
 def _create_form(user: Dict[str, Any]) -> None:
@@ -179,11 +189,14 @@ def _create_form(user: Dict[str, Any]) -> None:
                 "created_by": user.get("username", "System"), "status": "DRAFT",
             }
             doc_no = create_invoice(payload, st.session_state["billing_items"])
-            st.success(f"Created {doc_no}")
+            st.session_state["billing_active_tab"] = "Documents"
+            st.session_state["fin_action_doc"] = doc_no
             st.session_state["billing_items"] = [_empty_item()]
+            st.success(f"Created {doc_no}")
             st.rerun()
         except Exception as exc:
             st.error(f"Create failed: {exc}")
+
 
 
 def _list_view(user: Dict[str, Any], can_edit: bool) -> None:

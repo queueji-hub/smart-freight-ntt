@@ -317,11 +317,11 @@ def _edit(bl: Dict[str, Any]) -> None:
             pod = b.text_input("Port of Discharge", _s(bl.get("port_of_discharge"), ""))
             a, b = st.columns(2)
             place_delivery = a.text_input("Place of Delivery", _s(bl.get("place_of_delivery"), ""))
-            final_destination = b.text_input("Final Destination", _s(bl.get("final_destination"), ""))
+            final_destination = b.text_input("Final Destination (For The Merchant's Reference Only)", _s(bl.get("final_destination"), ""))
 
             section("Cargo & Manifest")
             marks = st.text_area("Marks and Numbers / Container & Seal Numbers", _s(bl.get("marks_numbers"), "N/M"), height=75)
-            cargo_desc = st.text_area("Description of Packages and Goods", _s(bl.get("description_of_goods"), ""), height=100)
+            cargo_desc = st.text_area("Description of Packages and Goods / Packages Forwarded by Shipper", _s(bl.get("description_of_goods"), ""), height=100)
             a, b, c, d = st.columns(4)
             packages = a.number_input("No. of Packages", min_value=0, value=int(bl.get("package_qty") or 0))
             package_type = b.text_input("Package Type", _s(bl.get("package_type"), "PKGS"))

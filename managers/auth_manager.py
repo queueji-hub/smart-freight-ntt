@@ -86,8 +86,9 @@ def hash_password(password: str) -> str:
     password_str = (password or "").strip()
     return bcrypt.hashpw(
         password_str.encode("utf-8"),
-        bcrypt.gensalt(rounds=12) # Standard production security cost parameter
+        bcrypt.gensalt(rounds=10) # Standard enterprise security cost parameter
     ).decode("utf-8")
+
 
 def verify_password(password: str, hashed: str) -> bool:
     """Verifies clear text passwords against their encrypted storage tokens."""

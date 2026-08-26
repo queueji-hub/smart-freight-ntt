@@ -106,19 +106,12 @@ def _normalize_bl_dict(d: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         return d
     row = dict(d)
     if not row.get("transport_mode") or not row.get("doc_title"):
-        job_no = row.get("job_no")
-        job = {}
-        if job_no:
-            try:
-                from managers.shipment_manager import get_shipment
-                job = get_shipment(job_no) or {}
-            except Exception:
-                pass
-        t_mode, d_type, d_title = detect_transport_mode(job=job, bl=row)
+        t_mode, d_type, d_title = detect_transport_mode(bl=row)
         row["transport_mode"] = t_mode
         row["doc_type"] = d_type
         row["doc_title"] = d_title
     return row
+
 
 
 def list_bls(job_no: Optional[str] = None) -> List[Dict[str, Any]]:

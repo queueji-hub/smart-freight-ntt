@@ -58,7 +58,7 @@ def _money(n: Any, curr: str = "฿") -> str:
 
 
 def _get_business_party_options(default_carrier: str = "", default_customer: str = "") -> List[Tuple[Optional[int], str, Dict[str, Any]]]:
-    """Fetches business parties from Master Data and combines with Job parties."""
+    """Fetches business parties from Master Data with clear legal names displayed upfront."""
     options = [(None, "— Custom / Freeform —", {})]
     seen_names = set()
 
@@ -72,19 +72,21 @@ def _get_business_party_options(default_carrier: str = "", default_customer: str
             name = p.get("legal_name") or p.get("display_name") or p.get("party_code")
             if name and name not in seen_names:
                 seen_names.add(name)
-                lbl = f"🏢 {role_tag} {name} (Tax ID: {_s(p.get('tax_id'))})"
+                tax_str = f" · Tax ID: {_s(p.get('tax_id'))}" if p.get('tax_id') else ""
+                lbl = f"🏢 {name} — {role_tag}{tax_str}"
                 options.append((p_id, lbl, p))
     except Exception:
         pass
 
     if default_carrier and default_carrier not in seen_names:
         seen_names.add(default_carrier)
-        options.append((None, f"🚢 [Carrier / Line] {default_carrier}", {"legal_name": default_carrier}))
+        options.append((None, f"🚢 {default_carrier} — [Carrier / Line]", {"legal_name": default_carrier}))
     if default_customer and default_customer not in seen_names:
         seen_names.add(default_customer)
-        options.append((None, f"👤 [Customer / Consignee] {default_customer}", {"legal_name": default_customer}))
+        options.append((None, f"👤 {default_customer} — [Customer / Bill-To]", {"legal_name": default_customer}))
 
     return options
+
 
 
 def _get_charge_master_options() -> List[Tuple[Optional[str], str, Dict[str, Any]]]:
@@ -354,20 +356,19 @@ def render():
             st.caption(f"สร้างเอกสารรวม {len(selected_ap_ids)} รายการ AP ที่เลือก (ยอดรวม {_money(selected_ap_sum)})")
             
             chosen_lines = [r for r in ap_lines if r["id"] in selected_ap_ids]
-            default_payee = chosen_lines[0].get("supplier") if chosen_lines else ship.get("carrier")
+            line_payees = [str(l.get("supplier")).strip() for l in chosen_lines if l.get("supplier") and str(l.get("supplier")).strip() not in ("None", "—", "")]
+
+            default_payee = line_payees[0] if line_payees else (_s(ship.get("carrier")) or "General Vendor")
             vinv_collected = [str(l.get("vendor_invoice_no")).strip() for l in chosen_lines if l.get("vendor_invoice_no") and str(l.get("vendor_invoice_no")).strip() not in ("None", "—", "")]
             vinv_preview = ", ".join(dict.fromkeys(vinv_collected)) if vinv_collected else "—"
 
             pv_c1, pv_c2, pv_c3 = st.columns(3)
             with pv_c1:
-                payee_choice = st.selectbox(
-                    "Payee / Vendor (ผู้รับเงินจาก Master Data) *",
-                    options=range(len(bp_options)),
-                    format_func=lambda idx: bp_options[idx][1],
-                    key=f"pv_bp_choice_{shipment_id}"
-                )
-                chosen_bp = bp_options[payee_choice]
-                payee_final = chosen_bp[2].get("legal_name") or chosen_bp[2].get("display_name") or default_payee or "General Vendor"
+                st.markdown("**🏢 ผู้รับเงิน (Payee / Vendor):**")
+                st.markdown(f"<div style='font-size: 1.02rem; font-weight: 700; color: #1e3a8a; background: #eff6ff; border: 1px solid #bfdbfe; padding: 7px 12px; border-radius: 6px;'>{default_payee}</div>", unsafe_allow_html=True)
+                st.caption("*(ดึงจากรายการ AP ต้นทางโดยอัตโนมัติ ป้องกันข้อมูลเปลี่ยนแปลง)*")
+                payee_final = default_payee
+
 
             with pv_c2:
                 pv_due = st.date_input("Payment Due Date (วันครบกำหนดจ่าย) *", value=date.today(), key=f"pv_due_date_{shipment_id}")
@@ -389,6 +390,7 @@ def render():
                                 user=user
                             )
                             st.session_state[f"show_pv_modal_{shipment_id}"] = False
+                            st.session_state.pop(f"batch_ap_sel_{shipment_id}", None)
                             st.success(f"🎉 สร้างเอกสาร {v_no} สำเร็จเรียบร้อย!")
                             st.rerun()
                         except Exception as exc:
@@ -405,10 +407,18 @@ def render():
             st.markdown("### 📥 ดึงรายการต้นทุน AP ➔ ไปเป็นรายได้เรียกเก็บ AR")
             st.caption(f"ดึง {len(selected_ap_ids)} รายการ AP ไปเป็น AR พร้อมกำหนดอัตรากำไร (Markup %) หรือราคาขาย")
 
-            p_c1, p_c2, p_c3 = st.columns(3)
+            p_c1, p_c2, p_c3, p_c4 = st.columns([1.5, 2, 2, 1.5])
             with p_c1:
                 pull_markup = st.number_input("Markup % (กำไรส่วนเพิ่ม %)", min_value=0.0, value=15.0, step=5.0, key=f"p_markup_{shipment_id}")
             with p_c2:
+                pull_curr_mode = st.selectbox(
+                    "Target Currency (สกุลเงิน AR) *",
+                    ["ORIGINAL (คงสกุลเงินเดิมตาม AP เช่น USD)", "THB (แปลงเป็นบาทตาม Ex.Rate ทันที)"],
+                    index=0,
+                    key=f"p_curr_mode_{shipment_id}"
+                )
+                target_curr_code = "THB" if "THB" in pull_curr_mode else "ORIGINAL"
+            with p_c3:
                 cust_choice = st.selectbox(
                     "Customer / Bill To (ลูกค้าจาก Master Data) *",
                     options=range(len(bp_options)),
@@ -417,7 +427,7 @@ def render():
                 )
                 chosen_cust_bp = bp_options[cust_choice]
                 cust_final = chosen_cust_bp[2].get("legal_name") or ship.get("customer_name") or "Customer"
-            with p_c3:
+            with p_c4:
                 st.write("")
                 st.write("")
                 pull_btn1, pull_btn2 = st.columns(2)
@@ -429,9 +439,11 @@ def render():
                                 ap_line_ids=selected_ap_ids,
                                 markup_pct=pull_markup,
                                 target_customer=cust_final,
+                                target_currency=target_curr_code,
                                 user=user
                             )
                             st.session_state[f"show_pull_modal_{shipment_id}"] = False
+                            st.session_state.pop(f"batch_ap_sel_{shipment_id}", None)
                             st.success(f"🎉 สร้างรายการ AR สำเร็จ {len(created)} รายการ!")
                             st.rerun()
                         except Exception as exc:
@@ -440,6 +452,7 @@ def render():
                     if st.button("ยกเลิก", key=f"p_cancel_{shipment_id}", width="stretch"):
                         st.session_state[f"show_pull_modal_{shipment_id}"] = False
                         st.rerun()
+
             st.divider()
 
     # C. Batch Invoice Action Panel (With Target Currency & Exchange Rate Selection)
@@ -477,8 +490,10 @@ def render():
                                 user=user
                             )
                             st.session_state[f"show_inv_modal_{shipment_id}"] = False
+                            st.session_state.pop(f"batch_ar_sel_{shipment_id}", None)
                             st.success(f"🎉 สร้างใบแจ้งหนี้ {inv_no} สำเร็จเรียบร้อย (สกุลเงิน {chosen_curr})!")
                             st.rerun()
+
                         except Exception as exc:
                             st.error(f"Invoice creation failed: {exc}")
                 with inv_btn2:
@@ -489,198 +504,510 @@ def render():
 
     # 7. Workspace Tabs
     tab_matrix, tab_audit, tab_signoffs = st.tabs([
-        "📊 Unified AP / AR Ledger Matrix & Master Data Entry",
+        "📊 Unified AP / AR Control Center & Profit Matrix",
         "📜 Document Ledger & Audit Traceability (ประวัติเอกสารย้อนหลัง)",
         "📋 P&L Sign-off & Official Profit Sheets"
     ])
 
     with tab_matrix:
-        # Master Data Driven Entry Forms
+        # =========================================================================
+        # SECTION 1: 💳 AP OPERATIONAL COSTS (ต้นทุนค่าใช้จ่ายเจ้าหนี้ / ค่าสายเรือ)
+        # =========================================================================
+        st.markdown("""
+            <div style="background-color: #f1f5f9; border-left: 5px solid #1e3a8a; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px;">
+                <span style="font-size: 1.15rem; font-weight: 700; color: #1e3a8a;">💳 1. Operational Cost Ledger (AP — ต้นทุนค่าใช้จ่ายเจ้าหนี้ / ค่าสายเรือ / ค่าหัวลาก / ศุลกากร)</span>
+            </div>
+        """, unsafe_allow_html=True)
+
+
+        m_ap1, m_ap2, m_ap3, m_ap4 = st.columns(4)
+        m_ap1.metric("Total AP Cost", f"฿ {summary['total_ap_amount']:,.2f}")
+        m_ap2.metric("AP Input VAT", f"฿ {summary['total_ap_vat']:,.2f}")
+        m_ap3.metric("AP WHT Deducted", f"฿ {summary['total_ap_wht']:,.2f}")
+        m_ap4.metric("Net Payable (สุทธิ)", f"฿ {summary['total_ap_net']:,.2f}")
+
+        # Edit AP Line Drawer
+        edit_ap_id = st.session_state.get(f"edit_ap_id_{shipment_id}")
+        if edit_ap_id:
+            ap_to_edit = next((x for x in ap_lines if x["id"] == edit_ap_id), None)
+            if ap_to_edit:
+                with st.container():
+                    st.markdown(f"##### ✏️ แก้ไขรายการต้นทุน AP #{edit_ap_id} — {ap_to_edit.get('description')}")
+                    with st.form(f"edit_ap_form_{edit_ap_id}"):
+                        e_c1, e_c2 = st.columns(2)
+                        e_cat = e_c1.selectbox("Category *", db_categories, index=db_categories.index(ap_to_edit.get("category")) if ap_to_edit.get("category") in db_categories else 0, key=f"e_ap_cat_{edit_ap_id}")
+                        e_desc = e_c2.text_input("Description *", value=ap_to_edit.get("description", ""), key=f"e_ap_desc_{edit_ap_id}")
+
+                        curr_bp_id = ap_to_edit.get("party_id")
+                        def_bp_idx = 0
+                        for b_i, b_opt in enumerate(bp_options):
+                            if b_opt[0] == curr_bp_id or (b_opt[2].get("legal_name") == ap_to_edit.get("supplier")):
+                                def_bp_idx = b_i
+                                break
+
+                        e_bp = st.selectbox("Payee / Supplier (ผู้รับเงินจาก Master Data) *", options=range(len(bp_options)), index=def_bp_idx, format_func=lambda idx: bp_options[idx][1], key=f"e_ap_bp_{edit_ap_id}")
+                        chosen_e_bp = bp_options[e_bp]
+                        e_supp = chosen_e_bp[2].get("legal_name") or chosen_e_bp[2].get("display_name") or ap_to_edit.get("supplier", "")
+                        e_party_id = chosen_e_bp[0] or curr_bp_id
+
+                        ef1, ef2, ef3 = st.columns(3)
+                        e_qty = ef1.number_input("Qty", min_value=0.01, value=float(ap_to_edit.get("quantity") or 1.0), step=1.0, key=f"e_ap_qty_{edit_ap_id}")
+                        unit_opts = ["CTR", "BL", "CBM", "TRIP", "SHPT", "LOT", "SET", "KG"]
+                        e_unit = ef2.selectbox("Unit", unit_opts, index=unit_opts.index(ap_to_edit.get("unit")) if ap_to_edit.get("unit") in unit_opts else 0, key=f"e_ap_unit_{edit_ap_id}")
+                        e_prc = ef3.number_input("Unit Price Rate", min_value=0.0, value=float(ap_to_edit.get("unit_price") or 0.0), step=100.0, key=f"e_ap_prc_{edit_ap_id}")
+
+                        et1, et2, et3 = st.columns(3)
+                        curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
+                        e_curr = et1.selectbox("Currency", curr_opts, index=curr_opts.index(ap_to_edit.get("currency", "THB")) if ap_to_edit.get("currency") in curr_opts else 0, key=f"e_ap_curr_{edit_ap_id}")
+                        e_ex = et2.number_input("Ex.Rate to THB", min_value=0.001, value=float(ap_to_edit.get("exchange_rate") or 1.0), step=0.1, key=f"e_ap_ex_{edit_ap_id}")
+                        e_tax = et3.selectbox("Tax / VAT Type", TAX_TYPES, index=TAX_TYPES.index(ap_to_edit.get("tax_type", "VAT 7%")) if ap_to_edit.get("tax_type") in TAX_TYPES else 0, key=f"e_ap_tax_{edit_ap_id}")
+
+                        ew1, ew2, ew3 = st.columns(3)
+                        e_wht = ew1.selectbox("Withholding Tax (WHT)", WHT_TYPES, index=WHT_TYPES.index(ap_to_edit.get("wht_type", "None")) if ap_to_edit.get("wht_type") in WHT_TYPES else 0, key=f"e_ap_wht_{edit_ap_id}")
+                        e_vinv = ew2.text_input("Vendor Invoice No.", value=ap_to_edit.get("vendor_invoice_no") or "", key=f"e_ap_vinv_{edit_ap_id}")
+                        
+                        raw_date = ap_to_edit.get("vendor_invoice_date")
+                        try:
+                            def_vdate = datetime.strptime(str(raw_date)[:10], "%Y-%m-%d").date() if raw_date else date.today()
+                        except Exception:
+                            def_vdate = date.today()
+                        e_vdate = ew3.date_input("Vendor Invoice Date", value=def_vdate, key=f"e_ap_vdate_{edit_ap_id}")
+
+                        e_prev = compute_line_tax_and_net(e_qty, e_prc, e_tax, e_wht, e_curr, e_ex)
+                        st.info(f"📊 **Preview:** {e_prev['amount']:,.2f} {e_curr} ({e_prev['amount_thb']:,.2f} THB) | VAT: {e_prev['vat_amount']:,.2f} | WHT: {e_prev['wht_amount']:,.2f} | **Net Payable: {e_prev['net_amount']:,.2f} {e_curr}**")
+
+                        eb_s1, eb_s2 = st.columns([1, 1])
+                        with eb_s1:
+                            if st.form_submit_button("💾 Save Changes (บันทึกการแก้ไข)", type="primary", use_container_width=True):
+                                update_cost_line(edit_ap_id, {
+                                    "party_id": e_party_id,
+                                    "category": e_cat,
+                                    "description": e_desc.strip(),
+                                    "supplier": e_supp.strip() or None,
+                                    "quantity": e_qty,
+                                    "unit": e_unit,
+                                    "unit_price": e_prc,
+                                    "currency": e_curr,
+                                    "exchange_rate": e_ex,
+                                    "tax_type": e_tax,
+                                    "wht_type": e_wht,
+                                    "vendor_invoice_no": e_vinv.strip() or None,
+                                    "vendor_invoice_date": e_vdate.isoformat(),
+                                })
+                                st.session_state[f"edit_ap_id_{shipment_id}"] = None
+                                st.success("Updated successfully.")
+                                st.rerun()
+                        with eb_s2:
+                            if st.form_submit_button("❌ Cancel (ยกเลิก)", use_container_width=True):
+                                st.session_state[f"edit_ap_id_{shipment_id}"] = None
+                                st.rerun()
+                    st.divider()
+
+        # Add AP Form
         if can_edit and not is_fin_locked:
-            add_c1, add_c2 = st.columns(2)
-            with add_c1:
-                with st.expander("➕ เพิ่มรายการต้นทุน AP (Add Operational Cost จาก Master Data)", expanded=len(ap_lines) == 0):
-                    # Charge Master Selector outside form for instant reactive auto-fill
-                    cm_idx_ap = st.selectbox(
-                        "Standard Charge from Master Data (เลือกค่าบริการมาตรฐาน)",
-                        options=range(len(charge_options)),
-                        format_func=lambda idx: charge_options[idx][1],
-                        key=f"ap_cm_choice_{shipment_id}"
+            with st.expander("➕ เพิ่มรายการต้นทุน AP ใหม่ (Add Operational Cost จาก Master Data)", expanded=len(ap_lines) == 0):
+                cm_idx_ap = st.selectbox(
+                    "Standard Charge from Master Data (เลือกค่าบริการมาตรฐาน)",
+                    options=range(len(charge_options)),
+                    format_func=lambda idx: charge_options[idx][1],
+                    key=f"ap_cm_choice_{shipment_id}"
+                )
+                chosen_cm_ap = charge_options[cm_idx_ap][2]
+
+                def_desc_ap = chosen_cm_ap.get("description") or "Ocean Freight"
+                def_cat_ap = chosen_cm_ap.get("category") or db_categories[0]
+                def_unit_ap = chosen_cm_ap.get("default_unit") or "CTR"
+                def_curr_ap = chosen_cm_ap.get("default_currency") or "THB"
+                def_tax_ap = chosen_cm_ap.get("default_tax_type") or "VAT 7%"
+                def_wht_ap = chosen_cm_ap.get("default_wht_type") or "None"
+                charge_code_ap = chosen_cm_ap.get("charge_code")
+
+                with st.form(f"quick_add_ap_form_{shipment_id}", clear_on_submit=True):
+                    f_c1, f_c2 = st.columns(2)
+                    cat_ap = f_c1.selectbox(
+                        "AP Category *",
+                        db_categories,
+                        index=db_categories.index(def_cat_ap) if def_cat_ap in db_categories else 0,
+                        key=f"q_ap_cat_{shipment_id}"
                     )
-                    chosen_cm_ap = charge_options[cm_idx_ap][2]
-
-                    # Auto-fill defaults from Charge Master
-                    def_desc_ap = chosen_cm_ap.get("description") or "Ocean Freight"
-                    def_cat_ap = chosen_cm_ap.get("category") or db_categories[0]
-                    def_unit_ap = chosen_cm_ap.get("default_unit") or "CTR"
-                    def_curr_ap = chosen_cm_ap.get("default_currency") or "THB"
-                    def_tax_ap = chosen_cm_ap.get("default_tax_type") or "VAT 7%"
-                    def_wht_ap = chosen_cm_ap.get("default_wht_type") or "None"
-                    charge_code_ap = chosen_cm_ap.get("charge_code")
-
-                    with st.form(f"quick_add_ap_form_{shipment_id}", clear_on_submit=True):
-                        cat_ap = st.selectbox(
-                            "AP Category *",
-                            db_categories,
-                            index=db_categories.index(def_cat_ap) if def_cat_ap in db_categories else 0,
-                            key=f"q_ap_cat_{shipment_id}"
-                        )
-                        desc_ap = st.text_input("AP Description / Charge Name *", value=def_desc_ap, key=f"q_ap_desc_{shipment_id}")
-                        
-                        bp_idx = st.selectbox(
-                            "Payee / Vendor (เชื่อมโยง Business Parties) *",
-                            options=range(len(bp_options)),
-                            format_func=lambda idx: bp_options[idx][1],
-                            key=f"q_ap_bp_{shipment_id}"
-                        )
-                        chosen_ap_bp = bp_options[bp_idx]
-                        supp_ap = chosen_ap_bp[2].get("legal_name") or chosen_ap_bp[2].get("display_name") or _s(ship.get("carrier"), "")
-                        party_id_ap = chosen_ap_bp[0]
-
-                        f1, f2, f3 = st.columns(3)
-                        qty_ap = f1.number_input("Qty", min_value=0.01, value=1.0, step=1.0, key=f"q_ap_qty_{shipment_id}")
-                        unit_opts = ["CTR", "BL", "CBM", "TRIP", "SHPT", "LOT", "SET", "KG"]
-                        unit_idx = unit_opts.index(def_unit_ap) if def_unit_ap in unit_opts else 0
-                        unit_ap = f2.selectbox("Unit", unit_opts, index=unit_idx, key=f"q_ap_unit_{shipment_id}")
-                        prc_ap = f3.number_input("Unit Price Rate", min_value=0.0, value=0.0, step=500.0, key=f"q_ap_prc_{shipment_id}")
-
-                        t1, t2, t3 = st.columns(3)
-                        curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
-                        curr_idx = curr_opts.index(def_curr_ap) if def_curr_ap in curr_opts else 0
-                        curr_ap = t1.selectbox("Currency", curr_opts, index=curr_idx, key=f"q_ap_curr_{shipment_id}")
-                        ex_ap = t2.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if curr_ap == "THB" else 35.5, step=0.1, key=f"q_ap_ex_{shipment_id}")
-                        tax_idx = TAX_TYPES.index(def_tax_ap) if def_tax_ap in TAX_TYPES else 0
-                        tax_ap = t3.selectbox("Tax / VAT Type", TAX_TYPES, index=tax_idx, key=f"q_ap_tax_{shipment_id}")
-                        
-                        w1, w2, w3 = st.columns(3)
-                        wht_idx = WHT_TYPES.index(def_wht_ap) if def_wht_ap in WHT_TYPES else 0
-                        wht_ap = w1.selectbox("Withholding Tax (WHT)", WHT_TYPES, index=wht_idx, key=f"q_ap_wht_{shipment_id}")
-                        vinv_ap = w2.text_input("Vendor Invoice / Tax Inv No.", placeholder="e.g. ONE-12345 / PAT-8899", key=f"q_ap_vinv_{shipment_id}")
-                        vinv_date = w3.date_input("Vendor Invoice Date", value=date.today(), key=f"q_ap_vdate_{shipment_id}")
-
-                        # Preview calculations live
-                        prev = compute_line_tax_and_net(qty_ap, prc_ap, tax_ap, wht_ap, curr_ap, ex_ap)
-                        st.info(f"📊 **Preview Amount:** {prev['amount']:,.2f} {curr_ap} ({prev['amount_thb']:,.2f} THB) | VAT: {prev['vat_amount']:,.2f} | WHT: {prev['wht_amount']:,.2f} | **Net Payable: {prev['net_amount']:,.2f} {curr_ap}**")
-
-                        if st.form_submit_button("💾 Save AP Cost Line", type="primary", width="stretch"):
-                            if not desc_ap.strip():
-                                st.error("Description is required.")
-                            else:
-                                add_cost_line({
-                                    "shipment_id": shipment_id,
-                                    "cost_type": "AP",
-                                    "party_id": party_id_ap,
-                                    "matched_charge_code": charge_code_ap,
-                                    "category": cat_ap,
-                                    "description": desc_ap.strip(),
-                                    "supplier": supp_ap.strip() or None,
-                                    "quantity": qty_ap,
-                                    "unit": unit_ap,
-                                    "unit_price": prc_ap,
-                                    "currency": curr_ap,
-                                    "exchange_rate": ex_ap,
-                                    "tax_type": tax_ap,
-                                    "wht_type": wht_ap,
-                                    "vendor_invoice_no": vinv_ap.strip() or None,
-                                    "vendor_invoice_date": vinv_date.isoformat(),
-                                    "created_by": user.get("username", "operation"),
-                                })
-                                st.success("AP Cost Line added.")
-                                st.rerun()
-
-            with add_c2:
-                with st.expander("➕ เพิ่มรายการรายได้ AR (Add Customer Revenue จาก Master Data)", expanded=len(ar_lines) == 0):
-                    cm_idx_ar = st.selectbox(
-                        "Standard Charge from Master Data (เลือกค่าบริการมาตรฐาน)",
-                        options=range(len(charge_options)),
-                        format_func=lambda idx: charge_options[idx][1],
-                        key=f"ar_cm_choice_{shipment_id}"
+                    desc_ap = f_c2.text_input("AP Description / Charge Name *", value=def_desc_ap, key=f"q_ap_desc_{shipment_id}")
+                    
+                    bp_idx = st.selectbox(
+                        "Payee / Vendor (ผู้รับเงิน / เชื่อมโยง Business Parties) *",
+                        options=range(len(bp_options)),
+                        format_func=lambda idx: bp_options[idx][1],
+                        key=f"q_ap_bp_{shipment_id}"
                     )
-                    chosen_cm_ar = charge_options[cm_idx_ar][2]
+                    chosen_ap_bp = bp_options[bp_idx]
+                    supp_ap = chosen_ap_bp[2].get("legal_name") or chosen_ap_bp[2].get("display_name") or _s(ship.get("carrier"), "")
+                    party_id_ap = chosen_ap_bp[0]
 
-                    def_desc_ar = chosen_cm_ar.get("description") or "Ocean Freight Revenue"
-                    def_cat_ar = chosen_cm_ar.get("category") or db_categories[0]
-                    def_unit_ar = chosen_cm_ar.get("default_unit") or "CTR"
-                    def_curr_ar = chosen_cm_ar.get("default_currency") or "THB"
-                    def_tax_ar = chosen_cm_ar.get("default_tax_type") or "VAT 7%"
-                    def_wht_ar = chosen_cm_ar.get("default_wht_type") or "None"
-                    charge_code_ar = chosen_cm_ar.get("charge_code")
+                    f1, f2, f3 = st.columns(3)
+                    qty_ap = f1.number_input("Qty", min_value=0.01, value=1.0, step=1.0, key=f"q_ap_qty_{shipment_id}")
+                    unit_opts = ["CTR", "BL", "CBM", "TRIP", "SHPT", "LOT", "SET", "KG"]
+                    unit_idx = unit_opts.index(def_unit_ap) if def_unit_ap in unit_opts else 0
+                    unit_ap = f2.selectbox("Unit", unit_opts, index=unit_idx, key=f"q_ap_unit_{shipment_id}")
+                    prc_ap = f3.number_input("Unit Price Rate", min_value=0.0, value=0.0, step=500.0, key=f"q_ap_prc_{shipment_id}")
 
-                    with st.form(f"quick_add_ar_form_{shipment_id}", clear_on_submit=True):
-                        cat_ar = st.selectbox(
-                            "AR Category *",
-                            db_categories,
-                            index=db_categories.index(def_cat_ar) if def_cat_ar in db_categories else 0,
-                            key=f"q_ar_cat_{shipment_id}"
-                        )
-                        desc_ar = st.text_input("AR Description / Charge Name *", value=def_desc_ar, key=f"q_ar_desc_{shipment_id}")
-                        
-                        bp_ar_idx = st.selectbox(
-                            "Customer / Bill To (เชื่อมโยง Business Parties) *",
-                            options=range(len(bp_options)),
-                            format_func=lambda idx: bp_options[idx][1],
-                            key=f"q_ar_bp_{shipment_id}"
-                        )
-                        chosen_ar_bp = bp_options[bp_ar_idx]
-                        cust_ar = chosen_ar_bp[2].get("legal_name") or chosen_ar_bp[2].get("display_name") or _s(ship.get("customer_name"), "")
-                        party_id_ar = chosen_ar_bp[0]
+                    t1, t2, t3 = st.columns(3)
+                    curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
+                    curr_idx = curr_opts.index(def_curr_ap) if def_curr_ap in curr_opts else 0
+                    curr_ap = t1.selectbox("Currency", curr_opts, index=curr_idx, key=f"q_ap_curr_{shipment_id}")
+                    ex_ap = t2.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if curr_ap == "THB" else 35.5, step=0.1, key=f"q_ap_ex_{shipment_id}")
+                    tax_idx = TAX_TYPES.index(def_tax_ap) if def_tax_ap in TAX_TYPES else 0
+                    tax_ap = t3.selectbox("Tax / VAT Type", TAX_TYPES, index=tax_idx, key=f"q_ap_tax_{shipment_id}")
+                    
+                    w1, w2, w3 = st.columns(3)
+                    wht_idx = WHT_TYPES.index(def_wht_ap) if def_wht_ap in WHT_TYPES else 0
+                    wht_ap = w1.selectbox("Withholding Tax (WHT)", WHT_TYPES, index=wht_idx, key=f"q_ap_wht_{shipment_id}")
+                    vinv_ap = w2.text_input("Vendor Invoice / Tax Inv No.", placeholder="e.g. ONE-12345 / PAT-8899", key=f"q_ap_vinv_{shipment_id}")
+                    vinv_date = w3.date_input("Vendor Invoice Date", value=date.today(), key=f"q_ap_vdate_{shipment_id}")
 
-                        f1, f2, f3 = st.columns(3)
-                        qty_ar = f1.number_input("Qty", min_value=0.01, value=1.0, step=1.0, key=f"q_ar_qty_{shipment_id}")
+                    prev = compute_line_tax_and_net(qty_ap, prc_ap, tax_ap, wht_ap, curr_ap, ex_ap)
+                    st.info(f"📊 **Preview Amount:** {prev['amount']:,.2f} {curr_ap} ({prev['amount_thb']:,.2f} THB) | VAT: {prev['vat_amount']:,.2f} | WHT: {prev['wht_amount']:,.2f} | **Net Payable: {prev['net_amount']:,.2f} {curr_ap}**")
+
+                    if st.form_submit_button("💾 Save AP Cost Line", type="primary", use_container_width=True):
+                        if not desc_ap.strip():
+                            st.error("Description is required.")
+                        else:
+                            add_cost_line({
+                                "shipment_id": shipment_id,
+                                "cost_type": "AP",
+                                "party_id": party_id_ap,
+                                "matched_charge_code": charge_code_ap,
+                                "category": cat_ap,
+                                "description": desc_ap.strip(),
+                                "supplier": supp_ap.strip() or None,
+                                "quantity": qty_ap,
+                                "unit": unit_ap,
+                                "unit_price": prc_ap,
+                                "currency": curr_ap,
+                                "exchange_rate": ex_ap,
+                                "tax_type": tax_ap,
+                                "wht_type": wht_ap,
+                                "vendor_invoice_no": vinv_ap.strip() or None,
+                                "vendor_invoice_date": vinv_date.isoformat(),
+                                "created_by": user.get("username", "operation"),
+                            })
+                            st.success("AP Cost Line added.")
+                            st.rerun()
+
+        # AP Table & Row Controls
+        if ap_lines:
+            ap_table_data = []
+            for r in ap_lines:
+                status_flags = []
+                if r.get("voucher_no"):
+                    status_flags.append(f"🔒 PV: {r.get('voucher_no')}")
+                if r.get("is_matched") or r.get("matched_ar_id"):
+                    status_flags.append("🔒 Pulled to AR")
+                status_str = ", ".join(status_flags) if status_flags else "⚡ Open"
+
+                ap_curr = r.get("currency", "THB")
+                ap_ex = float(r.get("exchange_rate") or 1.0)
+                orig_amt = float(r.get("amount") or 0.0)
+                amt_thb = float(r.get("amount_thb") or (orig_amt * ap_ex))
+                vat_amt = float(r.get("vat_amount") or 0.0)
+                vat_thb = vat_amt * ap_ex
+                wht_amt = float(r.get("wht_amount") or 0.0)
+                wht_thb = wht_amt * ap_ex
+                net_amt = float(r.get("net_amount") or 0.0)
+                net_thb = net_amt * ap_ex
+
+                if ap_curr != "THB":
+                    rate_str = f"{float(r.get('unit_price',0)):,.2f} {ap_curr} (Ex: {ap_ex:g})"
+                    amt_str = f"{orig_amt:,.2f} {ap_curr} (฿ {amt_thb:,.2f})"
+                    vat_str = f"{vat_amt:,.2f} {ap_curr} (฿ {vat_thb:,.2f})" if vat_amt > 0 else "—"
+                    wht_str = f"{wht_amt:,.2f} {ap_curr} (฿ {wht_thb:,.2f})" if wht_amt > 0 else "—"
+                    net_str = f"{net_amt:,.2f} {ap_curr} (฿ {net_thb:,.2f})"
+                else:
+                    rate_str = f"{float(r.get('unit_price',0)):,.2f} THB"
+                    amt_str = f"฿ {amt_thb:,.2f}"
+                    vat_str = f"฿ {vat_thb:,.2f}" if vat_amt > 0 else "—"
+                    wht_str = f"฿ {wht_thb:,.2f}" if wht_amt > 0 else "—"
+                    net_str = f"฿ {net_thb:,.2f}"
+
+                ap_table_data.append({
+                    "ID": r["id"],
+                    "Description": r["description"],
+                    "Payee / Supplier": r.get("supplier", "—"),
+                    "Rate": rate_str,
+                    "Qty": f"{float(r.get('quantity',1)):g} {r.get('unit','UNIT')}",
+                    "Amount (ยอดเงิน)": amt_str,
+                    "VAT (7%)": vat_str,
+                    "WHT": wht_str,
+                    "Net Payable (สุทธิ)": net_str,
+                    "Vendor Inv No.": r.get("vendor_invoice_no") or "—",
+                    "Status": status_str,
+                })
+            st.dataframe(pd.DataFrame(ap_table_data), hide_index=True, use_container_width=True)
+
+            # Row Action Selector for AP (Edit / Delete)
+            if can_edit and not is_fin_locked:
+                unlocked_ap = [r for r in ap_lines if not r.get("voucher_no") and not r.get("is_matched")]
+                if unlocked_ap:
+                    act_c1, act_c2, act_c3 = st.columns([3, 1, 1])
+                    ap_edit_opts = {f"#{r['id']} - {r.get('description')} ({r.get('supplier','—')}) [{_money(r.get('amount_thb'))}]": r["id"] for r in unlocked_ap}
+                    chosen_ap_lbl = act_c1.selectbox("Select AP Line to Edit or Delete (เลือกรายการที่ต้องการแก้ไข/ลบ)", list(ap_edit_opts.keys()), key=f"sel_ap_row_act_{shipment_id}")
+                    chosen_ap_id_val = ap_edit_opts[chosen_ap_lbl]
+                    
+                    if act_c2.button("✏️ แก้ไข (Edit AP)", key=f"btn_edit_ap_row_{shipment_id}", use_container_width=True):
+                        st.session_state[f"edit_ap_id_{shipment_id}"] = chosen_ap_id_val
+                        st.rerun()
+                    if act_c3.button("🗑️ ลบ (Delete AP)", key=f"btn_del_ap_row_{shipment_id}", use_container_width=True, type="secondary"):
+                        delete_cost_line(chosen_ap_id_val)
+                        st.success("AP Line deleted.")
+                        st.rerun()
+        else:
+            st.info("No AP cost lines recorded for this Job.")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # =========================================================================
+        # SECTION 2: 🧾 AR CUSTOMER REVENUES (รายได้เรียกเก็บลูกค้า / วางบิล)
+        # =========================================================================
+        st.markdown("""
+            <div style="background-color: #f0fdf4; border-left: 5px solid #16a34a; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px;">
+                <span style="font-size: 1.15rem; font-weight: 700; color: #166534;">🧾 2. Customer Revenue Ledger (AR — รายได้เรียกเก็บลูกค้า / วางบิล)</span>
+            </div>
+        """, unsafe_allow_html=True)
+
+        m_ar1, m_ar2, m_ar3, m_ar4 = st.columns(4)
+        m_ar1.metric("Total AR Revenue", f"฿ {summary['total_ar_amount']:,.2f}")
+        m_ar2.metric("AR Output VAT", f"฿ {summary['total_ar_vat']:,.2f}")
+        m_ar3.metric("AR WHT", f"฿ {summary['total_ar_wht']:,.2f}")
+        m_ar4.metric("Net Receivable (สุทธิ)", f"฿ {summary['total_ar_net']:,.2f}")
+
+        # Edit AR Line Drawer
+        edit_ar_id = st.session_state.get(f"edit_ar_id_{shipment_id}")
+        if edit_ar_id:
+            ar_to_edit = next((x for x in ar_lines if x["id"] == edit_ar_id), None)
+            if ar_to_edit:
+                with st.container():
+                    st.markdown(f"##### ✏️ แก้ไขรายการรายได้ AR #{edit_ar_id} — {ar_to_edit.get('description')}")
+                    with st.form(f"edit_ar_form_{edit_ar_id}"):
+                        e_c1, e_c2 = st.columns(2)
+                        e_cat_ar = e_c1.selectbox("Category *", db_categories, index=db_categories.index(ar_to_edit.get("category")) if ar_to_edit.get("category") in db_categories else 0, key=f"e_ar_cat_{edit_ar_id}")
+                        e_desc_ar = e_c2.text_input("Description *", value=ar_to_edit.get("description", ""), key=f"e_ar_desc_{edit_ar_id}")
+
+                        curr_bp_ar_id = ar_to_edit.get("party_id")
+                        def_bp_ar_idx = 0
+                        for b_i, b_opt in enumerate(bp_options):
+                            if b_opt[0] == curr_bp_ar_id or (b_opt[2].get("legal_name") == ar_to_edit.get("supplier")):
+                                def_bp_ar_idx = b_i
+                                break
+
+                        e_bp_ar = st.selectbox("Customer / Bill To (ลูกค้าจาก Master Data) *", options=range(len(bp_options)), index=def_bp_ar_idx, format_func=lambda idx: bp_options[idx][1], key=f"e_ar_bp_{edit_ar_id}")
+                        chosen_e_bp_ar = bp_options[e_bp_ar]
+                        e_cust_ar = chosen_e_bp_ar[2].get("legal_name") or chosen_e_bp_ar[2].get("display_name") or ar_to_edit.get("supplier", "")
+                        e_party_id_ar = chosen_e_bp_ar[0] or curr_bp_ar_id
+
+                        ef1, ef2, ef3 = st.columns(3)
+                        e_qty_ar = ef1.number_input("Qty", min_value=0.01, value=float(ar_to_edit.get("quantity") or 1.0), step=1.0, key=f"e_ar_qty_{edit_ar_id}")
                         unit_opts = ["CTR", "BL", "CBM", "TRIP", "SHPT", "LOT", "SET", "KG"]
-                        unit_idx = unit_opts.index(def_unit_ar) if def_unit_ar in unit_opts else 0
-                        unit_ar = f2.selectbox("Unit", unit_opts, index=unit_idx, key=f"q_ar_unit_{shipment_id}")
-                        prc_ar = f3.number_input("Unit Price Selling Rate", min_value=0.0, value=0.0, step=500.0, key=f"q_ar_prc_{shipment_id}")
+                        e_unit_ar = ef2.selectbox("Unit", unit_opts, index=unit_opts.index(ar_to_edit.get("unit")) if ar_to_edit.get("unit") in unit_opts else 0, key=f"e_ar_unit_{edit_ar_id}")
+                        e_prc_ar = ef3.number_input("Unit Price Selling Rate", min_value=0.0, value=float(ar_to_edit.get("unit_price") or 0.0), step=100.0, key=f"e_ar_prc_{edit_ar_id}")
 
-                        t1, t2, t3 = st.columns(3)
+                        et1, et2, et3 = st.columns(3)
                         curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
-                        curr_idx = curr_opts.index(def_curr_ar) if def_curr_ar in curr_opts else 0
-                        curr_ar = t1.selectbox("Currency", curr_opts, index=curr_idx, key=f"q_ar_curr_{shipment_id}")
-                        ex_ar = t2.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if curr_ar == "THB" else 35.5, step=0.1, key=f"q_ar_ex_{shipment_id}")
-                        tax_idx = TAX_TYPES.index(def_tax_ar) if def_tax_ar in TAX_TYPES else 0
-                        tax_ar = t3.selectbox("Tax / VAT Type", TAX_TYPES, index=tax_idx, key=f"q_ar_tax_{shipment_id}")
-                        
-                        w1, _ = st.columns(2)
-                        wht_idx = WHT_TYPES.index(def_wht_ar) if def_wht_ar in WHT_TYPES else 0
-                        wht_ar = w1.selectbox("Withholding Tax (WHT)", WHT_TYPES, index=wht_idx, key=f"q_ar_wht_{shipment_id}")
+                        e_curr_ar = et1.selectbox("Currency", curr_opts, index=curr_opts.index(ar_to_edit.get("currency", "THB")) if ar_to_edit.get("currency") in curr_opts else 0, key=f"e_ar_curr_{edit_ar_id}")
+                        e_ex_ar = et2.number_input("Ex.Rate to THB", min_value=0.001, value=float(ar_to_edit.get("exchange_rate") or 1.0), step=0.1, key=f"e_ar_ex_{edit_ar_id}")
+                        e_tax_ar = et3.selectbox("Tax / VAT Type", TAX_TYPES, index=TAX_TYPES.index(ar_to_edit.get("tax_type", "VAT 7%")) if ar_to_edit.get("tax_type") in TAX_TYPES else 0, key=f"e_ar_tax_{edit_ar_id}")
 
-                        # Preview calculations live
-                        prev_ar = compute_line_tax_and_net(qty_ar, prc_ar, tax_ar, wht_ar, curr_ar, ex_ar)
-                        st.info(f"📊 **Preview Revenue:** {prev_ar['amount']:,.2f} {curr_ar} ({prev_ar['amount_thb']:,.2f} THB) | VAT: {prev_ar['vat_amount']:,.2f} | WHT: {prev_ar['wht_amount']:,.2f} | **Net Receivable: {prev_ar['net_amount']:,.2f} {curr_ar}**")
+                        ew1, _ = st.columns(2)
+                        e_wht_ar = ew1.selectbox("Withholding Tax (WHT)", WHT_TYPES, index=WHT_TYPES.index(ar_to_edit.get("wht_type", "None")) if ar_to_edit.get("wht_type") in WHT_TYPES else 0, key=f"e_ar_wht_{edit_ar_id}")
 
-                        if st.form_submit_button("💾 Save AR Revenue Line", type="primary", width="stretch"):
-                            if not desc_ar.strip():
-                                st.error("Description is required.")
-                            else:
-                                add_cost_line({
-                                    "shipment_id": shipment_id,
-                                    "cost_type": "AR",
-                                    "party_id": party_id_ar,
-                                    "matched_charge_code": charge_code_ar,
-                                    "category": cat_ar,
-                                    "description": desc_ar.strip(),
-                                    "supplier": cust_ar.strip() or None,
-                                    "quantity": qty_ar,
-                                    "unit": unit_ar,
-                                    "unit_price": prc_ar,
-                                    "currency": curr_ar,
-                                    "exchange_rate": ex_ar,
-                                    "tax_type": tax_ar,
-                                    "wht_type": wht_ar,
-                                    "created_by": user.get("username", "operation"),
+                        e_prev_ar = compute_line_tax_and_net(e_qty_ar, e_prc_ar, e_tax_ar, e_wht_ar, e_curr_ar, e_ex_ar)
+                        st.info(f"📊 **Preview:** {e_prev_ar['amount']:,.2f} {e_curr_ar} ({e_prev_ar['amount_thb']:,.2f} THB) | VAT: {e_prev_ar['vat_amount']:,.2f} | WHT: {e_prev_ar['wht_amount']:,.2f} | **Net Receivable: {e_prev_ar['net_amount']:,.2f} {e_curr_ar}**")
+
+                        eb_s1, eb_s2 = st.columns([1, 1])
+                        with eb_s1:
+                            if st.form_submit_button("💾 Save Changes (บันทึกการแก้ไข)", type="primary", use_container_width=True):
+                                update_cost_line(edit_ar_id, {
+                                    "party_id": e_party_id_ar,
+                                    "category": e_cat_ar,
+                                    "description": e_desc_ar.strip(),
+                                    "supplier": e_cust_ar.strip() or None,
+                                    "quantity": e_qty_ar,
+                                    "unit": e_unit_ar,
+                                    "unit_price": e_prc_ar,
+                                    "currency": e_curr_ar,
+                                    "exchange_rate": e_ex_ar,
+                                    "tax_type": e_tax_ar,
+                                    "wht_type": e_wht_ar,
                                 })
-                                st.success("AR Revenue Line added.")
+                                st.session_state[f"edit_ar_id_{shipment_id}"] = None
+                                st.success("Updated successfully.")
                                 st.rerun()
+                        with eb_s2:
+                            if st.form_submit_button("❌ Cancel (ยกเลิก)", use_container_width=True):
+                                st.session_state[f"edit_ar_id_{shipment_id}"] = None
+                                st.rerun()
+                    st.divider()
 
-        # Unified Side-by-Side AP/AR Ledger Matrix Table
-        section("Unified Side-by-Side AP / AR Ledger Matrix (ตารางรวม AP/AR และกำไรต่อรายการ)")
+        # Add AR Form
+        if can_edit and not is_fin_locked:
+            with st.expander("➕ เพิ่มรายการรายได้ AR ใหม่ (Add Customer Revenue จาก Master Data)", expanded=len(ar_lines) == 0):
+                cm_idx_ar = st.selectbox(
+                    "Standard Charge from Master Data (เลือกค่าบริการมาตรฐาน)",
+                    options=range(len(charge_options)),
+                    format_func=lambda idx: charge_options[idx][1],
+                    key=f"ar_cm_choice_{shipment_id}"
+                )
+                chosen_cm_ar = charge_options[cm_idx_ar][2]
+
+                def_desc_ar = chosen_cm_ar.get("description") or "Ocean Freight Revenue"
+                def_cat_ar = chosen_cm_ar.get("category") or db_categories[0]
+                def_unit_ar = chosen_cm_ar.get("default_unit") or "CTR"
+                def_curr_ar = chosen_cm_ar.get("default_currency") or "THB"
+                def_tax_ar = chosen_cm_ar.get("default_tax_type") or "VAT 7%"
+                def_wht_ar = chosen_cm_ar.get("default_wht_type") or "None"
+                charge_code_ar = chosen_cm_ar.get("charge_code")
+
+                with st.form(f"quick_add_ar_form_{shipment_id}", clear_on_submit=True):
+                    f_ar1, f_ar2 = st.columns(2)
+                    cat_ar = f_ar1.selectbox(
+                        "AR Category *",
+                        db_categories,
+                        index=db_categories.index(def_cat_ar) if def_cat_ar in db_categories else 0,
+                        key=f"q_ar_cat_{shipment_id}"
+                    )
+                    desc_ar = f_ar2.text_input("AR Description / Charge Name *", value=def_desc_ar, key=f"q_ar_desc_{shipment_id}")
+                    
+                    bp_ar_idx = st.selectbox(
+                        "Customer / Bill To (ลูกค้า / เชื่อมโยง Business Parties) *",
+                        options=range(len(bp_options)),
+                        format_func=lambda idx: bp_options[idx][1],
+                        key=f"q_ar_bp_{shipment_id}"
+                    )
+                    chosen_ar_bp = bp_options[bp_ar_idx]
+                    cust_ar = chosen_ar_bp[2].get("legal_name") or chosen_ar_bp[2].get("display_name") or _s(ship.get("customer_name"), "")
+                    party_id_ar = chosen_ar_bp[0]
+
+                    f1, f2, f3 = st.columns(3)
+                    qty_ar = f1.number_input("Qty", min_value=0.01, value=1.0, step=1.0, key=f"q_ar_qty_{shipment_id}")
+                    unit_opts = ["CTR", "BL", "CBM", "TRIP", "SHPT", "LOT", "SET", "KG"]
+                    unit_idx = unit_opts.index(def_unit_ar) if def_unit_ar in unit_opts else 0
+                    unit_ar = f2.selectbox("Unit", unit_opts, index=unit_idx, key=f"q_ar_unit_{shipment_id}")
+                    prc_ar = f3.number_input("Unit Price Selling Rate", min_value=0.0, value=0.0, step=500.0, key=f"q_ar_prc_{shipment_id}")
+
+                    t1, t2, t3 = st.columns(3)
+                    curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
+                    curr_idx = curr_opts.index(def_curr_ar) if def_curr_ar in curr_opts else 0
+                    curr_ar = t1.selectbox("Currency", curr_opts, index=curr_idx, key=f"q_ar_curr_{shipment_id}")
+                    ex_ar = t2.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if curr_ar == "THB" else 35.5, step=0.1, key=f"q_ar_ex_{shipment_id}")
+                    tax_idx = TAX_TYPES.index(def_tax_ar) if def_tax_ar in TAX_TYPES else 0
+                    tax_ar = t3.selectbox("Tax / VAT Type", TAX_TYPES, index=tax_idx, key=f"q_ar_tax_{shipment_id}")
+                    
+                    w1, _ = st.columns(2)
+                    wht_idx = WHT_TYPES.index(def_wht_ar) if def_wht_ar in WHT_TYPES else 0
+                    wht_ar = w1.selectbox("Withholding Tax (WHT)", WHT_TYPES, index=wht_idx, key=f"q_ar_wht_{shipment_id}")
+
+                    prev_ar = compute_line_tax_and_net(qty_ar, prc_ar, tax_ar, wht_ar, curr_ar, ex_ar)
+                    st.info(f"📊 **Preview Revenue:** {prev_ar['amount']:,.2f} {curr_ar} ({prev_ar['amount_thb']:,.2f} THB) | VAT: {prev_ar['vat_amount']:,.2f} | WHT: {prev_ar['wht_amount']:,.2f} | **Net Receivable: {prev_ar['net_amount']:,.2f} {curr_ar}**")
+
+                    if st.form_submit_button("💾 Save AR Revenue Line", type="primary", use_container_width=True):
+                        if not desc_ar.strip():
+                            st.error("Description is required.")
+                        else:
+                            add_cost_line({
+                                "shipment_id": shipment_id,
+                                "cost_type": "AR",
+                                "party_id": party_id_ar,
+                                "matched_charge_code": charge_code_ar,
+                                "category": cat_ar,
+                                "description": desc_ar.strip(),
+                                "supplier": cust_ar.strip() or None,
+                                "quantity": qty_ar,
+                                "unit": unit_ar,
+                                "unit_price": prc_ar,
+                                "currency": curr_ar,
+                                "exchange_rate": ex_ar,
+                                "tax_type": tax_ar,
+                                "wht_type": wht_ar,
+                                "created_by": user.get("username", "operation"),
+                            })
+                            st.success("AR Revenue Line added.")
+                            st.rerun()
+
+        # AR Table & Row Controls
+        if ar_lines:
+            ar_table_data = []
+            for r in ar_lines:
+                status_str = f"🔒 Invoiced: {r.get('invoice_no')}" if r.get("invoice_no") else "⚡ Unbilled"
+                ar_curr = r.get("currency", "THB")
+                ar_ex = float(r.get("exchange_rate") or 1.0)
+                orig_amt = float(r.get("amount") or 0.0)
+                amt_thb = float(r.get("amount_thb") or (orig_amt * ar_ex))
+                vat_amt = float(r.get("vat_amount") or 0.0)
+                vat_thb = vat_amt * ar_ex
+                wht_amt = float(r.get("wht_amount") or 0.0)
+                wht_thb = wht_amt * ar_ex
+                net_amt = float(r.get("net_amount") or 0.0)
+                net_thb = net_amt * ar_ex
+
+                if ar_curr != "THB":
+                    rate_str = f"{float(r.get('unit_price',0)):,.2f} {ar_curr} (Ex: {ar_ex:g})"
+                    amt_str = f"{orig_amt:,.2f} {ar_curr} (฿ {amt_thb:,.2f})"
+                    vat_str = f"{vat_amt:,.2f} {ar_curr} (฿ {vat_thb:,.2f})" if vat_amt > 0 else "—"
+                    wht_str = f"{wht_amt:,.2f} {ar_curr} (฿ {wht_thb:,.2f})" if wht_amt > 0 else "—"
+                    net_str = f"{net_amt:,.2f} {ar_curr} (฿ {net_thb:,.2f})"
+                else:
+                    rate_str = f"{float(r.get('unit_price',0)):,.2f} THB"
+                    amt_str = f"฿ {amt_thb:,.2f}"
+                    vat_str = f"฿ {vat_thb:,.2f}" if vat_amt > 0 else "—"
+                    wht_str = f"฿ {wht_thb:,.2f}" if wht_amt > 0 else "—"
+                    net_str = f"฿ {net_thb:,.2f}"
+
+                ar_table_data.append({
+                    "ID": r["id"],
+                    "Description": r["description"],
+                    "Customer (Bill To)": r.get("supplier", "—"),
+                    "Selling Rate": rate_str,
+                    "Qty": f"{float(r.get('quantity',1)):g} {r.get('unit','UNIT')}",
+                    "Amount (ยอดเงิน)": amt_str,
+                    "VAT (7%)": vat_str,
+                    "WHT": wht_str,
+                    "Net Receivable (สุทธิ)": net_str,
+                    "Status": status_str,
+                })
+            st.dataframe(pd.DataFrame(ar_table_data), hide_index=True, use_container_width=True)
+
+            # Row Action Selector for AR (Edit / Delete)
+            if can_edit and not is_fin_locked:
+                unlocked_ar = [r for r in ar_lines if not r.get("invoice_no")]
+                if unlocked_ar:
+                    act_ar1, act_ar2, act_ar3 = st.columns([3, 1, 1])
+                    ar_edit_opts = {f"#{r['id']} - {r.get('description')} ({r.get('supplier','—')}) [{_money(r.get('amount_thb'))}]": r["id"] for r in unlocked_ar}
+                    chosen_ar_lbl = act_ar1.selectbox("Select AR Line to Edit or Delete (เลือกรายการที่ต้องการแก้ไข/ลบ)", list(ar_edit_opts.keys()), key=f"sel_ar_row_act_{shipment_id}")
+                    chosen_ar_id_val = ar_edit_opts[chosen_ar_lbl]
+                    
+                    if act_ar2.button("✏️ แก้ไข (Edit AR)", key=f"btn_edit_ar_row_{shipment_id}", use_container_width=True):
+                        st.session_state[f"edit_ar_id_{shipment_id}"] = chosen_ar_id_val
+                        st.rerun()
+                    if act_ar3.button("🗑️ ลบ (Delete AR)", key=f"btn_del_ar_row_{shipment_id}", use_container_width=True, type="secondary"):
+                        delete_cost_line(chosen_ar_id_val)
+                        st.success("AR Line deleted.")
+                        st.rerun()
+        else:
+            st.info("No AR revenue lines recorded for this Job.")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # =========================================================================
+        # SECTION 3: 📊 JOB PROFITABILITY & MARGIN MATRIX (สรุปผลกำไร P&L)
+        # =========================================================================
+        st.markdown("""
+            <div style="background-color: #fdf4ff; border-left: 5px solid #9333ea; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px;">
+                <span style="font-size: 1.15rem; font-weight: 700; color: #7e22ce;">📊 3. Job Profitability & Margin Matrix (สรุปผลกำไรขั้นต้นและ P&L ต่อรายการ)</span>
+            </div>
+        """, unsafe_allow_html=True)
 
         if not matrix_rows:
             st.info("No cost or revenue lines recorded for this Job. Use the Master Data forms above to start building the ledger.")
         else:
             table_data = []
             for r in matrix_rows:
-                # Link Status Tag
                 if r["is_matched"]:
                     link_tag = "🔒 Pulled ➔ AR"
                 elif r["ap_id"] and not r["ar_id"]:
@@ -688,26 +1015,31 @@ def render():
                 else:
                     link_tag = "✦ Pure AR"
 
+                ap_rate_str = f"{r['ap_unit_price']:,.2f} {r['ap_currency']}" if r["ap_id"] else "—"
+                if r["ap_id"] and r.get("ap_currency") != "THB":
+                    ap_rate_str += f" (Ex: {r.get('ap_exchange_rate', 1.0):g})"
+
+                ar_rate_str = f"{r['ar_unit_price']:,.2f} {r['ar_currency']}" if r["ar_id"] else "—"
+                if r["ar_id"] and r.get("ar_currency") != "THB":
+                    ar_rate_str += f" (Ex: {r.get('ar_exchange_rate', 1.0):g})"
+
                 table_data.append({
                     "No.": r["line_no"],
                     # AP Side
                     "AP Description (ต้นทุน)": r["ap_description"],
                     "Payee / Business Party": r["ap_supplier"],
                     "Vendor Inv No.": r.get("ap_vendor_inv", "—"),
-                    "AP Rate": f"{r['ap_unit_price']:,.2f} {r['ap_currency']}" if r["ap_id"] else "—",
-                    "AP Qty": f"{r['ap_quantity']:g} {r['ap_unit']}" if r["ap_id"] else "—",
+                    "AP Rate": ap_rate_str,
                     "AP Amount (฿)": f"{r['ap_amount_thb']:,.2f}" if r["ap_id"] else "—",
-                    "AP Tax/WHT": f"{r['ap_tax_type']} / {r['ap_wht_type']}" if r["ap_id"] else "—",
                     "AP Status": f"{r['ap_payout_status']} ({r['ap_voucher_no']})" if r["ap_id"] else "—",
                     # Bridge
                     "Link Status": link_tag,
                     # AR Side
                     "AR Description (เรียกเก็บ)": r["ar_description"],
                     "Customer (Business Party)": r["ar_customer"],
-                    "AR Rate": f"{r['ar_unit_price']:,.2f} {r['ar_currency']}" if r["ar_id"] else "—",
-                    "AR Qty": f"{r['ar_quantity']:g} {r['ar_unit']}" if r["ar_id"] else "—",
+                    "AR Rate": ar_rate_str,
+
                     "AR Amount (฿)": f"{r['ar_amount_thb']:,.2f}" if r["ar_id"] else "—",
-                    "AR Tax/WHT": f"{r['ar_tax_type']} / {r['ar_wht_type']}" if r["ar_id"] else "—",
                     "AR Status": f"{r['ar_billing_status']} ({r['ar_invoice_no']})" if r["ar_id"] else "—",
                     # Profit
                     "Line Profit (฿)": f"{r['line_profit_thb']:,.2f}",
@@ -715,24 +1047,7 @@ def render():
                 })
 
             df_matrix = pd.DataFrame(table_data)
-            st.dataframe(df_matrix, hide_index=True, width="stretch")
-
-            # Prune / Delete Line segment
-            if can_edit and not is_fin_locked:
-                with st.expander("🗑️ Delete / Prune Ledger Line", expanded=False):
-                    del_opts = []
-                    for ap in ap_lines:
-                        del_opts.append((ap["id"], f"AP #{ap['id']} - {ap.get('description')} ({_money(ap.get('amount_thb'))})"))
-                    for ar in ar_lines:
-                        del_opts.append((ar["id"], f"AR #{ar['id']} - {ar.get('description')} ({_money(ar.get('amount_thb'))})"))
-
-                    if del_opts:
-                        d_col1, d_col2 = st.columns([3, 1])
-                        chosen_del = d_col1.selectbox("Select Line to Remove", del_opts, format_func=lambda x: x[1], key=f"del_line_sel_{shipment_id}")
-                        if d_col2.button("🗑️ Delete Line", type="secondary", key=f"del_btn_{shipment_id}", width="stretch"):
-                            delete_cost_line(chosen_del[0])
-                            st.success("Line removed.")
-                            st.rerun()
+            st.dataframe(df_matrix, hide_index=True, use_container_width=True)
 
     with tab_audit:
         section("Document Ledger & Audit Traceability (ประวัติเอกสารย้อนหลังและรายการในแต่ละใบ)")

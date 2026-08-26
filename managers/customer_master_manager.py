@@ -15,7 +15,7 @@ def list_customers(active_only: bool = False, user: Optional[Dict[str, Any]] = N
     where = "WHERE tenant_id=%s"
     params: list[Any] = [tenant]
     if active_only:
-        where += " AND LOWER(COALESCE(is_active::text, '0')) IN ('1','true','t')"
+        where += " AND COALESCE(is_active, 1) = 1"
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(f"SELECT * FROM customers {where} ORDER BY customer_code, company_name", params)
         cust_rows = [dict(r) for r in cur.fetchall()]
@@ -27,7 +27,7 @@ def list_customers(active_only: bool = False, user: Optional[Dict[str, Any]] = N
                 FROM business_parties p
                 JOIN party_roles pr ON pr.party_id=p.id AND pr.tenant_id=p.tenant_id
                 LEFT JOIN party_finance_profiles pf ON pf.party_id=p.id AND pf.tenant_id=p.tenant_id
-                WHERE p.tenant_id=%s AND pr.role_type='CUSTOMER'
+                WHERE p.tenant_id=%s AND pr.role_type='CUSTOMER' AND (p.is_active IS NOT FALSE)
             """, (tenant,))
             party_rows = [dict(r) for r in cur.fetchall()]
             existing_codes = {str(c.get("customer_code") or "").upper() for c in cust_rows}
@@ -101,6 +101,7 @@ def save_customer(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
             1 if data.get("is_active", True) else 0,
             data.get("updated_by") or (user or {}).get("username"),
         )
+
         customer_id = data.get("id")
         if not customer_id:
             cur.execute("SELECT id FROM customers WHERE tenant_id=%s AND customer_code=%s LIMIT 1", (tenant, code))
@@ -135,22 +136,23 @@ def save_customer(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
                     UPDATE business_parties
                     SET legal_name=%s, display_name=%s, tax_id=%s, phone=%s, email=%s, billing_address=%s, is_active=%s, updated_at=CURRENT_TIMESTAMP
                     WHERE id=%s AND tenant_id=%s
-                """, (company, data.get("display_name") or company, data.get("tax_id"), data.get("tel"), data.get("email"), data.get("billing_address") or data.get("address"), 1 if data.get("is_active", True) else 0, bp_id, tenant))
+                """, (company, data.get("display_name") or company, data.get("tax_id"), data.get("tel"), data.get("email"), data.get("billing_address") or data.get("address"), bool(data.get("is_active", True)), bp_id, tenant))
             else:
                 cur.execute("""
                     INSERT INTO business_parties (tenant_id, party_code, legal_name, display_name, tax_id, phone, email, billing_address, is_active)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-                """, (tenant, code, company, data.get("display_name") or company, data.get("tax_id"), data.get("tel"), data.get("email"), data.get("billing_address") or data.get("address"), 1 if data.get("is_active", True) else 0))
+                """, (tenant, code, company, data.get("display_name") or company, data.get("tax_id"), data.get("tel"), data.get("email"), data.get("billing_address") or data.get("address"), bool(data.get("is_active", True))))
                 bp_row = cur.fetchone()
                 bp_id = bp_row["id"] if isinstance(bp_row, dict) or hasattr(bp_row, "keys") else bp_row[0]
 
             # Ensure role CUSTOMER
-            cur.execute("INSERT INTO party_roles (tenant_id, party_id, role_type, is_active) VALUES (%s, %s, 'CUSTOMER', 1) ON CONFLICT DO NOTHING", (tenant, bp_id))
+            cur.execute("INSERT INTO party_roles (tenant_id, party_id, role_type, is_active) VALUES (%s, %s, 'CUSTOMER', TRUE) ON CONFLICT DO NOTHING", (tenant, bp_id))
         except Exception:
             pass
 
         conn.commit()
         return customer_id
+
 
 
 def get_credit_snapshot(customer_id: int, user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

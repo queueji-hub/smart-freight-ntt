@@ -419,8 +419,12 @@ def _render_pts_receipt_form(user: Dict[str, Any], doc_type_default: str = "RC")
                 "payments": p_items
             }, items_to_save)
             
-            st.success(f"🎉 Receipt & Tax Receipt {created_doc} created and posted successfully!")
+            st.session_state["finance_v2_active_tab"] = "📑 Receipt & Invoice Register (ทะเบียนเอกสาร)"
+            st.session_state["fin_v2_doc_actions_select"] = created_doc
             st.session_state["finance_last_doc"] = created_doc
+            st.session_state.pop("pts_rc_items", None)
+            st.session_state.pop("pts_collection_parts", None)
+            st.success(f"🎉 Receipt & Tax Receipt {created_doc} created and posted successfully!")
             st.rerun()
         except Exception as exc:
             st.error(f"Error creating Receipt: {exc}")
@@ -428,6 +432,7 @@ def _render_pts_receipt_form(user: Dict[str, Any], doc_type_default: str = "RC")
     if btn_reset.button("🔄 Reset Form", use_container_width=True, key="pts_rc_reset_btn"):
         st.session_state.pop("pts_rc_items", None)
         st.session_state.pop("pts_collection_parts", None)
+        st.session_state["finance_v2_active_tab"] = "📑 Receipt & Invoice Register (ทะเบียนเอกสาร)"
         st.rerun()
 
 
@@ -437,9 +442,19 @@ def render() -> None:
     can_edit = can_write(str(user.get("role", "")).lower(), "billing")
     invoices = list_invoices() or []
 
-    tab_register, tab_create = st.tabs(["📑 Receipt & Invoice Register (ทะเบียนเอกสาร)", "➕ Create Receipt & Tax Receipt (ออกใบเสร็จ)"])
+    tab_opts = ["📑 Receipt & Invoice Register (ทะเบียนเอกสาร)", "➕ Create Receipt & Tax Receipt (ออกใบเสร็จ)"]
+    if "finance_v2_active_tab" not in st.session_state or st.session_state["finance_v2_active_tab"] not in tab_opts:
+        st.session_state["finance_v2_active_tab"] = tab_opts[0]
 
-    with tab_register:
+    active_tab = st.radio(
+        "Finance Navigation",
+        tab_opts,
+        horizontal=True,
+        key="finance_v2_active_tab",
+        label_visibility="collapsed"
+    )
+
+    if active_tab == tab_opts[0]:
         st.markdown("#### 🔍 Filter & Search Financial Documents")
         f1, f2 = st.columns([1, 2])
         doc_filter = f1.selectbox("Document Type", ["ALL"] + list(DOC_TYPES.keys()), format_func=lambda x: "All Types" if x == "ALL" else DOC_TYPES[x], key="fin_v2_filter_type")
@@ -476,7 +491,11 @@ def render() -> None:
 
         if filtered:
             choices = [r.get("doc_no") for r in filtered if r.get("doc_no")]
-            sel = st.selectbox("Select Document for Actions / PDF", choices, key="fin_v2_doc_actions_select")
+            sel_idx = 0
+            cur_sel = st.session_state.get("fin_v2_doc_actions_select")
+            if cur_sel in choices:
+                sel_idx = choices.index(cur_sel)
+            sel = st.selectbox("Select Document for Actions / PDF", choices, index=sel_idx, key="fin_v2_doc_actions_select")
             if sel:
                 rec = next(r for r in filtered if r.get("doc_no") == sel)
                 st.caption(f"Selected: **{sel}** · Customer: {rec.get('customer_name', '—')} · Status: {rec.get('status')}")
@@ -489,8 +508,9 @@ def render() -> None:
                         st.success(f"Duplicated as {new_no}")
                         st.rerun()
 
-    with tab_create:
+    elif active_tab == tab_opts[1]:
         if can_edit:
             _render_pts_receipt_form(user)
         else:
             st.warning("You do not have write permissions to create billing documents.")
+

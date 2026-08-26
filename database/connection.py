@@ -81,18 +81,32 @@ class SQLiteConnAdapter:
 
 
 import threading
+import time
 import psycopg2.pool
 
 _pg_pool = None
 _pg_pool_lock = threading.Lock()
+_pg_last_attempt = 0.0
+_pg_retry_interval = 60.0  # Retry PG connection at most once every 60s if unreachable
+_pg_is_disabled = False
 
 def get_pool():
-    global _pg_pool
+    global _pg_pool, _pg_last_attempt, _pg_is_disabled
     if _pg_pool is not None and not _pg_pool.closed:
         return _pg_pool
+    
+    # Fast-path check: avoid waiting connect_timeout on every query if PG recently failed
+    now = time.time()
+    if _pg_is_disabled and (now - _pg_last_attempt < _pg_retry_interval):
+        return None
+
     with _pg_pool_lock:
         if _pg_pool is not None and not _pg_pool.closed:
             return _pg_pool
+        if _pg_is_disabled and (now - _pg_last_attempt < _pg_retry_interval):
+            return None
+
+        _pg_last_attempt = now
         try:
             try:
                 host = st.secrets.get("DB_HOST", st.secrets.get("host", "localhost"))
@@ -119,10 +133,12 @@ def get_pool():
                 password=password,
                 cursor_factory=psycopg2.extras.RealDictCursor,
                 sslmode=sslmode,
-                connect_timeout=3
+                connect_timeout=1
             )
+            _pg_is_disabled = False
             return _pg_pool
         except Exception:
+            _pg_is_disabled = True
             return None
 
 # =========================================================
@@ -170,16 +186,29 @@ def get_connection():
     # Fall back to local SQLite database if PostgreSQL/Supabase is unreachable (dev only)
     db_file = Path(__file__).resolve().parent.parent / "data" / "smart_freight.db"
     db_file.parent.mkdir(exist_ok=True, parents=True)
-    sqlite_conn = sqlite3.connect(db_file)
+    sqlite_conn = sqlite3.connect(db_file, timeout=30.0, check_same_thread=False)
     sqlite_conn.row_factory = sqlite3.Row
+    try:
+        sqlite_conn.execute("PRAGMA journal_mode = WAL")
+        sqlite_conn.execute("PRAGMA synchronous = NORMAL")
+        sqlite_conn.execute("PRAGMA cache_size = -64000")
+        sqlite_conn.execute("PRAGMA temp_store = MEMORY")
+    except Exception:
+        pass
     adapter = SQLiteConnAdapter(sqlite_conn)
     try:
         yield adapter
+        try:
+            adapter.commit()
+        except Exception:
+            pass
     except Exception:
         adapter.rollback()
         raise
     finally:
         adapter.close()
+
+
 
 
 

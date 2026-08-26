@@ -104,10 +104,19 @@ def _render_pts_pv_create():
                 if st.button("⚡ Auto-fill Cost Lines from Job", key="pts_ap_autofill_btn"):
                     st.session_state["pts_pv_items"] = []
                     for c in c_lines:
+                        c_curr = c.get("currency", "THB")
+                        ex_rate = float(c.get("exchange_rate") or 1.0)
+                        orig_amt = float(c.get("amount") or 0.0)
+                        amt_thb = float(c.get("amount_thb") or (orig_amt * ex_rate))
+
+                        desc_text = c.get("description") or "Operation Cost"
+                        if c_curr != "THB":
+                            desc_text += f" ({orig_amt:,.2f} {c_curr} @ {ex_rate:g})"
+
                         st.session_state["pts_pv_items"].append({
                             "service_id": c.get("matched_charge_code") or "EXP",
-                            "service_text": c.get("description") or "Operation Cost",
-                            "amount": float(c.get("amount") or 0.0),
+                            "service_text": desc_text,
+                            "amount": amt_thb,
                             "vat_rate": 7.0 if "7%" in str(c.get("tax_type", "")) else 0.0,
                             "has_tax": 1 if "7%" in str(c.get("tax_type", "")) else 0,
                             "wht_rate": 1.0 if "1%" in str(c.get("wht_type", "")) else (3.0 if "3%" in str(c.get("wht_type", "")) else 0.0),
@@ -115,6 +124,7 @@ def _render_pts_pv_create():
                             "master_job": sel_job
                         })
                     st.rerun()
+
 
     # Initialize line items if empty
     if "pts_pv_items" not in st.session_state:
@@ -358,27 +368,41 @@ def _render_pts_pv_create():
                 "remark": pv_desc,
             }, items_to_save, st.session_state.get("user"))
 
-            st.success(f"🎉 Payment Voucher created successfully! (ID: {new_id})")
+            st.session_state.pop("pts_pv_items", None)
             st.session_state["last_ap_id"] = new_id
+            st.session_state["ap_active_tab"] = "📑 AP Voucher Register (ทะเบียนใบสำคัญจ่าย)"
+            st.session_state["ap_sel_voucher_reg"] = new_id
+            st.success(f"🎉 Payment Voucher created successfully! (ID: {new_id})")
             st.rerun()
         except Exception as exc:
             st.error(f"Error creating AP Voucher: {exc}")
 
     if b_clr.button("🔄 Reset Form", use_container_width=True, key="pts_pv_reset_btn"):
         st.session_state.pop("pts_pv_items", None)
+        st.session_state["ap_active_tab"] = "📑 AP Voucher Register (ทะเบียนใบสำคัญจ่าย)"
         st.rerun()
 
 
 def render():
     st.title("💸 Accounts Payable (AP) — Payment Voucher")
     
-    tab_list, tab_new, tab_approval = st.tabs([
+    tab_opts = [
         "📑 AP Voucher Register (ทะเบียนใบสำคัญจ่าย)",
         "➕ Create Payment Voucher (ออกใบสำคัญจ่าย)",
         "🛡️ Approval & Documents"
-    ])
+    ]
+    if "ap_active_tab" not in st.session_state or st.session_state["ap_active_tab"] not in tab_opts:
+        st.session_state["ap_active_tab"] = tab_opts[0]
 
-    with tab_list:
+    active_tab = st.radio(
+        "AP Navigation",
+        tab_opts,
+        horizontal=True,
+        key="ap_active_tab",
+        label_visibility="collapsed"
+    )
+
+    if active_tab == tab_opts[0]:
         st.subheader("Accounts Payable Vouchers / ทะเบียนเจ้าหนี้การค้า")
         vouchers = get_ap_vouchers()
         if not vouchers:
@@ -410,17 +434,21 @@ def render():
 
             # Selected Document Actions
             choices = [v.get("id") for v in vouchers]
-            sel_vid = st.selectbox("Select AP Voucher for Details & PDF", choices, format_func=lambda x: next((f"#{x} — {v.get('voucher_no', 'PV')} ({v.get('vendor_name')})" for v in vouchers if v.get("id") == x), str(x)), key="ap_sel_voucher_reg")
+            sel_idx = 0
+            cur_sel = st.session_state.get("ap_sel_voucher_reg")
+            if cur_sel in choices:
+                sel_idx = choices.index(cur_sel)
+            sel_vid = st.selectbox("Select AP Voucher for Details & PDF", choices, index=sel_idx, format_func=lambda x: next((f"#{x} — {v.get('voucher_no', 'PV')} ({v.get('vendor_name')})" for v in vouchers if v.get("id") == x), str(x)), key="ap_sel_voucher_reg")
             if sel_vid:
                 v_detail = get_ap_voucher(sel_vid)
                 if v_detail:
                     st.caption(f"Voucher: **{v_detail.get('voucher_no', 'PV')}** | Payee: **{v_detail.get('vendor_name')}** | Job: **{v_detail.get('job_no', '—')}**")
                     _print_pv_pdf(sel_vid)
 
-    with tab_new:
+    elif active_tab == tab_opts[1]:
         _render_pts_pv_create()
 
-    with tab_approval:
+    elif active_tab == tab_opts[2]:
         st.subheader("AP Approval & Documents")
         vouchers = get_ap_vouchers()
         if not vouchers:
@@ -443,7 +471,14 @@ def render():
                     key=f"ap_stat_{v['id']}"
                 )
                 if new_status != curr_status:
-                    update_ap_voucher_status(v['id'], new_status, st.session_state.get('user'))
+                    update_ap_voucher_status(v["id"], new_status)
+                    st.success(f"Updated status to {new_status}")
                     st.rerun()
 
-                render_document_section("ap_voucher", str(v['id']))
+                with c2:
+                    render_document_section(
+                        doc_type="PAYMENT_VOUCHER",
+                        doc_id=v["id"],
+                        job_no=v.get("job_no"),
+                        user=st.session_state.get("user")
+                    )

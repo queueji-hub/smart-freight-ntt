@@ -48,9 +48,11 @@ def _form(user: Dict[str, Any], record: Dict[str, Any] | None = None) -> None:
             "credit_days": credit_days, "payment_term_code": payment_term, "credit_status": status,
             "credit_hold": credit_hold, "is_active": active,
         }, user)
-        st.success("Customer updated." if record.get("id") else "Customer saved.")
+        st.session_state["customer_master_action"] = "Browse"
         st.session_state.pop("customer_edit_id", None)
+        st.success("Customer updated." if record.get("id") else "Customer saved.")
         st.rerun()
+
 
 
 def render() -> None:

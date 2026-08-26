@@ -170,4 +170,10 @@ def ensure_phase30_local_schema() -> None:
                 ("default", "SEC", "Port Security & Screening Fee", "Port Terminal Cost (THC / ท่าเรือ)", "Container", "CTR", "THB", "VAT 7%", "WHT 1%"),
                 ("default", "INS", "Marine Cargo Insurance", "Insurance & Other", "Shipment", "SHPT", "THB", "Non-VAT", "None"),
             ])
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_bl_tenant_job ON bills_of_lading(tenant_id, job_no)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_job_costs_shipment ON job_costs(tenant_id, shipment_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_invoices_doc_no ON invoices(tenant_id, doc_no)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_ap_vouchers_tenant ON ap_vouchers(tenant_id, voucher_no)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_shipments_tenant_job ON shipments(tenant_id, job_no)")
             conn.commit()
+
