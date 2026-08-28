@@ -272,3 +272,39 @@ def update_ap_voucher_status(voucher_id: int, new_status: str, user: Dict[str, A
         except Exception as e:
             conn.rollback()
             raise RuntimeError(f"Failed to update AP voucher status: {str(e)}")
+
+
+def cancel_ap_voucher(voucher_id_or_no: int | str, user: Optional[Dict[str, Any]] = None) -> bool:
+    """Cancels an AP voucher and releases all linked job_costs back to UNPAID."""
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        try:
+            with conn.cursor() as cur:
+                if isinstance(voucher_id_or_no, int) or (isinstance(voucher_id_or_no, str) and voucher_id_or_no.isdigit()):
+                    cur.execute("SELECT id, voucher_no, status FROM ap_vouchers WHERE id=%s AND tenant_id=%s LIMIT 1", (int(voucher_id_or_no), tenant_id))
+                else:
+                    cur.execute("SELECT id, voucher_no, status FROM ap_vouchers WHERE voucher_no=%s AND tenant_id=%s LIMIT 1", (str(voucher_id_or_no).strip(), tenant_id))
+                
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError(f"Voucher '{voucher_id_or_no}' not found.")
+                
+                v_id = row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
+                v_no = row["voucher_no"] if isinstance(row, dict) or hasattr(row, "keys") else row[1]
+                
+                # 1. Update voucher status to CANCELLED
+                cur.execute("UPDATE ap_vouchers SET status='CANCELLED', updated_at=CURRENT_TIMESTAMP WHERE id=%s AND tenant_id=%s", (v_id, tenant_id))
+                
+                # 2. Release linked job_costs so items can be pulled/edited again
+                if v_no:
+                    cur.execute("UPDATE job_costs SET payout_status='UNPAID', voucher_no=NULL WHERE voucher_no=%s AND tenant_id=%s", (v_no, tenant_id))
+                
+                conn.commit()
+                
+                if user:
+                    user_id = user.get("id", 1) if isinstance(user, dict) else 1
+                    log_action(user_id, tenant_id, "ap_voucher", str(v_id), "CANCELLED")
+                return True
+        except Exception as e:
+            conn.rollback()
+            raise RuntimeError(f"Failed to cancel AP voucher: {str(e)}")

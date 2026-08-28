@@ -237,7 +237,7 @@ def _list_view(user: Dict[str, Any], can_edit: bool) -> None:
         return
     selected = st.selectbox("Select document", doc_nos, key="fin_action_doc")
     rec = next(r for r in filtered if r.get("doc_no") == selected)
-    a1, a2, a3, a4 = st.columns([3, 1, 1, 1])
+    a1, a2, a3, a4, a5 = st.columns([2.5, 1, 1, 1, 1.2])
     with a1:
         st.caption(f"{rec.get('doc_type', 'DOC')} · {rec.get('customer_name', '')} · {_approval_status(selected, rec.get('status'))}")
     with a2:
@@ -271,6 +271,19 @@ def _list_view(user: Dict[str, Any], can_edit: bool) -> None:
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Duplicate failed: {exc}")
+    with a5:
+        if can_edit:
+            if str(rec.get("status", "")).upper() != "CANCELLED":
+                if st.button("🔄 Rollback", key=f"fin_cancel_{selected}", use_container_width=True, type="secondary"):
+                    try:
+                        from managers.invoice_manager import cancel_invoice_document
+                        cancel_invoice_document(selected, user)
+                        st.success(f"🎉 ยกเลิก {selected} และปลดล็อกรายการ AR กลับเป็น UNBILLED สำเร็จ!")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Rollback failed: {exc}")
+            else:
+                st.caption("CANCELLED")
 
     if can_edit and st.session_state.get("fin_edit_doc") == selected:
         _edit_form(selected, user)

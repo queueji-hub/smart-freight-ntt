@@ -123,13 +123,13 @@ def _header(styles: Dict[str, ParagraphStyle], copy_label: str) -> Table:
         except Exception:
             logo = None
     if logo is None:
-        logo = Paragraph("<b>NATTAYAARAT</b>", styles["company_th"])
+        logo = Paragraph("<b>NATTAYARAAT</b>", styles["company_th"])
 
-    comp_th = "บริษัท ณัฐยาราชย์ จำกัด (สำนักงานใหญ่)"
-    comp_en = "NATTAYAARAT CO.,LTD. (Head Office)"
-    addr_line1 = "เลขที่ 59/9 หมู่ที่ 4 ตำบลบางกระทึก อำเภอสามพราน จังหวัดนครปฐม 73210"
+    comp_th = f"{COMPANY.get('name_th', 'บริษัท ณัฏฐยาราชย์ จำกัด')} (สำนักงานใหญ่)"
+    comp_en = f"{COMPANY.get('name_en', 'NATTAYARAAT CO., LTD.')} (Head Office)"
+    addr_line1 = COMPANY.get('address_full', 'เลขที่ 59/9 หมู่ที่ 4 ตำบลบางกระทึก อำเภอสามพราน จังหวัดนครปฐม 73210')
     tax_id_line = f"เลขประจำตัวผู้เสียภาษี {COMPANY.get('tax_id', '0735568004823')}"
-    tel_line = f"โทร: {COMPANY.get('tel', '')}"
+    tel_line = f"โทร: {COMPANY.get('tel', '063-428-9691')} | อีเมล: {COMPANY.get('email', 'Management@nattayaraat.com')}"
 
     address_paragraphs = [
         Paragraph(f"<b>{comp_th}</b>", styles["company_th"]),
@@ -387,7 +387,7 @@ def _signatures_block(styles: Dict[str, ParagraphStyle]) -> Table:
         Paragraph("วันที่/Date:____/____/______", styles["sign_date"]),
     ]
     
-    # Blue Company Stamp
+    # Exactly 1.7 inches diagonal for the blue company stamp
     from config import BASE_DIR
     stamp_path = Path(BASE_DIR) / "assets" / "company_stamp_blue.png"
     if not stamp_path.exists():
@@ -398,8 +398,11 @@ def _signatures_block(styles: Dict[str, ParagraphStyle]) -> Table:
         try:
             ir = ImageReader(str(stamp_path))
             iw, ih = ir.getSize()
-            scale = min(36 * mm / iw, 21 * mm / ih)
-            stamp_img = Image(str(stamp_path), width=iw * scale, height=ih * scale)
+            diag_mm = 1.7 * 25.4  # 43.18 mm
+            aspect = ih / iw if iw > 0 else 1.0
+            stamp_w = (diag_mm / ((1.0 + aspect**2)**0.5)) * mm
+            stamp_h = stamp_w * aspect
+            stamp_img = Image(str(stamp_path), width=stamp_w, height=stamp_h)
         except Exception:
             stamp_img = None
 
@@ -415,7 +418,7 @@ def _signatures_block(styles: Dict[str, ParagraphStyle]) -> Table:
         Paragraph("วันที่/Date:____/____/______", styles["sign_date"]),
     ]
 
-    tbl = Table([[col1, col2, col3, col4]], colWidths=[45.5 * mm, 45.5 * mm, 45.5 * mm, 45.5 * mm], rowHeights=[27 * mm])
+    tbl = Table([[col1, col2, col3, col4]], colWidths=[45.5 * mm, 45.5 * mm, 45.5 * mm, 45.5 * mm], rowHeights=[36 * mm])
     tbl.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.8, GREEN_BORDER),
         ("INNERGRID", (0, 0), (-1, -1), 0.5, GREEN_BORDER),

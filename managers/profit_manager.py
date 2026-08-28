@@ -968,6 +968,18 @@ def get_job_document_audit(shipment_id: int) -> Dict[str, Any]:
     }
 
 
+def rollback_job_voucher(voucher_no: str, shipment_id: Optional[int] = None, user: Optional[Dict[str, Any]] = None) -> bool:
+    """Cancels a Payment Voucher and releases linked AP cost lines back to UNPAID."""
+    from managers.ap_manager import cancel_ap_voucher
+    return cancel_ap_voucher(voucher_no, user=user)
+
+
+def rollback_job_invoice(doc_no: str, shipment_id: Optional[int] = None, user: Optional[Dict[str, Any]] = None) -> bool:
+    """Cancels a Customer Invoice and releases linked AR revenue lines back to UNBILLED."""
+    from managers.invoice_manager import cancel_invoice_document
+    return cancel_invoice_document(doc_no, user=user)
+
+
 # =========================================================
 # LEGACY COMPATIBILITY API
 # =========================================================

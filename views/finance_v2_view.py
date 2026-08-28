@@ -498,7 +498,7 @@ def render() -> None:
             if sel:
                 rec = next(r for r in filtered if r.get("doc_no") == sel)
                 st.caption(f"Selected: **{sel}** · Customer: {rec.get('customer_name', '—')} · Status: {rec.get('status')}")
-                act1, act2 = st.columns([1, 1])
+                act1, act2, act3 = st.columns([1, 1, 1.2])
                 with act1:
                     _pdf(sel)
                 with act2:
@@ -506,6 +506,19 @@ def render() -> None:
                         new_no = duplicate_invoice(sel, user)
                         st.success(f"Duplicated as {new_no}")
                         st.rerun()
+                with act3:
+                    if can_edit:
+                        if str(rec.get("status", "")).upper() != "CANCELLED":
+                            if st.button("🔄 Rollback / ยกเลิก", key=f"fin_v2_cancel_{sel}", use_container_width=True, type="secondary"):
+                                try:
+                                    from managers.invoice_manager import cancel_invoice_document
+                                    cancel_invoice_document(sel, user)
+                                    st.success(f"🎉 ยกเลิก {sel} และปลดล็อกรายการ AR สำเร็จ!")
+                                    st.rerun()
+                                except Exception as exc:
+                                    st.error(f"Rollback failed: {exc}")
+                        else:
+                            st.caption("⚠️ เอกสารนี้ถูกยกเลิกแล้ว (CANCELLED)")
 
     elif active_tab == tab_opts[1]:
         if can_edit:

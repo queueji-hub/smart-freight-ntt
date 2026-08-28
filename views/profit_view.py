@@ -37,6 +37,8 @@ from managers.profit_manager import (
     unlock_job_financials,
     update_cost_line,
     update_signoff,
+    rollback_job_voucher,
+    rollback_job_invoice,
 )
 from managers.shipment_manager import get_shipment, list_shipments
 from ui.design_system import page_header, section
@@ -1089,7 +1091,7 @@ def render():
                                 "Net Payable": f"{float(it.get('net_amount',0)):,.2f}",
                             } for idx, it in enumerate(v_items, start=1)]), hide_index=True, width="stretch")
                         
-                        pv_col1, pv_col2 = st.columns(2)
+                        pv_col1, pv_col2, pv_col3 = st.columns([1.1, 1.1, 1.4])
                         with pv_col1:
                             if st.button(f"📄 Export PDF ({v_no})", key=f"exp_pv_btn_{v_no}", width="stretch"):
                                 _render_pdf_payment_voucher(v, v_items)
@@ -1097,13 +1099,24 @@ def render():
                             v_bytes = st.session_state.get(f"voucher_pdf_bytes_{v_no}")
                             if v_bytes:
                                 st.download_button(
-                                    f"⬇️ Download {v_no}.pdf",
+                                    f"⬇️ Download PDF",
                                     data=v_bytes,
                                     file_name=f"{v_no}.pdf",
                                     mime="application/pdf",
                                     key=f"dl_pv_btn_{v_no}",
                                     width="stretch",
                                 )
+                        with pv_col3:
+                            if v.get("status") != "CANCELLED":
+                                if st.button(f"🔄 Rollback / ยกเลิก Voucher", key=f"rb_pv_btn_{v_no}", type="secondary", width="stretch"):
+                                    try:
+                                        rollback_job_voucher(v_no, shipment_id=shipment_id, user=user)
+                                        st.success(f"🎉 ยกเลิก {v_no} สำเร็จ และคืนสถานะรายการ AP กลับเป็น UNPAID เรียบร้อยแล้ว!")
+                                        st.rerun()
+                                    except Exception as exc:
+                                        st.error(f"Rollback failed: {exc}")
+                            else:
+                                st.caption("⚠️ เอกสารนี้ถูกยกเลิกแล้ว (CANCELLED)")
 
         with doc_c2:
             st.markdown(f"#### 🧾 AR Customer Invoices ({len(invoices)} Documents)")
@@ -1112,10 +1125,11 @@ def render():
             else:
                 for inv in invoices:
                     doc_no = inv.get("doc_no")
-                    with st.expander(f"📄 {doc_no} — {inv.get('customer_name','—')} | {_money(inv.get('grand_total'), inv.get('currency','THB'))} [{inv.get('status','ISSUED')}]", expanded=True):
+                    inv_stat = inv.get("payment_status") or inv.get("status") or "ISSUED"
+                    with st.expander(f"📄 {doc_no} — {inv.get('customer_name','—')} | {_money(inv.get('grand_total'), inv.get('currency','THB'))} [{inv_stat}]", expanded=True):
                         st.write(f"**Customer:** {inv.get('customer_name')}")
                         st.write(f"**Billing Currency:** `{inv.get('currency','THB')}` | **Ex.Rate:** {float(inv.get('exchange_rate',1.0)):.5f}")
-                        st.write(f"**Issue Date:** {_s(inv.get('issue_date'))} | **Due Date:** {_s(inv.get('due_date'))} | **Status:** {inv.get('status')}")
+                        st.write(f"**Issue Date:** {_s(inv.get('issue_date'))} | **Due Date:** {_s(inv.get('due_date'))} | **Status:** {inv_stat}")
                         
                         inv_items = inv.get("items", [])
                         if inv_items:
@@ -1132,10 +1146,23 @@ def render():
                                 "Net Receivable": f"{float(it.get('net_amount',0)):,.2f}",
                             } for idx, it in enumerate(inv_items, start=1)]), hide_index=True, width="stretch")
 
-                        if st.button(f"📂 Open in Billing Workspace ({doc_no})", key=f"goto_inv_{doc_no}", width="stretch"):
-                            st.session_state["current_navigation"] = "billing"
-                            st.query_params["page"] = "billing"
-                            st.rerun()
+                        inv_btn_c1, inv_btn_c2 = st.columns(2)
+                        with inv_btn_c1:
+                            if st.button(f"📂 Open in Billing Workspace ({doc_no})", key=f"goto_inv_{doc_no}", width="stretch"):
+                                st.session_state["current_navigation"] = "billing"
+                                st.query_params["page"] = "billing"
+                                st.rerun()
+                        with inv_btn_c2:
+                            if inv_stat != "CANCELLED":
+                                if st.button(f"🔄 Rollback / ยกเลิก Invoice", key=f"rb_inv_btn_{doc_no}", type="secondary", width="stretch"):
+                                    try:
+                                        rollback_job_invoice(doc_no, shipment_id=shipment_id, user=user)
+                                        st.success(f"🎉 ยกเลิก {doc_no} สำเร็จ และคืนสถานะรายการ AR กลับเป็น UNBILLED เรียบร้อยแล้ว!")
+                                        st.rerun()
+                                    except Exception as exc:
+                                        st.error(f"Rollback failed: {exc}")
+                            else:
+                                st.caption("⚠️ เอกสารนี้ถูกยกเลิกแล้ว (CANCELLED)")
 
     with tab_signoffs:
         section("Official Job Profitability Sheets & Sign-offs (การลงนามอนุมัติ P&L)")

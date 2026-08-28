@@ -107,9 +107,9 @@ def generate_payment_voucher_pdf(voucher: Dict[str, Any], items: List[Dict[str, 
             logo_img = ""
 
     comp_info = [
-        Paragraph(COMPANY.get("name_th", "บริษัท สมาร์ท เฟรท เอ็นทีที จำกัด"), st["company_th"]),
-        Paragraph(COMPANY.get("name_en", "SMART FREIGHT NTT CO., LTD."), st["company_en"]),
-        Paragraph(f"{COMPANY.get('address_en', '')} | Tax ID: {COMPANY.get('tax_id', '')}", st["company_addr"]),
+        Paragraph(f"<b>{COMPANY.get('name_th', 'บริษัท ณัฏฐยาราชย์ จำกัด')}</b>", st["company_th"]),
+        Paragraph(COMPANY.get("name_en", "NATTAYARAAT CO., LTD."), st["company_en"]),
+        Paragraph(f"{COMPANY.get('address_full', '')} | Tax ID: {COMPANY.get('tax_id', '')}", st["company_addr"]),
         Paragraph(f"Tel: {COMPANY.get('tel', '')} | Email: {COMPANY.get('email', '')}", st["company_addr"]),
     ]
 
@@ -160,15 +160,16 @@ def generate_payment_voucher_pdf(voucher: Dict[str, Any], items: List[Dict[str, 
     story.append(Spacer(1, 8))
 
     # 3. Itemized Table
+    curr_suffix = f" ({currency})" if currency != "THB" else ""
     item_header = [
         Paragraph("No.", st["th_center"]),
         Paragraph("Description / รายละเอียดการเบิกจ่าย", st["th_left"]),
         Paragraph("Vendor Inv. No.", st["th_center"]),
         Paragraph("Qty", st["th_center"]),
-        Paragraph("Unit Rate", st["th_right"]),
+        Paragraph(f"Unit Rate{curr_suffix}", st["th_right"]),
         Paragraph(f"Amount ({currency})", st["th_right"]),
         Paragraph("Tax / WHT", st["th_center"]),
-        Paragraph("VAT 7%", st["th_right"]),
+        Paragraph(f"VAT 7%{curr_suffix}", st["th_right"]),
         Paragraph(f"Net Payable ({currency})", st["th_right"]),
     ]
 
@@ -234,10 +235,26 @@ def generate_payment_voucher_pdf(voucher: Dict[str, Any], items: List[Dict[str, 
         ("BOX", (1, 3), (2, 3), 1, BRAND_BLUE),
     ]))
     story.append(sum_table)
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 10))
 
-    # 5. Quadruple Sign-off Matrix
+    # 5. Quadruple Sign-off Matrix with 1.7-inch Company Stamp
     prep_by = _s(voucher.get("created_by"), "Operator")
+    
+    # 1.7-inch diagonal company stamp
+    stamp_path = Path("assets/company_stamp_blue.png")
+    stamp_img = None
+    if stamp_path.exists():
+        try:
+            ir = ImageReader(str(stamp_path))
+            iw, ih = ir.getSize()
+            diag_pt = 1.7 * 72.0  # 122.4 pt
+            aspect = ih / iw if iw > 0 else 1.0
+            stamp_w = diag_pt / ((1.0 + aspect**2)**0.5)
+            stamp_h = stamp_w * aspect
+            stamp_img = Image(str(stamp_path), width=stamp_w, height=stamp_h)
+        except Exception:
+            stamp_img = None
+
     sign_data = [
         [
             Paragraph("<b>PREPARED BY / ผู้ขอเบิก</b>", st["sign_role"]),
@@ -245,7 +262,12 @@ def generate_payment_voucher_pdf(voucher: Dict[str, Any], items: List[Dict[str, 
             Paragraph("<b>APPROVED BY / ผู้อนุมัติจ่าย</b>", st["sign_role"]),
             Paragraph("<b>RECEIVED BY / ผู้รับเงิน</b>", st["sign_role"]),
         ],
-        ["\n\n__________________", "\n\n__________________", "\n\n__________________", "\n\n__________________"],
+        [
+            Paragraph("\n\n__________________", st["sign_date"]),
+            Paragraph("\n\n__________________", st["sign_date"]),
+            stamp_img or Paragraph("\n\n__________________", st["sign_date"]),
+            Paragraph("\n\n__________________", st["sign_date"]),
+        ],
         [
             Paragraph(f"({prep_by})", st["sign_date"]),
             Paragraph("(Accountant / Finance)", st["sign_date"]),
@@ -255,7 +277,7 @@ def generate_payment_voucher_pdf(voucher: Dict[str, Any], items: List[Dict[str, 
         [
             Paragraph(f"Date: {_s(voucher.get('invoice_date') or date.today().isoformat())}", st["sign_date"]),
             Paragraph("Date: _____________", st["sign_date"]),
-            Paragraph("Date: _____________", st["sign_date"]),
+            Paragraph(f"Date: {_s(voucher.get('invoice_date') or date.today().isoformat())}", st["sign_date"]),
             Paragraph("Date: _____________", st["sign_date"]),
         ],
     ]
@@ -266,8 +288,8 @@ def generate_payment_voucher_pdf(voucher: Dict[str, Any], items: List[Dict[str, 
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F8FAFC")),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]))
     story.append(sign_table)
 

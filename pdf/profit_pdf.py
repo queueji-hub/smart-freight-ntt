@@ -97,10 +97,10 @@ def _header(styles) -> Table:
     if logo is None:
         logo = Paragraph("<b>NATTAYAARAT</b>", styles["company_th"])
 
-    comp_th = "บริษัท ณัฐยาราชย์ จำกัด (สำนักงานใหญ่)"
-    comp_en = "NATTAYAARAT CO.,LTD. (Head Office)"
-    addr_line = "เลขที่ 59/9 หมู่ที่ 4 ตำบลบางกระทึก อำเภอสามพราน จังหวัดนครปฐม 73210"
-    tax_tel = f"เลขประจำตัวผู้เสียภาษี: {COMPANY.get('tax_id', '0735568004823')} | โทร: {COMPANY.get('tel', '')}"
+    comp_th = f"{COMPANY.get('name_th', 'บริษัท ณัฏฐยาราชย์ จำกัด')} (สำนักงานใหญ่)"
+    comp_en = f"{COMPANY.get('name_en', 'NATTAYARAAT CO., LTD.')} (Head Office)"
+    addr_line = COMPANY.get('address_full', 'เลขที่ 59/9 หมู่ที่ 4 ตำบลบางกระทึก อำเภอสามพราน จังหวัดนครปฐม 73210')
+    tax_tel = f"เลขประจำตัวผู้เสียภาษี: {COMPANY.get('tax_id', '0735568004823')} | โทร: {COMPANY.get('tel', '063-428-9691')} | อีเมล: {COMPANY.get('email', 'Management@nattayaraat.com')}"
 
     comp_block = [
         Paragraph(f"<b>{comp_th}</b>", styles["company_th"]),
@@ -319,14 +319,32 @@ def _signature_block(styles) -> Table:
         Paragraph("วันที่/Date: _____/____/________", styles["sign_name"]),
     ]
 
+    # Exactly 1.7 inches diagonal for the blue company stamp
+    stamp_path = Path(BASE_DIR) / "assets" / "company_stamp_blue.png"
+    if not stamp_path.exists():
+        stamp_path = Path(COMPANY.get("logo_path", ""))
+        
+    stamp_img = None
+    if stamp_path.exists():
+        try:
+            ir = ImageReader(str(stamp_path))
+            iw, ih = ir.getSize()
+            diag_mm = 1.7 * 25.4  # 43.18 mm
+            aspect = ih / iw if iw > 0 else 1.0
+            stamp_w = (diag_mm / ((1.0 + aspect**2)**0.5)) * mm
+            stamp_h = stamp_w * aspect
+            stamp_img = Image(str(stamp_path), width=stamp_w, height=stamp_h)
+        except Exception:
+            stamp_img = None
+
     box3 = [
         Paragraph("<b>ผู้อนุมัติ (Management)</b>", styles["sign_role"]),
         Paragraph("Authorized Approval", styles["sign_name"]),
-        Spacer(1, 12 * mm),
+        stamp_img or Spacer(1, 12 * mm),
         Paragraph("วันที่/Date: _____/____/________", styles["sign_name"]),
     ]
 
-    sig_tbl = Table([[box1, box2, box3]], colWidths=[60 * mm, 62 * mm, 62 * mm])
+    sig_tbl = Table([[box1, box2, box3]], colWidths=[60 * mm, 62 * mm, 62 * mm], rowHeights=[38 * mm])
     sig_tbl.setStyle(TableStyle([
         ("BOX", (0, 0), (0, 0), 0.5, BORDER_COLOR),
         ("BOX", (1, 0), (1, 0), 0.5, BORDER_COLOR),

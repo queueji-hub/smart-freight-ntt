@@ -461,8 +461,11 @@ def generate_air_waybill_pdf(payload: Dict[str, Any], output_path: Optional[str]
         try:
             ir_s = ImageReader(str(stamp_path))
             sw, sh = ir_s.getSize()
-            s_scale = min(26 * mm / sw, 16 * mm / sh)
-            stamp_img = Image(str(stamp_path), width=sw * s_scale, height=sh * s_scale)
+            diag_mm = 1.7 * 25.4  # 43.18 mm
+            aspect = sh / sw if sw > 0 else 1.0
+            stamp_w = (diag_mm / ((1.0 + aspect**2)**0.5)) * mm
+            stamp_h = stamp_w * aspect
+            stamp_img = Image(str(stamp_path), width=stamp_w, height=stamp_h)
         except Exception:
             stamp_img = ""
 

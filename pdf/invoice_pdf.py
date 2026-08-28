@@ -166,11 +166,11 @@ def _header(styles: Dict[str, ParagraphStyle], copy_label: str, doc_type: str = 
     if logo is None:
         logo = Paragraph("<b>NATTAYAARAT</b>", styles["company_th"])
 
-    comp_th = "บริษัท ณัฐยาราชย์ จำกัด (สำนักงานใหญ่)"
-    comp_en = "NATTAYAARAT CO.,LTD. (Head Office)"
-    addr_line1 = "เลขที่ 59/9 หมู่ที่ 4 ตำบลบางกระทึก อำเภอสามพราน จังหวัดนครปฐม 73210"
+    comp_th = f"{COMPANY.get('name_th', 'บริษัท ณัฏฐยาราชย์ จำกัด')} (สำนักงานใหญ่)"
+    comp_en = f"{COMPANY.get('name_en', 'NATTAYARAAT CO., LTD.')} (Head Office)"
+    addr_line1 = COMPANY.get('address_full', 'เลขที่ 59/9 หมู่ที่ 4 ตำบลบางกระทึก อำเภอสามพราน จังหวัดนครปฐม 73210')
     tax_id_line = f"เลขประจำตัวผู้เสียภาษี {COMPANY.get('tax_id', '0735568004823')}"
-    tel_line = f"โทร: {COMPANY.get('tel', '')}"
+    tel_line = f"โทร: {COMPANY.get('tel', '063-428-9691')} | อีเมล: {COMPANY.get('email', 'Management@nattayaraat.com')}"
 
     address_paragraphs = [
         Paragraph(comp_th, styles["company_th"]),
@@ -205,7 +205,7 @@ def _header(styles: Dict[str, ParagraphStyle], copy_label: str, doc_type: str = 
 
 
 def _customer_card(invoice: Dict[str, Any], customer: Dict[str, Any], styles: Dict[str, ParagraphStyle]) -> Table:
-    cname = invoice.get("customer_name") or customer.get("company_name") or "RED LINE INTERNATIONAL SERVICES CO.,LIMITED"
+    cname = invoice.get("customer_name") or customer.get("company_name") or "Valued Customer"
     caddr = invoice.get("customer_address") or customer.get("address") or ""
     ctax = invoice.get("customer_tax_id") or customer.get("tax_id") or ""
     ctel = invoice.get("customer_tel") or invoice.get("tel") or customer.get("phone") or ""
@@ -219,13 +219,13 @@ def _customer_card(invoice: Dict[str, Any], customer: Dict[str, Any], styles: Di
         for line in str(caddr).split("\n"):
             if line.strip():
                 left_cells.append(Paragraph(line.strip(), styles["cust_text"]))
-    left_cells.append(Paragraph(f"เลขที่ผู้เสียภาษี {ctax}" if ctax else "เลขที่ผู้เสียภาษี", styles["cust_text"]))
-    left_cells.append(Paragraph(f"โทร. {ctel}" if ctel else "โทร.", styles["cust_text"]))
-    left_cells.append(Paragraph(f"ติดต่อ/ประสานงาน : {ccontact}" if ccontact else "ติดต่อ/ประสานงาน :", styles["cust_text"]))
+    left_cells.append(Paragraph(f"เลขที่ผู้เสียภาษี {ctax}" if ctax else "เลขที่ผู้เสียภาษี: —", styles["cust_text"]))
+    left_cells.append(Paragraph(f"โทร. {ctel}" if ctel else "โทร.: —", styles["cust_text"]))
+    left_cells.append(Paragraph(f"ติดต่อ/ประสานงาน : {ccontact}" if ccontact else "ติดต่อ/ประสานงาน : —", styles["cust_text"]))
 
     doc_date = _fmt_thai_date(invoice.get("issue_date") or invoice.get("doc_date") or date.today())
     due_date = _fmt_thai_date(invoice.get("due_date") or invoice.get("issue_date") or date.today())
-    doc_no = str(invoice.get("doc_no") or "IV2607-0006")
+    doc_no = str(invoice.get("doc_no") or "IV-DRAFT")
     
     # Reference resolving (B/L No.)
     ref_val = invoice.get("ref_doc_no") or invoice.get("bl_no") or invoice.get("job_no") or ""
@@ -236,7 +236,7 @@ def _customer_card(invoice: Dict[str, Any], customer: Dict[str, Any], styles: Di
 
     credit_days = invoice.get("credit_days", 0) or 0
     credit_str = f"{credit_days} วัน"
-    prepared_by = str(invoice.get("prepared_by") or invoice.get("created_by") or "PATTAMA").upper()
+    prepared_by = str(invoice.get("prepared_by") or invoice.get("created_by") or "OPERATOR").upper()
 
     right_rows = [
         [Paragraph("วันที่ / Date", styles["meta_label"]), Paragraph(f": {doc_date}", styles["meta_val"])],
@@ -293,15 +293,16 @@ def _shipping_address_card(invoice: Dict[str, Any], styles: Dict[str, ParagraphS
     return card
 
 
-def _items_table(items: List[Dict[str, Any]], styles: Dict[str, ParagraphStyle]) -> Table:
+def _items_table(items: List[Dict[str, Any]], styles: Dict[str, ParagraphStyle], currency: str = "THB") -> Table:
+    curr_label = f" ({currency})" if currency != "THB" else ""
     headers = [
         Paragraph("<b>ลำดับ รายการ<br/>No. Description</b>", styles["th_left"]),
         "",
         Paragraph("<b>จำนวน<br/>Quantity</b>", styles["th_right"]),
         Paragraph("<b>หน่วย<br/>Unit</b>", styles["th_center"]),
-        Paragraph("<b>ราคา/หน่วย<br/>Unit Price</b>", styles["th_right"]),
+        Paragraph(f"<b>ราคา/หน่วย{curr_label}<br/>Unit Price</b>", styles["th_right"]),
         Paragraph("<b>ส่วนลด %<br/>Discount</b>", styles["th_right"]),
-        Paragraph("<b>จำนวนเงิน<br/>Amount</b>", styles["th_right"]),
+        Paragraph(f"<b>จำนวนเงิน{curr_label}<br/>Amount</b>", styles["th_right"]),
     ]
 
     data = [headers]
@@ -352,14 +353,18 @@ def _totals_section(invoice: Dict[str, Any], items: List[Dict[str, Any]], styles
     vat_amt = float(invoice.get("vat_amount") or invoice.get("total_vat_7") or 0)
     total_amt = float(invoice.get("total_amount") or (subtotal + vat_amt))
     grand_total = float(invoice.get("grand_total") or invoice.get("total_amount") or total_amt)
+    currency = str(invoice.get("currency") or "THB").upper()
     
     if subtotal == 0 and items:
         subtotal = sum(float(x.get("amount") or 0) for x in items)
         total_amt = subtotal + vat_amt
         grand_total = total_amt
 
-    words = thai_baht_text(grand_total)
-    words_text = f"({words})"
+    if currency == "THB":
+        words = thai_baht_text(grand_total)
+        words_text = f"({words})"
+    else:
+        words_text = f"({currency} {grand_total:,.2f})"
 
     remarks = invoice.get("remark") or invoice.get("remarks") or ""
 
@@ -368,11 +373,12 @@ def _totals_section(invoice: Dict[str, Any], items: List[Dict[str, Any]], styles
         Paragraph(str(remarks), styles["remark_val"]) if remarks else Paragraph("", styles["remark_val"]),
     ]
 
+    curr_tag = f" ({currency})" if currency != "THB" else ""
     right_rows = [
-        [Paragraph("จำนวนเงินก่อนภาษี", styles["tot_label"]), Paragraph(f"{subtotal:,.2f}", styles["tot_val"])],
-        [Paragraph("ภาษีมูลค่าเพิ่ม", styles["tot_label"]), Paragraph(f"{vat_amt:,.2f}", styles["tot_val"])],
-        [Paragraph("จำนวนเงินรวมทั้งสิ้น", styles["tot_label"]), Paragraph(f"{total_amt:,.2f}", styles["tot_val"])],
-        [Paragraph("<b>จำนวนเงินรวมสุทธิ</b>", styles["net_label"]), Paragraph(f"<b>{grand_total:,.2f}</b>", styles["net_val"])],
+        [Paragraph(f"จำนวนเงินก่อนภาษี{curr_tag}", styles["tot_label"]), Paragraph(f"{subtotal:,.2f}", styles["tot_val"])],
+        [Paragraph(f"ภาษีมูลค่าเพิ่ม{curr_tag}", styles["tot_label"]), Paragraph(f"{vat_amt:,.2f}", styles["tot_val"])],
+        [Paragraph(f"จำนวนเงินรวมทั้งสิ้น{curr_tag}", styles["tot_label"]), Paragraph(f"{total_amt:,.2f}", styles["tot_val"])],
+        [Paragraph(f"<b>จำนวนเงินรวมสุทธิ{curr_tag}</b>", styles["net_label"]), Paragraph(f"<b>{grand_total:,.2f}</b>", styles["net_val"])],
     ]
 
     right_tbl = Table(right_rows, colWidths=[42 * mm, 36 * mm])
@@ -398,7 +404,7 @@ def _totals_section(invoice: Dict[str, Any], items: List[Dict[str, Any]], styles
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
 
-    # Baht words row below
+    # Baht / Currency words row below
     words_p = Paragraph(f"<b>{words_text}</b>", styles["thai_words"])
     words_tbl = Table([[words_p]], colWidths=[182 * mm])
     words_tbl.setStyle(TableStyle([
@@ -431,6 +437,7 @@ def _signature_block(styles: Dict[str, ParagraphStyle]) -> Table:
         Paragraph("วันที่/Date:_____/_____/_____", styles["sign_date"]),
     ]
 
+    # Exactly 1.7 inches diagonal for the blue company stamp
     stamp_path = Path(BASE_DIR) / "assets" / "company_stamp_blue.png"
     if not stamp_path.exists():
         stamp_path = Path(COMPANY.get("logo_path", ""))
@@ -440,8 +447,13 @@ def _signature_block(styles: Dict[str, ParagraphStyle]) -> Table:
         try:
             ir = ImageReader(str(stamp_path))
             iw, ih = ir.getSize()
-            scale = min(36 * mm / iw, 21 * mm / ih)
-            stamp_img = Image(str(stamp_path), width=iw * scale, height=ih * scale)
+            # 1.7 inches diagonal = 43.18 mm = 122.4 pt
+            # Diagonal D = sqrt(w^2 + h^2) = w * sqrt(1 + (ih/iw)^2)
+            diag_mm = 1.7 * 25.4  # 43.18 mm
+            aspect = ih / iw if iw > 0 else 1.0
+            stamp_w = (diag_mm / ((1.0 + aspect**2)**0.5)) * mm
+            stamp_h = stamp_w * aspect
+            stamp_img = Image(str(stamp_path), width=stamp_w, height=stamp_h)
         except Exception:
             stamp_img = None
 
@@ -454,7 +466,7 @@ def _signature_block(styles: Dict[str, ParagraphStyle]) -> Table:
         Paragraph("วันที่/Date:_____/_____/_____", styles["sign_date"]),
     ]
 
-    sig_tbl = Table([[box1, box2, box3]], colWidths=[60 * mm, 60 * mm, 62 * mm], rowHeights=[36 * mm])
+    sig_tbl = Table([[box1, box2, box3]], colWidths=[60 * mm, 60 * mm, 62 * mm], rowHeights=[38 * mm])
     sig_tbl.setStyle(TableStyle([
         ("BOX", (0, 0), (0, 0), 0.6, BLUE_BORDER),
         ("BOX", (1, 0), (1, 0), 0.6, BLUE_BORDER),
@@ -472,13 +484,14 @@ def _signature_block(styles: Dict[str, ParagraphStyle]) -> Table:
 def _build_page_story(invoice: Dict[str, Any], customer: Dict[str, Any], items: List[Dict[str, Any]], copy_label: str, styles: Dict[str, ParagraphStyle]) -> List[Any]:
     story = []
     doc_type = invoice.get("doc_type", "INV")
+    curr = invoice.get("currency", "THB")
     story.append(_header(styles, copy_label, doc_type=doc_type))
     story.append(Spacer(1, 2.5 * mm))
     story.append(_customer_card(invoice, customer, styles))
     story.append(Spacer(1, 1.5 * mm))
     story.append(_shipping_address_card(invoice, styles))
     story.append(Spacer(1, 2.0 * mm))
-    story.append(_items_table(items, styles))
+    story.append(_items_table(items, styles, currency=curr))
     story.append(Spacer(1, 2.0 * mm))
     story.append(_totals_section(invoice, items, styles))
     story.append(Spacer(1, 3.0 * mm))

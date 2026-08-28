@@ -431,3 +431,41 @@ def get_outstanding_summary() -> Dict[str, Decimal]:
             outstanding = Decimal(str(row["total_outstanding"] if isinstance(row, dict) else row[2]))
 
     return {"billed": billed, "paid": paid, "outstanding": outstanding}
+
+
+def cancel_invoice_document(doc_no: str, user: Optional[Dict[str, Any]] = None) -> bool:
+    """Cancels an invoice/receipt/billing document and releases linked job_costs back to UNBILLED."""
+    if not doc_no:
+        return False
+    tenant_id = get_current_tenant_id()
+    with get_connection() as conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, doc_no, payment_status FROM invoices WHERE doc_no = %s AND tenant_id = %s LIMIT 1", (doc_no, tenant_id))
+                inv = cur.fetchone()
+                if not inv:
+                    raise ValueError(f"Document '{doc_no}' not found.")
+                
+                inv_id = inv["id"] if isinstance(inv, dict) or hasattr(inv, "keys") else inv[0]
+                
+                # 1. Update invoice status to CANCELLED
+                cur.execute("""
+                    UPDATE invoices
+                    SET payment_status = 'CANCELLED',
+                        outstanding = 0
+                    WHERE id = %s AND tenant_id = %s
+                """, (inv_id, tenant_id))
+                
+                # 2. Release linked job_costs so AR lines can be billed or edited again
+                cur.execute("""
+                    UPDATE job_costs
+                    SET billing_status = 'UNBILLED',
+                        invoice_no = NULL
+                    WHERE invoice_no = %s AND tenant_id = %s
+                """, (doc_no, tenant_id))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            conn.rollback()
+            raise RuntimeError(f"Failed to cancel document: {str(e)}")
