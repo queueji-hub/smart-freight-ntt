@@ -466,9 +466,9 @@ def render():
                 curr_options = ["THB", "USD", "EUR", "JPY", "CNY", "SGD"]
                 chosen_curr = st.selectbox("Target Billing Currency (สกุลเงินที่ต้องการวางบิล) *", curr_options, index=0, key=f"inv_bill_curr_{shipment_id}")
             with i_c2:
-                default_ex_map = {"THB": 1.0, "USD": 35.5, "EUR": 38.5, "JPY": 0.24, "CNY": 4.9, "SGD": 26.5}
+                default_ex_map = {"THB": 1.0, "USD": 35.50000, "EUR": 38.50000, "JPY": 0.24000, "CNY": 4.90000, "SGD": 26.50000}
                 def_rate = default_ex_map.get(chosen_curr, 1.0)
-                inv_ex_rate = st.number_input(f"Exchange Rate ({chosen_curr} to THB) *", min_value=0.0001, value=float(def_rate), step=0.1, key=f"inv_ex_rate_{shipment_id}")
+                inv_ex_rate = st.number_input(f"Exchange Rate ({chosen_curr} to THB) *", min_value=0.00001, value=float(def_rate), step=0.00001, format="%.5f", key=f"inv_ex_rate_{shipment_id}")
             with i_c3:
                 converted_est = selected_ar_sum / inv_ex_rate if inv_ex_rate > 0 else selected_ar_sum
                 st.metric(f"Total Billed ({chosen_curr})", f"{chosen_curr} {converted_est:,.2f}")
@@ -559,7 +559,7 @@ def render():
                         et1, et2, et3 = st.columns(3)
                         curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
                         e_curr = et1.selectbox("Currency", curr_opts, index=curr_opts.index(ap_to_edit.get("currency", "THB")) if ap_to_edit.get("currency") in curr_opts else 0, key=f"e_ap_curr_{edit_ap_id}")
-                        e_ex = et2.number_input("Ex.Rate to THB", min_value=0.001, value=float(ap_to_edit.get("exchange_rate") or 1.0), step=0.1, key=f"e_ap_ex_{edit_ap_id}")
+                        e_ex = et2.number_input("Ex.Rate to THB", min_value=0.00001, value=float(ap_to_edit.get("exchange_rate") or 1.0), step=0.00001, format="%.5f", key=f"e_ap_ex_{edit_ap_id}")
                         e_tax = et3.selectbox("Tax / VAT Type", TAX_TYPES, index=TAX_TYPES.index(ap_to_edit.get("tax_type", "VAT 7%")) if ap_to_edit.get("tax_type") in TAX_TYPES else 0, key=f"e_ap_tax_{edit_ap_id}")
 
                         ew1, ew2, ew3 = st.columns(3)
@@ -653,7 +653,7 @@ def render():
                     curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
                     curr_idx = curr_opts.index(def_curr_ap) if def_curr_ap in curr_opts else 0
                     curr_ap = t1.selectbox("Currency", curr_opts, index=curr_idx, key=f"q_ap_curr_{shipment_id}")
-                    ex_ap = t2.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if curr_ap == "THB" else 35.5, step=0.1, key=f"q_ap_ex_{shipment_id}")
+                    ex_ap = t2.number_input("Ex.Rate to THB", min_value=0.00001, value=1.0 if curr_ap == "THB" else 35.50000, step=0.00001, format="%.5f", key=f"q_ap_ex_{shipment_id}")
                     tax_idx = TAX_TYPES.index(def_tax_ap) if def_tax_ap in TAX_TYPES else 0
                     tax_ap = t3.selectbox("Tax / VAT Type", TAX_TYPES, index=tax_idx, key=f"q_ap_tax_{shipment_id}")
                     
@@ -715,7 +715,7 @@ def render():
                 net_thb = net_amt * ap_ex
 
                 if ap_curr != "THB":
-                    rate_str = f"{float(r.get('unit_price',0)):,.2f} {ap_curr} (Ex: {ap_ex:g})"
+                    rate_str = f"{float(r.get('unit_price',0)):,.2f} {ap_curr} (Ex: {ap_ex:.5f})"
                     amt_str = f"{orig_amt:,.2f} {ap_curr} (฿ {amt_thb:,.2f})"
                     vat_str = f"{vat_amt:,.2f} {ap_curr} (฿ {vat_thb:,.2f})" if vat_amt > 0 else "—"
                     wht_str = f"{wht_amt:,.2f} {ap_curr} (฿ {wht_thb:,.2f})" if wht_amt > 0 else "—"
@@ -811,7 +811,7 @@ def render():
                         et1, et2, et3 = st.columns(3)
                         curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
                         e_curr_ar = et1.selectbox("Currency", curr_opts, index=curr_opts.index(ar_to_edit.get("currency", "THB")) if ar_to_edit.get("currency") in curr_opts else 0, key=f"e_ar_curr_{edit_ar_id}")
-                        e_ex_ar = et2.number_input("Ex.Rate to THB", min_value=0.001, value=float(ar_to_edit.get("exchange_rate") or 1.0), step=0.1, key=f"e_ar_ex_{edit_ar_id}")
+                        e_ex_ar = et2.number_input("Ex.Rate to THB", min_value=0.00001, value=float(ar_to_edit.get("exchange_rate") or 1.0), step=0.00001, format="%.5f", key=f"e_ar_ex_{edit_ar_id}")
                         e_tax_ar = et3.selectbox("Tax / VAT Type", TAX_TYPES, index=TAX_TYPES.index(ar_to_edit.get("tax_type", "VAT 7%")) if ar_to_edit.get("tax_type") in TAX_TYPES else 0, key=f"e_ar_tax_{edit_ar_id}")
 
                         ew1, _ = st.columns(2)
@@ -895,7 +895,7 @@ def render():
                     curr_opts = ["THB", "USD", "EUR", "CNY", "JPY", "SGD"]
                     curr_idx = curr_opts.index(def_curr_ar) if def_curr_ar in curr_opts else 0
                     curr_ar = t1.selectbox("Currency", curr_opts, index=curr_idx, key=f"q_ar_curr_{shipment_id}")
-                    ex_ar = t2.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if curr_ar == "THB" else 35.5, step=0.1, key=f"q_ar_ex_{shipment_id}")
+                    ex_ar = t2.number_input("Ex.Rate to THB", min_value=0.00001, value=1.0 if curr_ar == "THB" else 35.50000, step=0.00001, format="%.5f", key=f"q_ar_ex_{shipment_id}")
                     tax_idx = TAX_TYPES.index(def_tax_ar) if def_tax_ar in TAX_TYPES else 0
                     tax_ar = t3.selectbox("Tax / VAT Type", TAX_TYPES, index=tax_idx, key=f"q_ar_tax_{shipment_id}")
                     
@@ -947,7 +947,7 @@ def render():
                 net_thb = net_amt * ar_ex
 
                 if ar_curr != "THB":
-                    rate_str = f"{float(r.get('unit_price',0)):,.2f} {ar_curr} (Ex: {ar_ex:g})"
+                    rate_str = f"{float(r.get('unit_price',0)):,.2f} {ar_curr} (Ex: {ar_ex:.5f})"
                     amt_str = f"{orig_amt:,.2f} {ar_curr} (฿ {amt_thb:,.2f})"
                     vat_str = f"{vat_amt:,.2f} {ar_curr} (฿ {vat_thb:,.2f})" if vat_amt > 0 else "—"
                     wht_str = f"{wht_amt:,.2f} {ar_curr} (฿ {wht_thb:,.2f})" if wht_amt > 0 else "—"
@@ -1017,11 +1017,11 @@ def render():
 
                 ap_rate_str = f"{r['ap_unit_price']:,.2f} {r['ap_currency']}" if r["ap_id"] else "—"
                 if r["ap_id"] and r.get("ap_currency") != "THB":
-                    ap_rate_str += f" (Ex: {r.get('ap_exchange_rate', 1.0):g})"
+                    ap_rate_str += f" (Ex: {float(r.get('ap_exchange_rate', 1.0)):.5f})"
 
                 ar_rate_str = f"{r['ar_unit_price']:,.2f} {r['ar_currency']}" if r["ar_id"] else "—"
                 if r["ar_id"] and r.get("ar_currency") != "THB":
-                    ar_rate_str += f" (Ex: {r.get('ar_exchange_rate', 1.0):g})"
+                    ar_rate_str += f" (Ex: {float(r.get('ar_exchange_rate', 1.0)):.5f})"
 
                 table_data.append({
                     "No.": r["line_no"],
@@ -1114,7 +1114,7 @@ def render():
                     doc_no = inv.get("doc_no")
                     with st.expander(f"📄 {doc_no} — {inv.get('customer_name','—')} | {_money(inv.get('grand_total'), inv.get('currency','THB'))} [{inv.get('status','ISSUED')}]", expanded=True):
                         st.write(f"**Customer:** {inv.get('customer_name')}")
-                        st.write(f"**Billing Currency:** `{inv.get('currency','THB')}` | **Ex.Rate:** {float(inv.get('exchange_rate',1.0)):.4f}")
+                        st.write(f"**Billing Currency:** `{inv.get('currency','THB')}` | **Ex.Rate:** {float(inv.get('exchange_rate',1.0)):.5f}")
                         st.write(f"**Issue Date:** {_s(inv.get('issue_date'))} | **Due Date:** {_s(inv.get('due_date'))} | **Status:** {inv.get('status')}")
                         
                         inv_items = inv.get("items", [])

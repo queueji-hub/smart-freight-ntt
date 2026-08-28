@@ -230,8 +230,7 @@ def _render_pts_receipt_form(user: Dict[str, Any], doc_type_default: str = "RC")
             price = c_price.number_input("Price", min_value=0.0, value=float(it.get("price", 0.0)), step=10.0, key=f"rc_it_price_{i}")
             curr = c_curr.selectbox("Curr", CURRENCIES, index=CURRENCIES.index(it.get("curr", "THB")), key=f"rc_it_curr_{i}")
             qty = c_qty.number_input("Qty", min_value=0.01, value=float(it.get("qty", 1.0)), step=1.0, key=f"rc_it_qty_{i}")
-            unit = c_unit.text_input("Unit", value=it.get("unit", "M3"), key=f"rc_it_unit_{i}")
-            exch = c_exch.number_input("Exch. Bht", min_value=0.0001, value=float(it.get("exch_rate", 35.0 if curr == "USD" else 1.0)), step=0.1, key=f"rc_it_exch_{i}")
+            exch = c_exch.number_input("Exch. Bht", min_value=0.00001, value=float(it.get("exch_rate", 35.00000 if curr == "USD" else 1.0)), step=0.00001, format="%.5f", key=f"rc_it_exch_{i}")
             
             v_idx = 0 if it.get("tax_type") in ("VAT 7%", "07") else 1
             vat = c_vat.selectbox("VAT", ["07 (VAT 7%)", "00 (Non-VAT)", "Advance"], index=v_idx, key=f"rc_it_vat_{i}")

@@ -416,7 +416,7 @@ CREATE TABLE IF NOT EXISTS profit_sheets (
 CREATE TABLE IF NOT EXISTS fx_rates (
     id SERIAL PRIMARY KEY,
     currency TEXT NOT NULL,
-    rate_to_thb NUMERIC(15,4) NOT NULL,
+    rate_to_thb NUMERIC(18,6) NOT NULL,
     effective_date DATE NOT NULL,
     source TEXT DEFAULT 'manual',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

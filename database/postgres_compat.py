@@ -723,6 +723,27 @@ def ensure_phase30_profitability_schema(conn) -> None:
     _safe_commit(conn)
 
 
+def ensure_fx_rates_schema(conn) -> None:
+    """Ensure fx_rates schema supports 5+ decimal places (NUMERIC 18,6)."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fx_rates (
+                id SERIAL PRIMARY KEY,
+                currency TEXT NOT NULL,
+                rate_to_thb NUMERIC(18,6) NOT NULL,
+                effective_date DATE NOT NULL,
+                source TEXT DEFAULT 'manual',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(currency, effective_date)
+            )
+        """)
+        try:
+            cur.execute("ALTER TABLE fx_rates ALTER COLUMN rate_to_thb TYPE NUMERIC(18,6)")
+        except Exception:
+            pass
+    _safe_commit(conn)
+
+
 def ensure_phase30_bl_schema(conn) -> None:
     """Create/upgrade B/L header schema required by the Phase 30 B/L workspace."""
     with conn.cursor() as cur:

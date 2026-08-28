@@ -177,11 +177,26 @@ def _scalar(row: Any) -> Any:
         return vals[0] if vals else None
     if isinstance(row, (list, tuple)):
         return row[0]
-    return row
+import time
 
+_ports_cache: dict[tuple, tuple[float, list[dict]]] = {}
+_parties_cache: dict[tuple, tuple[float, list[dict]]] = {}
+_MD_CACHE_TTL = 30.0
+
+def clear_master_data_cache() -> None:
+    global _ports_cache, _parties_cache
+    _ports_cache.clear()
+    _parties_cache.clear()
 
 def list_ports(active_only: bool = True) -> List[Dict[str, Any]]:
     tenant = _tenant()
+    cache_key = (tenant, active_only)
+    now = time.time()
+    if cache_key in _ports_cache:
+        t_exp, data = _ports_cache[cache_key]
+        if now < t_exp:
+            return [dict(x) for x in data]
+
     where = "WHERE tenant_id=%s"
     params: list[Any] = [tenant]
     if active_only:
@@ -190,7 +205,9 @@ def list_ports(active_only: bool = True) -> List[Dict[str, Any]]:
         _ensure_master_schema(conn)
         with conn.cursor() as cur:
             cur.execute(f"SELECT * FROM ports {where} ORDER BY port_code", params)
-            return [dict(r) for r in cur.fetchall()]
+            res = [dict(r) for r in cur.fetchall()]
+            _ports_cache[cache_key] = (now + _MD_CACHE_TTL, res)
+            return [dict(x) for x in res]
 
 
 def upsert_port(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> int:
@@ -232,11 +249,20 @@ def upsert_port(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> 
                 row = cur.fetchone()
                 port_id = int(row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0])
             conn.commit()
+            clear_master_data_cache()
             return port_id
 
 
 def list_parties(role_type: Optional[str | List[str]] = None, active_only: bool = True) -> List[Dict[str, Any]]:
     tenant = _tenant()
+    cache_roles = tuple(sorted(role_type)) if isinstance(role_type, (list, tuple, set)) else str(role_type or "")
+    cache_key = (tenant, cache_roles, active_only)
+    now = time.time()
+    if cache_key in _parties_cache:
+        t_exp, data = _parties_cache[cache_key]
+        if now < t_exp:
+            return [dict(x) for x in data]
+
     joins = ""
     where = "p.tenant_id=%s"
     params: list[Any] = [tenant]
@@ -263,30 +289,53 @@ def list_parties(role_type: Optional[str | List[str]] = None, active_only: bool 
         with conn.cursor() as cur:
             cur.execute(f"SELECT DISTINCT p.* FROM business_parties p {joins} WHERE {where} ORDER BY p.party_code", params)
             rows = [dict(r) for r in cur.fetchall()]
+            if not rows:
+                return []
+
+            pids = [r["id"] for r in rows if r.get("id")]
+            if not pids:
+                return rows
+
+            # High-performance batch fetch of party_roles in single query
+            role_map: dict[int, list[str]] = {pid: [] for pid in pids}
+            try:
+                pid_placeholders = ",".join(["%s"] * len(pids))
+                cur.execute(f"SELECT party_id, role_type FROM party_roles WHERE party_id IN ({pid_placeholders}) AND tenant_id=%s AND is_active=TRUE", (*pids, tenant))
+                for r_role in cur.fetchall():
+                    pid_val = r_role["party_id"] if isinstance(r_role, dict) or hasattr(r_role, "keys") else r_role[0]
+                    rtype_val = r_role["role_type"] if isinstance(r_role, dict) or hasattr(r_role, "keys") else r_role[1]
+                    if pid_val in role_map:
+                        role_map[pid_val].append(rtype_val)
+            except Exception:
+                pass
+
+            # High-performance batch fetch of party_finance_profiles in single query
+            fin_map: dict[int, dict[str, Any]] = {}
+            try:
+                pid_placeholders = ",".join(["%s"] * len(pids))
+                cur.execute(f"SELECT * FROM party_finance_profiles WHERE party_id IN ({pid_placeholders}) AND tenant_id=%s", (*pids, tenant))
+                for r_fin in cur.fetchall():
+                    fdict = dict(r_fin)
+                    fin_map[fdict["party_id"]] = fdict
+            except Exception:
+                pass
+
             for r in rows:
                 pid = r.get("id")
-                if pid:
-                    try:
-                        cur.execute("SELECT role_type FROM party_roles WHERE party_id=%s AND tenant_id=%s AND is_active=TRUE", (pid, tenant))
-                        r["roles"] = [x["role_type"] if isinstance(x, dict) or hasattr(x, "keys") else x[0] for x in cur.fetchall()]
-                    except Exception:
-                        r["roles"] = []
-                    try:
-                        cur.execute("SELECT * FROM party_finance_profiles WHERE party_id=%s AND tenant_id=%s LIMIT 1", (pid, tenant))
-                        fin = cur.fetchone()
-                        if fin:
-                            fdict = dict(fin)
-                            r["credit_limit"] = fdict.get("credit_limit")
-                            r["credit_currency"] = fdict.get("credit_currency")
-                            r["credit_days"] = fdict.get("credit_days")
-                            r["payment_term_code"] = fdict.get("payment_term_code")
-                            r["bank_name"] = fdict.get("bank_name")
-                            r["bank_account_name"] = fdict.get("bank_account_name")
-                            r["bank_account_no"] = fdict.get("bank_account_no")
-                            r["swift_code"] = fdict.get("swift_code")
-                    except Exception:
-                        pass
-            return rows
+                r["roles"] = role_map.get(pid, [])
+                fin = fin_map.get(pid)
+                if fin:
+                    r["credit_limit"] = fin.get("credit_limit")
+                    r["credit_currency"] = fin.get("credit_currency")
+                    r["credit_days"] = fin.get("credit_days")
+                    r["payment_term_code"] = fin.get("payment_term_code")
+                    r["bank_name"] = fin.get("bank_name")
+                    r["bank_account_name"] = fin.get("bank_account_name")
+                    r["bank_account_no"] = fin.get("bank_account_no")
+                    r["swift_code"] = fin.get("swift_code")
+
+            _parties_cache[cache_key] = (now + _MD_CACHE_TTL, rows)
+            return [dict(x) for x in rows]
 
 
 def upsert_party(data: Dict[str, Any], roles: List[str], finance: Optional[Dict[str, Any]] = None, user: Optional[Dict[str, Any]] = None) -> int:
@@ -395,6 +444,7 @@ def upsert_party(data: Dict[str, Any], roles: List[str], finance: Optional[Dict[
                      finance.get("payment_term_code"), finance.get("tax_id") or data.get("tax_id"), bool(finance.get("vat_registered")), bool(finance.get("withholding_tax")),
                      finance.get("bank_name"), finance.get("bank_account_name"), finance.get("bank_account_no"), finance.get("swift_code")))
             conn.commit()
+            clear_master_data_cache()
             return party_id
 
 
@@ -413,6 +463,7 @@ def delete_port(port_id: int, user: Optional[Dict[str, Any]] = None) -> bool:
             except Exception:
                 cur.execute(f"UPDATE ports SET is_active=0 WHERE id={param_placeholder}" if is_sqlite else f"UPDATE ports SET is_active=FALSE WHERE id={param_placeholder}", (int(port_id),))
             conn.commit()
+            clear_master_data_cache()
             return True
 
 
@@ -455,4 +506,5 @@ def delete_party(party_id: int, user: Optional[Dict[str, Any]] = None) -> bool:
                 except Exception:
                     pass
             conn.commit()
+            clear_master_data_cache()
             return True

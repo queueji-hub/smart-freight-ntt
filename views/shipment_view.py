@@ -493,7 +493,7 @@ def _financial(j):
                 "Description": r.get("description"),
                 "Payee / Supplier": r.get("supplier"),
                 "Qty": f"{r.get('quantity', 1):g} {r.get('unit', 'UNIT')}",
-                "Unit Rate": f"{float(r.get('unit_price',0)):,.2f} {r.get('currency','THB')}" + (f" (Ex: {float(r.get('exchange_rate',1)):g})" if r.get('currency') != 'THB' else ""),
+                "Unit Rate": f"{float(r.get('unit_price',0)):,.2f} {r.get('currency','THB')}" + (f" (Ex: {float(r.get('exchange_rate',1)):.5f})" if r.get('currency') != 'THB' else ""),
                 "Amount (THB)": _money(r.get("amount_thb")),
                 "Tax / WHT": f"{r.get('tax_type', 'VAT 7%')} / {r.get('wht_type', 'None')}",
                 "Net Payable": f"{float(r.get('net_amount',0)):,.2f} {r.get('currency','THB')}" + (f" (฿ {float(r.get('net_amount',0))*float(r.get('exchange_rate',1)):,.2f})" if r.get('currency') != 'THB' else ""),
@@ -527,7 +527,7 @@ def _financial(j):
                     curr = c7.selectbox("Currency", ["THB", "USD", "EUR", "CNY", "JPY", "SGD"], index=0)
 
                     t1, t2, t3 = st.columns(3)
-                    ex = t1.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if curr == "THB" else 35.5, step=0.1)
+                    ex = t1.number_input("Ex.Rate to THB", min_value=0.00001, value=1.0 if curr == "THB" else 35.50000, step=0.00001, format="%.5f")
                     tax_type = t2.selectbox("Tax Type", TAX_TYPES, index=0)
                     wht_type = t3.selectbox("WHT Type", WHT_TYPES, index=0)
 
@@ -578,7 +578,7 @@ def _financial(j):
                 "Description": r.get("description"),
                 "Customer": r.get("supplier") or _s(j.get("customer_name")),
                 "Qty": f"{r.get('quantity', 1):g} {r.get('unit', 'UNIT')}",
-                "Selling Rate": f"{float(r.get('unit_price',0)):,.2f} {r.get('currency','THB')}" + (f" (Ex: {float(r.get('exchange_rate',1)):g})" if r.get('currency') != 'THB' else ""),
+                "Selling Rate": f"{float(r.get('unit_price',0)):,.2f} {r.get('currency','THB')}" + (f" (Ex: {float(r.get('exchange_rate',1)):.5f})" if r.get('currency') != 'THB' else ""),
                 "Amount (THB)": _money(r.get("amount_thb")),
                 "Tax / WHT": f"{r.get('tax_type', 'VAT 7%')} / {r.get('wht_type', 'None')}",
                 "Net Receivable": f"{float(r.get('net_amount',0)):,.2f} {r.get('currency','THB')}" + (f" (฿ {float(r.get('net_amount',0))*float(r.get('exchange_rate',1)):,.2f})" if r.get('currency') != 'THB' else ""),
@@ -612,7 +612,7 @@ def _financial(j):
                     s_curr = s7.selectbox("Currency", ["THB", "USD", "EUR", "CNY", "JPY", "SGD"], index=0, key=f"ar_curr_{j['id']}")
 
                     t1, t2, t3 = st.columns(3)
-                    s_ex = t1.number_input("Ex.Rate to THB", min_value=0.001, value=1.0 if s_curr == "THB" else 35.5, step=0.1, key=f"ar_ex_{j['id']}")
+                    s_ex = t1.number_input("Ex.Rate to THB", min_value=0.00001, value=1.0 if s_curr == "THB" else 35.50000, step=0.00001, format="%.5f", key=f"ar_ex_{j['id']}")
                     s_tax = t2.selectbox("Tax Type", TAX_TYPES, index=0, key=f"ar_tax_{j['id']}")
                     s_wht = t3.selectbox("WHT Type", WHT_TYPES, index=0, key=f"ar_wht_{j['id']}")
 

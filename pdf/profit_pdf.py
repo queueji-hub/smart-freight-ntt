@@ -215,7 +215,13 @@ def _cost_table(title: str, lines: List[Dict[str, Any]], bg_color, styles, total
             total_thb += amt_thb
             curr = str(line.get("currency") or "THB").upper()
             orig_amt = float(line.get("amount") or amt_thb)
-            curr_str = f"{curr} {orig_amt:,.2f}" if curr != "THB" else f"{orig_amt:,.2f}"
+            ex_val = float(line.get("exchange_rate") or 1.0)
+            if curr != "THB":
+                curr_str = f"{curr} {orig_amt:,.2f}"
+                if ex_val != 1.0:
+                    curr_str += f"<br/><font color='#64748B' size='6'>Ex: {ex_val:.5f}</font>"
+            else:
+                curr_str = f"{orig_amt:,.2f}"
             party = _s(line.get("supplier") or line.get("vendor_name") or line.get("customer"))
             ref_no = line.get("vendor_invoice_no") if not is_ar else line.get("invoice_no")
             if ref_no and str(ref_no).strip() not in ("—", "None", ""):

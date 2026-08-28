@@ -6,12 +6,38 @@ from database.connection import get_connection
 SUPPORTED_CURRENCIES = ["THB", "USD", "EUR", "CNY", "JPY", "SGD", "HKD"]
 BASE_CURRENCY = "THB"
 
+import time
+
+_fx_cache: dict[tuple, tuple[float, float]] = {}
+_FX_CACHE_TTL = 60.0
+
+def clear_fx_cache() -> None:
+    global _fx_cache
+    _fx_cache.clear()
+
+from database.postgres_compat import ensure_fx_rates_schema
+
+_fx_schema_ensured = False
+
+def _ensure_schema(conn):
+    global _fx_schema_ensured
+    if _fx_schema_ensured:
+        return
+    try:
+        if type(conn).__name__ != "SQLiteConnAdapter":
+            ensure_fx_rates_schema(conn)
+        _fx_schema_ensured = True
+    except Exception:
+        pass
+
 def set_rate(currency: str, rate_to_thb: float,
              effective_date=None, source: str = "manual") -> int:
-    """Set/update exchange rate using atomic returning."""
+    """Set/update exchange rate with 5 decimal places using atomic returning."""
     eff = effective_date if isinstance(effective_date, date) else date.today()
+    parsed_rate = round(float(rate_to_thb), 5)
     
     with get_connection() as conn:
+        _ensure_schema(conn)
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO fx_rates (currency, rate_to_thb, effective_date, source)
@@ -20,18 +46,25 @@ def set_rate(currency: str, rate_to_thb: float,
                 SET rate_to_thb = EXCLUDED.rate_to_thb,
                     source = EXCLUDED.source
                 RETURNING id
-            """, (currency.upper(), float(rate_to_thb), eff, source))
+            """, (currency.upper(), parsed_rate, eff, source))
             
             row = cur.fetchone()
             conn.commit()
+            clear_fx_cache()
             return row['id'] if isinstance(row, dict) else row[0]
 
 def get_rate(currency: str, on_date=None) -> float:
-    """Get the most recent rate for a currency on or before given date."""
+    """Get the most recent rate for a currency on or before given date (5 decimal places precision)."""
     if not currency or currency.upper() == BASE_CURRENCY:
         return 1.0
     
     on_date = on_date if isinstance(on_date, date) else date.today()
+    cache_key = (currency.upper(), str(on_date))
+    now = time.time()
+    if cache_key in _fx_cache:
+        t_exp, val = _fx_cache[cache_key]
+        if now < t_exp:
+            return val
     
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -43,8 +76,14 @@ def get_rate(currency: str, on_date=None) -> float:
             row = cur.fetchone()
         
     if row:
-        return float(row['rate_to_thb'] if isinstance(row, dict) else row[0])
-    return 0.0
+        val = round(float(row['rate_to_thb'] if isinstance(row, dict) else row[0]), 5)
+    else:
+        # Standard fallback rates
+        defaults = {"USD": 35.50000, "EUR": 38.50000, "JPY": 0.24000, "CNY": 4.90000, "SGD": 26.50000, "HKD": 4.55000}
+        val = defaults.get(currency.upper(), 0.0)
+
+    _fx_cache[cache_key] = (now + _FX_CACHE_TTL, val)
+    return val
 
 def convert(amount: float, from_cur: str, to_cur: str, on_date=None) -> float:
     """Convert amount between currencies via THB."""

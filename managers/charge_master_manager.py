@@ -22,8 +22,24 @@ def _ensure_schema(conn) -> None:
         pass
 
 
+import time
+
+_charges_cache: dict[tuple, tuple[float, list[dict]]] = {}
+_CACHE_TTL = 30.0  # 30 seconds cache for rapid consecutive UI calls
+
+def clear_charges_cache() -> None:
+    global _charges_cache
+    _charges_cache.clear()
+
 def list_charges(active_only: bool = True) -> List[Dict[str, Any]]:
     tenant_id = get_current_tenant_id()
+    cache_key = (tenant_id, active_only)
+    now = time.time()
+    if cache_key in _charges_cache:
+        t_exp, data = _charges_cache[cache_key]
+        if now < t_exp:
+            return [dict(x) for x in data]
+
     with get_connection() as conn:
         _ensure_schema(conn)
         with conn.cursor() as cur:
@@ -45,12 +61,14 @@ def list_charges(active_only: bool = True) -> List[Dict[str, Any]]:
                 )
                 rows = cur.fetchall()
                 if not rows:
-                    return []
-                if isinstance(rows[0], dict) or hasattr(rows[0], "keys"):
-                    return [dict(row) for row in rows]
+                    res = []
+                elif isinstance(rows[0], dict) or hasattr(rows[0], "keys"):
+                    res = [dict(row) for row in rows]
                 else:
                     cols = ["id", "charge_code", "description", "category", "default_basis", "default_unit", "default_currency", "default_tax_type", "default_wht_type", "is_active"]
-                    return [dict(zip(cols, row)) for row in rows]
+                    res = [dict(zip(cols, row)) for row in rows]
+                _charges_cache[cache_key] = (now + _CACHE_TTL, res)
+                return [dict(x) for x in res]
             except Exception:
                 return []
 
@@ -162,6 +180,7 @@ def upsert_charge(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
                         WHERE id=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default')
                     """, (code, desc, category, basis, unit, curr, tax_type, wht_type, active, int(cid), tenant_id))
                 conn.commit()
+                clear_charges_cache()
                 return int(cid)
             else:
                 if is_sqlite:
@@ -178,6 +197,7 @@ def upsert_charge(data: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -
                     row = cur.fetchone()
                     cid = row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
                 conn.commit()
+                clear_charges_cache()
                 return int(cid)
 
 
@@ -194,4 +214,5 @@ def delete_charge(charge_id: int, user: Optional[Dict[str, Any]] = None) -> bool
             else:
                 cur.execute("DELETE FROM charge_master WHERE id=%s AND (tenant_id=%s OR tenant_id IS NULL OR tenant_id='default')", (int(charge_id), tenant_id))
             conn.commit()
+            clear_charges_cache()
             return True

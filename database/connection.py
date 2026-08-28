@@ -124,8 +124,8 @@ def get_pool():
                 sslmode = "require"
 
             _pg_pool = psycopg2.pool.ThreadedConnectionPool(
-                minconn=1,
-                maxconn=20,
+                minconn=2,
+                maxconn=25,
                 host=host,
                 port=port,
                 dbname=dbname,
@@ -133,13 +133,38 @@ def get_pool():
                 password=password,
                 cursor_factory=psycopg2.extras.RealDictCursor,
                 sslmode=sslmode,
-                connect_timeout=1
+                connect_timeout=3,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5
             )
             _pg_is_disabled = False
             return _pg_pool
         except Exception:
             _pg_is_disabled = True
             return None
+
+# Thread-local SQLite connection cache for lightning-fast query execution
+_local_sqlite = threading.local()
+
+def _get_local_sqlite():
+    conn = getattr(_local_sqlite, "conn", None)
+    if conn is None:
+        db_file = Path(__file__).resolve().parent.parent / "data" / "smart_freight.db"
+        db_file.parent.mkdir(exist_ok=True, parents=True)
+        conn = sqlite3.connect(db_file, timeout=30.0, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = NORMAL")
+            conn.execute("PRAGMA cache_size = -64000")
+            conn.execute("PRAGMA temp_store = MEMORY")
+            conn.execute("PRAGMA mmap_size = 268435456")
+        except Exception:
+            pass
+        _local_sqlite.conn = conn
+    return conn
 
 # =========================================================
 # DATABASE CONNECTION (WITH RESILIENT LOCAL FALLBACK)
@@ -183,18 +208,8 @@ def get_connection():
     if app_env == "production":
         raise RuntimeError("PostgreSQL connection pool failed in production mode")
 
-    # Fall back to local SQLite database if PostgreSQL/Supabase is unreachable (dev only)
-    db_file = Path(__file__).resolve().parent.parent / "data" / "smart_freight.db"
-    db_file.parent.mkdir(exist_ok=True, parents=True)
-    sqlite_conn = sqlite3.connect(db_file, timeout=30.0, check_same_thread=False)
-    sqlite_conn.row_factory = sqlite3.Row
-    try:
-        sqlite_conn.execute("PRAGMA journal_mode = WAL")
-        sqlite_conn.execute("PRAGMA synchronous = NORMAL")
-        sqlite_conn.execute("PRAGMA cache_size = -64000")
-        sqlite_conn.execute("PRAGMA temp_store = MEMORY")
-    except Exception:
-        pass
+    # Fast thread-local SQLite adapter
+    sqlite_conn = _get_local_sqlite()
     adapter = SQLiteConnAdapter(sqlite_conn)
     try:
         yield adapter
@@ -205,8 +220,6 @@ def get_connection():
     except Exception:
         adapter.rollback()
         raise
-    finally:
-        adapter.close()
 
 
 
@@ -965,7 +978,7 @@ def init_database():
                     CREATE TABLE IF NOT EXISTS fx_rates (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         currency TEXT NOT NULL,
-                        rate_to_thb NUMERIC(15,4) NOT NULL,
+                        rate_to_thb NUMERIC(18,6) NOT NULL,
                         effective_date DATE NOT NULL,
                         source TEXT DEFAULT 'manual',
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -34,9 +34,25 @@ def list_rate_cards(active_only: bool = True, user: Optional[Dict[str, Any]] = N
                 where += " AND status='ACTIVE'"
             cur.execute(f"SELECT * FROM rate_cards {where} ORDER BY rate_no", params)
             rows = [dict(r) for r in cur.fetchall()]
+            if not rows:
+                return []
+            
+            card_ids = [r["id"] for r in rows if r.get("id")]
+            lines_map: dict[int, list[dict]] = {cid: [] for cid in card_ids}
+            if card_ids:
+                try:
+                    c_placeholders = ",".join(["%s"] * len(card_ids))
+                    cur.execute(f"SELECT * FROM rate_card_lines WHERE tenant_id=%s AND rate_card_id IN ({c_placeholders}) ORDER BY id", (tenant, *card_ids))
+                    for line_row in cur.fetchall():
+                        ldict = dict(line_row)
+                        cid_val = ldict.get("rate_card_id")
+                        if cid_val in lines_map:
+                            lines_map[cid_val].append(ldict)
+                except Exception:
+                    pass
+
             for row in rows:
-                cur.execute("SELECT * FROM rate_card_lines WHERE tenant_id=%s AND rate_card_id=%s ORDER BY id", (tenant, row["id"]))
-                row["lines"] = [dict(x) for x in cur.fetchall()]
+                row["lines"] = lines_map.get(row.get("id"), [])
             return rows
 
 

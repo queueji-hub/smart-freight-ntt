@@ -112,7 +112,7 @@ def _render_pts_pv_create():
 
                         desc_text = c.get("description") or "Operation Cost"
                         if c_curr != "THB":
-                            desc_text += f" ({orig_amt:,.2f} {c_curr} @ {ex_rate:g})"
+                            desc_text += f" ({orig_amt:,.2f} {c_curr} @ {ex_rate:.5f})"
 
                         st.session_state["pts_pv_items"].append({
                             "service_id": c.get("matched_charge_code") or "EXP",
